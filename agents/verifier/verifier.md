@@ -194,7 +194,7 @@ grep -n "RateLimit\|rateLimitMiddleware" cmd/server/main.go
 ## Retry and escalation
 
 - After reporting `SPEC_VIOLATION`, the developer agent fixes and re-invokes the verifier.
-- **Max 2 retries.** After 2 failed cycles → report `BLOCKED` with summary of what was attempted and what remains unresolved. Escalate to human.
+- **Max 1 retry.** After 1 failed cycle → report `BLOCKED` with summary of what was attempted and what remains unresolved. Escalate to human.
 
 ---
 

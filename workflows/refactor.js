@@ -16,7 +16,7 @@ export const meta = {
 
 const target = args && args.target ? args.target : 'the specified module'
 const goal = args && args.goal ? args.goal : 'readability'
-const MAX_RETRIES = 2
+const MAX_RETRIES = 1
 
 const GATE_SCHEMA = {
   type: 'object',
@@ -52,7 +52,7 @@ phase('Memory')
 log('memory-manager: loading prior context for target module...')
 
 const memBrief = await agent(
-  `LOAD task="refactor ${target} for ${goal}". Read .claude/memory/ and memory/knowledge/code-quality/ and return a context brief of relevant conventions, code smells already addressed, prior refactor outcomes, and gotchas for this module.`,
+  `LOAD task="refactor ${target} for ${goal}". Read .claude/memory/ and return a context brief of relevant conventions, code smells already addressed, prior refactor outcomes, and gotchas for this module.`,
   { label: 'memory-manager:load', phase: 'Memory', agentType: 'memory-manager' }
 )
 log('memory loaded.')

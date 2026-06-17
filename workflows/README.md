@@ -70,15 +70,15 @@ Workflow({ scriptPath: '.claude/workflows/new-feature.js', resumeFromRunId: 'wf_
 Full feature delivery pipeline with quality gate loops.
 
 ```
-secret-scanner → planner → developer ←──────────────────┐
-                                 ↓                       │
-                           test-writer                   │
-                                 ↓                       │  retry ≤ 2
-                          code-reviewer ─ CRITICAL ──────┤
-                                 ↓                       │
-                       security-reviewer ─ CRITICAL ─────┘
+secret-scanner → planner → developer ←──────────────────────────┐
+                                 ↓                              │
+                           test-writer                          │
+                                 ↓                    retry ≤ 1 │
+                    ┌── code-reviewer ─ CRITICAL ───────────────┤
+                    │   security-reviewer ─ ESCALATE → human    │
+                    └────────────── (parallel) ─────────────────┘
                                  ↓
-                            verifier ─ SPEC_VIOLATION → developer (retry ≤ 2)
+                            verifier ─ SPEC_VIOLATION → developer (retry ≤ 1)
                                  ↓
                           git-assistant → Draft PR
 ```
@@ -114,7 +114,7 @@ Cleanup pipeline that requires tests to exist before starting.
 ```
 refactorer → code-reviewer → verifier → git-assistant → Draft PR
          ↑                                    ↑
-    NO_TESTS → block         SPEC_VIOLATION → refactorer (retry ≤ 2)
+    NO_TESTS → block         SPEC_VIOLATION → refactorer (retry ≤ 1)
 ```
 
 | Arg | Type | Required | Description |
@@ -163,9 +163,11 @@ docs-writer → git-assistant → Draft PR
 Pre-release security + CVE gate, then creates a release PR with CHANGELOG.
 
 ```
-secret-scanner → dependency-auditor → git-assistant (release mode) → Release PR
-                        ↑
-           CRITICAL_CVE → block (fix before releasing)
+┌── secret-scanner ──────────────────┐
+│   dependency-auditor               │ (parallel)
+└──────────── ESCALATION → stop ─────┘
+                   ↓
+        git-assistant (release mode) → Release PR
 ```
 
 | Arg | Type | Required | Description |
@@ -183,11 +185,11 @@ Every workflow enforces these gates:
 | Signal | Action | Retries |
 |---|---|---|
 | `SECRET_FOUND` / `ESCALATION` | Pipeline stops immediately | **0** — human must rotate credential |
-| `CRITICAL_BLOCK` (code-reviewer) | Return to developer with `file:line` fixes | Max 2 |
-| `SPEC_VIOLATION` (verifier) | Return to developer with unmet requirements | Max 2 |
+| `CRITICAL_BLOCK` (code-reviewer) | Return to developer with `file:line` fixes | Max 1 |
+| `SPEC_VIOLATION` (verifier) | Return to developer with unmet requirements | Max 1 |
 | `CRITICAL_CVE` (dependency-auditor) | Release pipeline blocked | 0 — fix CVE first |
 | `NO_TESTS` (refactorer) | Block — run test-writer first | N/A |
-| Any gate after 2 retries | Escalate to human with full attempt history | — |
+| Any gate after 1 retry | Escalate to human with full attempt history | — |
 | Missing `<task-notification>` | Treated as `BLOCK` | — |
 
 ---

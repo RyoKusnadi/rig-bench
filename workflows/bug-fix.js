@@ -19,7 +19,7 @@ export const meta = {
 const bug = args && args.bug ? args.bug : 'fix the reported bug'
 const knownCause = args && args.known_cause === true
 const stackTrace = args && args.stack_trace ? `\n\nStack trace:\n${args.stack_trace}` : ''
-const MAX_RETRIES = 2
+const MAX_RETRIES = 1
 
 const GATE_SCHEMA = {
   type: 'object',

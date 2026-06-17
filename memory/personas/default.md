@@ -20,4 +20,4 @@ Full-stack engineer. Comfortable with Go backends and TypeScript/Next.js fronten
 - docs-writer: skip minor internal refactors, update only on user-facing changes
 
 ## Languages and stacks in use
-See `memory/projects/` for per-project detail.
+Go backends, TypeScript/Next.js frontends. See CLAUDE.md for active project stacks.

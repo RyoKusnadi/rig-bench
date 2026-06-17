@@ -8,17 +8,17 @@ The 6 built-in pipelines and quality gate rules. Reference for orchestrator and 
 
 ```
 memory-load → secret-scanner → planner → developer → test-writer
-           → code-reviewer → security-reviewer → verifier → git-assistant → memory-save
+           → [code-reviewer + security-reviewer in parallel] → verifier → git-assistant → memory-save
 ```
 
 **Gate rules:**
 - `secret-scanner ESCALATION` → pipeline blocked, zero retries
 - `planner DECISION_NEEDED` → human decision required before continuing
-- `code-reviewer CRITICAL_BLOCK` → return to developer, fix Criticals, retry ≤ 2
+- `code-reviewer CRITICAL_BLOCK` → return to developer, fix Criticals, retry ≤ 1
 - `security-reviewer SECRET_FOUND` → pipeline blocked, zero retries
-- `security-reviewer CRITICAL_BLOCK/HIGH_BLOCK` → escalate to human
-- `verifier SPEC_VIOLATION` → return to developer with fix instructions, retry ≤ 2
-- Any stage > 2 retries → escalate to human
+- `security-reviewer CRITICAL_BLOCK/HIGH_BLOCK` → escalate to human (no retry)
+- `verifier SPEC_VIOLATION` → return to developer with fix instructions, retry ≤ 1
+- Any stage > 1 retry → escalate to human
 
 ---
 
@@ -32,7 +32,7 @@ memory-load → [debugger] → developer → test-writer → verifier → git-as
 
 **Gate rules:**
 - `debugger INCONCLUSIVE` → escalate to human (cannot fix unknown root cause)
-- `verifier SPEC_VIOLATION` → return to developer, retry ≤ 2
+- `verifier SPEC_VIOLATION` → return to developer, retry ≤ 1
 
 ---
 
@@ -45,7 +45,7 @@ refactorer → code-reviewer → verifier → git-assistant
 **Gate rules:**
 - `refactorer NO_TESTS` → block, run test-writer first (not a retry)
 - `refactorer REGRESSION` → escalate to human
-- `code-reviewer CRITICAL_BLOCK` → return to refactorer, retry ≤ 2
+- `code-reviewer CRITICAL_BLOCK` → return to refactorer, retry ≤ 1
 
 ---
 
@@ -78,7 +78,7 @@ docs-writer → git-assistant
 ## Release prep
 
 ```
-secret-scanner → dependency-auditor → changelog-writer → git-assistant (release mode)
+[secret-scanner + dependency-auditor in parallel] → git-assistant (release mode)
 ```
 
 **Gate rules:**
@@ -92,7 +92,7 @@ secret-scanner → dependency-auditor → changelog-writer → git-assistant (re
 
 | Situation | Max retries | Action after max |
 |---|---|---|
-| Gate failure (BLOCK) | 2 | Escalate to human with full attempt history |
+| Gate failure (BLOCK) | 1 | Escalate to human with full attempt history |
 | Secret escalation | 0 | Immediate human escalation, zero retries |
 | INCONCLUSIVE / NO_TESTS | 0 | Not a retry situation — escalate or reorder |
 

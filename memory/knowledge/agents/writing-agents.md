@@ -102,7 +102,7 @@ You are the **[role title]**. [One sentence on what you do and what you don't do
 
 ### Read-only agents
 
-Agents that never modify files (planner, verifier, debugger, security-reviewer, dependency-auditor, secret-scanner, knowledge-base, memory-manager):
+Agents that never modify files (planner, verifier, debugger, security-reviewer, dependency-auditor, secret-scanner, memory-manager):
 
 1. Add `disallowedTools: [Write, Edit, MultiEdit, NotebookEdit]` to frontmatter
 2. Add an `OPERATION CONSTRAINTS — READ-ONLY AGENT` prose block after the intro

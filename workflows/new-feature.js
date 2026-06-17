@@ -7,8 +7,7 @@ export const meta = {
     { title: 'Plan', detail: 'planner produces file-level implementation plan' },
     { title: 'Implement', detail: 'developer implements with TDD cycle' },
     { title: 'Test', detail: 'test-writer writes and verifies tests' },
-    { title: 'Review', detail: 'code-reviewer quality audit' },
-    { title: 'Security', detail: 'security-reviewer OWASP + STRIDE audit' },
+    { title: 'Review', detail: 'code-reviewer + security-reviewer in parallel' },
     { title: 'Verify', detail: 'verifier confirms spec compliance' },
     { title: 'PR', detail: 'git-assistant creates draft PR' },
     { title: 'Memory', detail: 'memory-manager saves lessons learned' },
@@ -21,7 +20,7 @@ export const meta = {
 
 const task = args && args.task ? args.task : 'implement the feature as described'
 const effort = args && args.effort ? args.effort : 'medium'
-const MAX_RETRIES = 2
+const MAX_RETRIES = 1
 
 const GATE_SCHEMA = {
   type: 'object',
@@ -150,59 +149,55 @@ if (!tests || tests.pipeline_gate === 'BLOCK') {
 }
 log(`test-writer: ${tests ? tests.verdict : 'PASS'} — ${tests ? tests.summary : ''}`)
 
-// ── Stage 5: Code review ─────────────────────────────────────────────────
+// ── Stages 5+6: Code review + Security review (parallel) ─────────────────
 phase('Review')
-let crResult = null
-let crRetries = 0
+log(`code-reviewer (${effort}) + security-reviewer: running in parallel...`)
 
-while (crRetries <= MAX_RETRIES) {
-  const retryContext = crRetries > 0
-    ? `\n\nRetry ${crRetries}/${MAX_RETRIES}. Previous Critical findings that should have been fixed:\n${formatFindings(criticalFindings(crResult))}`
-    : ''
+const [crInitial, sec] = await parallel([
+  () => agent(
+    `Task: ${task}\n\nReview the implementation with effort=${effort}. Run static analysis, check spec compliance (Pass A), then quality audit (Pass B).`,
+    { label: 'code-reviewer', phase: 'Review', schema: GATE_SCHEMA, agentType: 'code-reviewer' }
+  ),
+  () => agent(
+    `Task: ${task}\n\nRun the full security audit: secrets detection (SEC-4), OWASP A01–A10, STRIDE threat model, dependency audit. Cite file:line for every finding.`,
+    { label: 'security-reviewer', phase: 'Review', schema: GATE_SCHEMA, agentType: 'security-reviewer' }
+  ),
+])
 
-  log(crRetries === 0 ? `code-reviewer: running ${effort} review...` : `code-reviewer: retry ${crRetries}/${MAX_RETRIES}...`)
-
-  crResult = await agent(
-    `Task: ${task}\n\nReview the implementation with effort=${effort}. Run static analysis, check spec compliance (Pass A), then quality audit (Pass B).${retryContext}`,
-    { label: `code-reviewer${crRetries > 0 ? `-r${crRetries}` : ''}`, phase: 'Review', schema: GATE_SCHEMA, agentType: 'code-reviewer' }
-  )
-
-  if (!crResult || crResult.pipeline_gate !== 'BLOCK') break
-
-  // Fix Critical findings before re-reviewing
-  log(`code-reviewer: Critical findings — sending back to developer...`)
-  devResult = await agent(
-    `Task: ${task}\n\nFix the following Critical findings from code-reviewer (retry ${crRetries + 1}/${MAX_RETRIES}):\n${formatFindings(criticalFindings(crResult))}\n\nFix only the listed items. Do not change unflagged code. Re-run tests after each fix.`,
-    { label: `developer-cr-fix-r${crRetries + 1}`, phase: 'Review', schema: GATE_SCHEMA, agentType: 'developer' }
-  )
-  crRetries++
-}
-
-if (crRetries > MAX_RETRIES) {
-  log(`code-reviewer: exceeded ${MAX_RETRIES} retry cycles — escalating.`)
-  return { outcome: 'BLOCKED', stage: 'code-reviewer', retries: crRetries, findings: crResult ? crResult.findings : [] }
-}
-log(`code-reviewer: ${crResult ? crResult.verdict : 'PASS'} — ${crResult ? crResult.summary : ''}`)
-
-// ── Stage 6: Security review ─────────────────────────────────────────────
-phase('Security')
-log('security-reviewer: running OWASP + STRIDE audit...')
-
-const sec = await agent(
-  `Task: ${task}\n\nRun the full security audit: secrets detection (SEC-4), OWASP A01–A10, STRIDE threat model, dependency audit. Cite file:line for every finding.`,
-  { label: 'security-reviewer', phase: 'Security', schema: GATE_SCHEMA, agentType: 'security-reviewer' }
-)
-
+// Security result — hard stop, no retry
 if (!sec || sec.pipeline_gate === 'ESCALATE') {
   log('ESCALATION: secret found in security review — pipeline blocked.')
   return { outcome: 'BLOCKED', stage: 'security-reviewer', reason: sec ? sec.summary : 'No response — treated as ESCALATE' }
 }
-
 if (sec.pipeline_gate === 'BLOCK') {
   log(`security-reviewer: CRITICAL/HIGH findings — escalating to human.`)
   return { outcome: 'BLOCKED', stage: 'security-reviewer', reason: sec.summary, findings: sec.findings }
 }
 log(`security-reviewer: ${sec.verdict} — ${sec.summary}`)
+
+// Code review retry loop — re-runs only code-reviewer, security already passed
+let crResult = crInitial
+let crRetries = 0
+
+while (crRetries < MAX_RETRIES && crResult && crResult.pipeline_gate === 'BLOCK') {
+  log(`code-reviewer: Critical findings — sending back to developer... (fix ${crRetries + 1}/${MAX_RETRIES})`)
+  devResult = await agent(
+    `Task: ${task}\n\nFix the following Critical findings from code-reviewer (retry ${crRetries + 1}/${MAX_RETRIES}):\n${formatFindings(criticalFindings(crResult))}\n\nFix only the listed items. Do not change unflagged code. Re-run tests after each fix.`,
+    { label: `developer-cr-fix-r${crRetries + 1}`, phase: 'Review', schema: GATE_SCHEMA, agentType: 'developer' }
+  )
+  crRetries++
+  log(`code-reviewer: re-reviewing after fix ${crRetries}/${MAX_RETRIES}...`)
+  crResult = await agent(
+    `Task: ${task}\n\nRe-review with effort=${effort}. Verify these Critical findings are resolved:\n${formatFindings(criticalFindings(crResult))}`,
+    { label: `code-reviewer-r${crRetries}`, phase: 'Review', schema: GATE_SCHEMA, agentType: 'code-reviewer' }
+  )
+}
+
+if (crResult && crResult.pipeline_gate === 'BLOCK') {
+  log(`code-reviewer: exceeded ${MAX_RETRIES} fix cycle(s) — escalating.`)
+  return { outcome: 'BLOCKED', stage: 'code-reviewer', retries: crRetries, findings: crResult ? crResult.findings : [] }
+}
+log(`code-reviewer: ${crResult ? crResult.verdict : 'PASS'} — ${crResult ? crResult.summary : ''}`)
 
 // ── Stage 7: Verify ───────────────────────────────────────────────────────
 phase('Verify')

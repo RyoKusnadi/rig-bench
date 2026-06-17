@@ -3,8 +3,7 @@ export const meta = {
   description: 'Release prep pipeline: memory-load → secret-scanner → dependency-auditor → git-assistant (release mode) → memory-save',
   phases: [
     { title: 'Memory', detail: 'load prior release context and known CVE history' },
-    { title: 'Pre-flight', detail: 'secret-scanner credential check on full branch' },
-    { title: 'Dependencies', detail: 'dependency-auditor CVE and hygiene scan' },
+    { title: 'Pre-flight', detail: 'secret-scanner + dependency-auditor in parallel' },
     { title: 'Release', detail: 'git-assistant creates release PR with CHANGELOG' },
     { title: 'Memory', detail: 'save release outcome and CVE findings' },
   ],
@@ -52,14 +51,20 @@ const memBrief = await agent(
 )
 log('memory loaded.')
 
-// ── Stage 1: Secret scan ───────────────────────────────────────────────────
+// ── Stages 1+2: Secret scan + Dependency audit (parallel) ─────────────────
 phase('Pre-flight')
-log('secret-scanner: full branch credential check before release...')
+log('secret-scanner + dependency-auditor: running in parallel...')
 
-const scan = await agent(
-  `Pre-release SEC-4 scan for v${version}. Run all 8 patterns against the full diff from the release branch. Any match blocks the release.`,
-  { label: 'secret-scanner', phase: 'Pre-flight', schema: GATE_SCHEMA, agentType: 'secret-scanner' }
-)
+const [scan, deps] = await parallel([
+  () => agent(
+    `Pre-release SEC-4 scan for v${version}. Run all 8 patterns against the full diff from the release branch. Any match blocks the release.`,
+    { label: 'secret-scanner', phase: 'Pre-flight', schema: GATE_SCHEMA, agentType: 'secret-scanner' }
+  ),
+  () => agent(
+    `Pre-release dependency audit for v${version}. Scan all manifests (npm, Go, Python, Rust, .NET, Ruby, Maven) for CVEs, unpinned versions, abandoned packages, and license conflicts. Every Critical CVE is a release blocker.`,
+    { label: 'dependency-auditor', phase: 'Pre-flight', schema: GATE_SCHEMA, agentType: 'dependency-auditor' }
+  ),
+])
 
 if (!scan || scan.pipeline_gate === 'ESCALATE') {
   log('ESCALATION: secret found — release blocked. Rotate credential, clean history, then rerun.')
@@ -70,15 +75,6 @@ if (!scan || scan.pipeline_gate === 'ESCALATE') {
   }
 }
 log(`secret-scanner: ${scan.verdict} — branch is clean`)
-
-// ── Stage 2: Dependency audit ──────────────────────────────────────────────
-phase('Dependencies')
-log('dependency-auditor: scanning all manifests for release blockers...')
-
-const deps = await agent(
-  `Pre-release dependency audit for v${version}. Scan all manifests (npm, Go, Python, Rust, .NET, Ruby, Maven) for CVEs, unpinned versions, abandoned packages, and license conflicts. Every Critical CVE is a release blocker.`,
-  { label: 'dependency-auditor', phase: 'Dependencies', schema: GATE_SCHEMA, agentType: 'dependency-auditor' }
-)
 
 if (!deps || deps.verdict === 'CRITICAL_CVE' || deps.pipeline_gate === 'BLOCK') {
   log(`dependency-auditor: CRITICAL_CVE or BLOCK — release blocked. ${deps ? deps.summary : 'No response.'}`)

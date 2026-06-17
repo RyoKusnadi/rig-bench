@@ -2,7 +2,6 @@ export const meta = {
   name: 'docs-update',
   description: 'Docs update pipeline: memory-load → docs-writer → git-assistant → memory-save',
   phases: [
-    { title: 'Memory', detail: 'load context for docs change' },
     { title: 'Write', detail: 'docs-writer updates README, CLAUDE.md, docstrings' },
     { title: 'PR', detail: 'git-assistant creates draft PR' },
     { title: 'Memory', detail: 'save docs update outcome' },
@@ -39,22 +38,12 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
-// ── Stage 0: Memory load ──────────────────────────────────────────────────
-phase('Memory')
-log('memory-manager: loading context for docs update...')
-
-const memBrief = await agent(
-  `LOAD task="docs update: ${trigger}". Read .claude/memory/ and return a context brief of relevant architecture facts, prior docs-writer runs, and any known doc patterns for this project.`,
-  { label: 'memory-manager:load', phase: 'Memory', agentType: 'memory-manager' }
-)
-log('memory loaded.')
-
-// ── Stage 1: Write docs ───────────────────────────────────────────────────
+// ── Stage 0: Write docs ───────────────────────────────────────────────────
 phase('Write')
 log('docs-writer: reading changes and updating documentation...')
 
 const docs = await agent(
-  `Trigger: ${trigger}${scope}\n\n${memBrief ? `Prior project memory:\n${memBrief}\n\n` : ''}Read what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings. Verify every code example actually runs. Do NOT touch CHANGELOG.md.`,
+  `Trigger: ${trigger}${scope}\n\nRead what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings. Verify every code example actually runs. Do NOT touch CHANGELOG.md.`,
   { label: 'docs-writer', phase: 'Write', schema: GATE_SCHEMA, agentType: 'docs-writer' }
 )
 

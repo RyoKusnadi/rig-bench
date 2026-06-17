@@ -15,7 +15,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:github.com)",
       "Bash(python3 -c ' *)",
-      "Bash(grep -E \"\\\\.\\(md|json|yaml|yml|txt|sh\\)$|Makefile|Dockerfile\")"
+      "Bash(grep -E \"\\\\.\\(md|json|yaml|yml|txt|sh\\)$|Makefile|Dockerfile\")",
+      "Skill(loop)"
     ]
   }
 }

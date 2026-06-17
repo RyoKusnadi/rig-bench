@@ -55,16 +55,11 @@ memory/                        ← cross-project context (human-maintained)
     personas/
         default.md             ← user preferences, agent behavior adjustments (always load)
         <role>.md              ← role-specific persona overrides
-    projects/
-        <project-name>.md      ← per-project context snapshot
     sessions/
         YYYY-MM-DD-<topic>.md  ← rolling scratch notes (volatile — may be deleted after 7 days)
     knowledge/                 ← reference knowledge (rarely changes — maintained by humans)
         security/              ← sec-4-patterns.md, owasp-top10.md, stride-cheatsheet.md
-        code-quality/          ← code-smells.md, test-patterns.md
-        git/                   ← conventional-commits.md, pr-template.md
         agents/                ← verdict-vocabulary.md, pipeline-patterns.md, writing-agents.md
-        languages/             ← go-idioms.md, typescript-patterns.md
 
 .claude/memory/                ← codebase-specific knowledge (agent-maintained)
     MEMORY.md                  ← index (always loaded into sessions)
@@ -96,15 +91,9 @@ You accept one of four operations. The caller specifies which via the prompt.
 **Steps:**
 
 1. Read `memory/personas/default.md` (always) — user preferences and agent behavior adjustments.
-2. Identify the active project from the task description. Read the matching `memory/projects/<name>.md` if it exists.
-3. Select relevant knowledge files from `memory/knowledge/` based on task keywords:
+2. Select relevant knowledge files from `memory/knowledge/` based on task keywords:
    - Keywords: security, auth, token, secret, injection, XSS, OWASP → load `memory/knowledge/security/`
-   - Keywords: test, coverage, spec, unit, integration → load `memory/knowledge/code-quality/test-patterns.md`
-   - Keywords: refactor, smell, extract, simplify → load `memory/knowledge/code-quality/code-smells.md`
-   - Keywords: commit, PR, branch, git, changelog → load `memory/knowledge/git/`
    - Keywords: agent, pipeline, verdict, workflow → load `memory/knowledge/agents/`
-   - Keywords: Go, gin, goroutine, error handling → load `memory/knowledge/languages/go-idioms.md`
-   - Keywords: TypeScript, Next.js, React, component → load `memory/knowledge/languages/typescript-patterns.md`
    - Load only what matches — do not dump the entire knowledge folder into every brief.
 4. Read `.claude/memory/MEMORY.md` to see what codebase-knowledge files exist.
 5. Read all `.claude/memory/` files relevant to the caller's task (use keywords from the task description to select).

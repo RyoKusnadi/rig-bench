@@ -100,21 +100,26 @@ flowchart TD
     PL_gate -- PLAN_READY --> DEV[developer]
 
     DEV --> TW[test-writer]
-    TW --> CR[code-reviewer]
+    TW --> Parallel
+
+    subgraph Parallel [Run in parallel]
+        CR[code-reviewer]
+        SR[security-reviewer]
+    end
 
     CR --> CR_gate{verdict?}
-    CR_gate -- CRITICAL_BLOCK\nretry ≤ 2 --> DEV
-    CR_gate -- CRITICAL_BLOCK\nretry > 2 --> Human2([🤚 Escalate to human])
-    CR_gate -- CLEAN / MAJOR_ONLY --> SR[security-reviewer]
+    CR_gate -- CRITICAL_BLOCK\nretry ≤ 1 --> DEV
+    CR_gate -- CRITICAL_BLOCK\nretry > 1 --> Human2([🤚 Escalate to human])
+    CR_gate -- CLEAN / MAJOR_ONLY --> VF[verifier]
 
     SR --> SR_gate{verdict?}
     SR_gate -- SECRET_FOUND --> BLOCKED2([🚨 BLOCKED\nZero retries])
     SR_gate -- CRITICAL_BLOCK --> Human3([🤚 Escalate to human])
-    SR_gate -- CLEAN --> VF[verifier]
+    SR_gate -- CLEAN --> VF
 
     VF --> VF_gate{VERIFIED?}
-    VF_gate -- SPEC_VIOLATION\nretry ≤ 2 --> DEV
-    VF_gate -- SPEC_VIOLATION\nretry > 2 --> Human4([🤚 Escalate to human])
+    VF_gate -- SPEC_VIOLATION\nretry ≤ 1 --> DEV
+    VF_gate -- SPEC_VIOLATION\nretry > 1 --> Human4([🤚 Escalate to human])
     VF_gate -- VERIFIED --> GA[git-assistant]
 
     GA --> PR([✅ Draft PR created])
@@ -139,7 +144,7 @@ flowchart TD
     TW --> VF[verifier]
 
     VF --> VF_gate{VERIFIED?}
-    VF_gate -- SPEC_VIOLATION\nretry ≤ 2 --> DEV
+    VF_gate -- SPEC_VIOLATION\nretry ≤ 1 --> DEV
     VF_gate -- VERIFIED --> GA[git-assistant]
 
     GA --> PR([✅ Draft PR created])
@@ -159,7 +164,7 @@ flowchart TD
     RF_gate -- REFACTORED --> CR[code-reviewer]
 
     CR --> CR_gate{verdict?}
-    CR_gate -- CRITICAL_BLOCK\nretry ≤ 2 --> RF
+    CR_gate -- CRITICAL_BLOCK\nretry ≤ 1 --> RF
     CR_gate -- CLEAN / MAJOR_ONLY --> VF[verifier]
 
     VF --> VF_gate{VERIFIED?}
@@ -215,11 +220,20 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Start([Cutting a release]) --> DA[dependency-auditor]
+    Start([Cutting a release]) --> Parallel
+
+    subgraph Parallel [Run in parallel]
+        SS[secret-scanner]
+        DA[dependency-auditor]
+    end
+
+    SS --> SS_gate{CLEAN?}
+    SS_gate -- ESCALATION --> BLOCKED1([🚨 BLOCKED\nRotate credential])
     DA --> DA_gate{verdict?}
-    DA_gate -- CRITICAL_CVE --> BLOCKED([🚨 BLOCKED\nFix CVE first])
-    DA_gate -- CLEAN / HYGIENE_FLAGS --> GA[git-assistant\nrelease mode]
-    GA --> Tag([✅ Tag + CHANGELOG updated])
+    DA_gate -- CRITICAL_CVE --> BLOCKED2([🚨 BLOCKED\nFix CVE first])
+    SS_gate -- CLEAN --> GA[git-assistant\nrelease mode]
+    DA_gate -- CLEAN / HYGIENE_FLAGS --> GA
+    GA --> PR([✅ Release PR created])
 ```
 
 ---
@@ -252,7 +266,7 @@ flowchart LR
 
 **Key behaviors:**
 - **Mandatory synthesis step** — before every dispatch, reads the prior agent's `<task-notification>` XML and `## HANDOFF` YAML, extracts `file:line` findings, and builds a targeted `<synthesis>` XML block. Never pipes raw output forward.
-- **Per-stage retry counter** — max 2 retries per stage (3 total attempts), then escalates to you with the full attempt history.
+- **Per-stage retry counter** — max 1 retry per stage (2 total attempts), then escalates to you with the full attempt history.
 - **SECRET_FOUND zero retries** — any secret escalation immediately stops the pipeline. Resume only after you confirm `RESOLVED`, `ACCEPTED-RISK`, or `ABORT`.
 
 **Call it with:** `"implement X end to end"` · `"review PR #N before I merge"` · `"fix this bug and get it to a PR"`
@@ -492,9 +506,6 @@ You are a [role]. [System prompt follows...]
 
 ## Roadmap
 
-Phase 2 improvements (see `implementation-plan.md`):
-
-- `isolation: worktree` — run parallel mutating agents in isolated git worktrees without conflicts
-- `changelog-writer` agent — dedicated CHANGELOG.md management at release time
+- `isolation: worktree` in agent frontmatter — run parallel mutating agents in isolated git worktrees without conflicts (runtime `isolation` in workflow `agent()` calls already works; frontmatter field is reserved)
 - IDE LSP integration — `mcp__ide__getDiagnostics` always active for TypeScript projects
-- Cross-agent deduplication — orchestrator merges duplicate findings across parallel review stages
+- Reviewer merge — combine `code-reviewer` + `security-reviewer` into a single two-pass agent to reduce parallel agent overhead

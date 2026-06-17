@@ -108,7 +108,7 @@ Six deterministic pipelines. Arguments are passed as structured objects; all gat
                     │
                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  IMPLEMENT  (retry ≤ 2)                                              │
+│  IMPLEMENT  (retry ≤ 1)                                              │
 │  developer ──► write failing test → implement → pass test suite     │
 └───────────────────┬─────────────────────────────────────────────────┘
                     │
@@ -120,19 +120,15 @@ Six deterministic pipelines. Arguments are passed as structured objects; all gat
                     │
                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  CODE REVIEW  (retry ≤ 2)                                            │
-│  code-reviewer ──► CRITICAL_BLOCK? ──► developer fixes ──► re-review│
+│  REVIEW  (parallel, code-reviewer retry ≤ 1)                         │
+│  code-reviewer ──┐                                                   │
+│                  ├──► CRITICAL_BLOCK? ──► developer fixes            │
+│  security-reviewer ──► ESCALATE? ──► STOP (no retry)                 │
 └───────────────────┬─────────────────────────────────────────────────┘
                     │ PASS
                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  SECURITY REVIEW  (retry ≤ 2)                                        │
-│  security-reviewer ──► CRITICAL? ──► developer fixes ──► re-review  │
-└───────────────────┬─────────────────────────────────────────────────┘
-                    │ PASS
-                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  VERIFY  (retry ≤ 2)                                                 │
+│  VERIFY  (retry ≤ 1)                                                 │
 │  verifier ──► SPEC_VIOLATION? ──► developer fixes ──► re-verify     │
 └───────────────────┬─────────────────────────────────────────────────┘
                     │ VERIFIED
@@ -168,7 +164,7 @@ Six deterministic pipelines. Arguments are passed as structured objects; all gat
                      │
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  FIX  (retry ≤ 2)                                            │
+│  FIX  (retry ≤ 1)                                            │
 │  developer ──► write regression test FIRST → minimal fix     │
 └────────────────────┬─────────────────────────────────────────┘
                      │
@@ -180,7 +176,7 @@ Six deterministic pipelines. Arguments are passed as structured objects; all gat
                      │
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  VERIFY  (retry ≤ 2)                                         │
+│  VERIFY  (retry ≤ 1)                                         │
 │  verifier ──► bug resolved + no adjacent regressions         │
 └────────────────────┬─────────────────────────────────────────┘
                      │ VERIFIED
@@ -209,11 +205,11 @@ refactorer ──► smell-by-smell refactor, run tests after each change
     │               │
     │           NO_TESTS ──► block until test-writer runs first
     │
-    ▼  (retry ≤ 2)
+    ▼  (retry ≤ 1)
 code-reviewer ──► CRITICAL_BLOCK? ──► refactorer fixes ──► re-review
     │ PASS
     ▼
-verifier ──► SPEC_VIOLATION? ──► refactorer fixes ──► re-verify  (retry ≤ 2)
+verifier ──► SPEC_VIOLATION? ──► refactorer fixes ──► re-verify  (retry ≤ 1)
     │ VERIFIED
     ▼
 git-assistant ──► Draft PR
@@ -252,9 +248,6 @@ Return: overall_gate, blocking_count, merged_findings
 ### 5. `docs-update` — Documentation Sync
 
 ```
-LOAD MEMORY
-    │
-    ▼
 docs-writer ──► update README / CLAUDE.md / docstrings, verify examples compile
     │
     ▼
@@ -274,10 +267,9 @@ SAVE MEMORY
 LOAD MEMORY
     │
     ▼
-secret-scanner ──► SECRET_FOUND? ──► STOP
-    │ PASS
-    ▼
-dependency-auditor ──► CRITICAL_CVE? ──► STOP (fix before releasing)
+secret-scanner ──┐
+                 ├──► (parallel) ──► ESCALATION/CRITICAL_CVE? ──► STOP
+dependency-auditor ──┘
     │ PASS
     ▼
 git-assistant (release mode)
@@ -299,10 +291,10 @@ SAVE MEMORY → dep verdict, hygiene flags, PR reference
 |---|---|---|---|
 | `SECRET_FOUND` / `ESCALATION` | secret-scanner | Hard stop — human rotates credential | 0 |
 | `CRITICAL_CVE` | dependency-auditor | Release blocked — fix CVE first | 0 |
-| `CRITICAL_BLOCK` | code-reviewer | Hand off to developer for fixes | ≤ 2 |
-| `SPEC_VIOLATION` | verifier | Hand off to developer for fixes | ≤ 2 |
+| `CRITICAL_BLOCK` | code-reviewer | Hand off to developer for fixes | ≤ 1 |
+| `SPEC_VIOLATION` | verifier | Hand off to developer for fixes | ≤ 1 |
 | `NO_TESTS` | refactorer | Procedural block — test-writer must run first | N/A |
-| Any gate after 2 retries | any | Escalate to human with full attempt history | — |
+| Any gate after 1 retry | any | Escalate to human with full attempt history | — |
 | Missing `<task-notification>` | any | Treated as BLOCK — malformed responses fail safe | — |
 
 ---
@@ -316,6 +308,7 @@ Two hooks intercept every Bash call Claude Code makes:
 Runs **before** every Bash tool use. Blocks:
 - Direct push to default branch (`main` / `master`)
 - Force push (`--force`, `--force-with-lease`, `-f`)
+- `git reset --hard` (destructive — user must run manually)
 
 Exit 0 = allow. Exit 2 = block with message shown to the model.
 

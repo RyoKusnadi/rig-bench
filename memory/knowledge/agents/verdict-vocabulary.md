@@ -1,6 +1,6 @@
 # Verdict Vocabulary
 
-All verdicts for all 14 agents. The orchestrator reads `<task-notification>` XML and parses `<verdict>` and `<pipeline-gate>` to decide whether to advance, retry, or escalate.
+All verdicts for all agents. The orchestrator reads `<task-notification>` XML and parses `<verdict>` and `<pipeline-gate>` to decide whether to advance, retry, or escalate.
 
 ---
 
@@ -9,7 +9,6 @@ All verdicts for all 14 agents. The orchestrator reads `<task-notification>` XML
 | Agent | Verdicts | Pipeline gate values |
 |---|---|---|
 | `memory-manager` | `LOADED` · `SAVED` · `UPDATED` · `QUERIED` · `SCAFFOLDED` | `PASS` |
-| `knowledge-base` | `FOUND` · `NOT_FOUND` | `PASS` |
 | `secret-scanner` | `CLEAN` · `ESCALATION` | `PASS` · `ESCALATE` |
 | `planner` | `PLAN_READY` · `DECISION_NEEDED` | `PASS` · `BLOCK` |
 | `developer` | `IMPLEMENTED` · `GATE_FAIL` | `PASS` · `BLOCK` |
@@ -31,13 +30,13 @@ All verdicts for all 14 agents. The orchestrator reads `<task-notification>` XML
 | Verdict | Gate | Orchestrator action |
 |---|---|---|
 | Any `ESCALATION` or `SECRET_FOUND` | `ESCALATE` | Stop pipeline. Zero retries. Human must resolve. |
-| `CRITICAL_BLOCK` (code-reviewer) | `BLOCK` | Return to developer with Critical findings. Retry ≤ 2. |
+| `CRITICAL_BLOCK` (code-reviewer) | `BLOCK` | Return to developer with Critical findings. Retry ≤ 1. |
 | `CRITICAL_BLOCK` / `HIGH_BLOCK` (security-reviewer) | `BLOCK` | Escalate to human if fix is non-obvious. |
-| `SPEC_VIOLATION` (verifier) | `BLOCK` | Return to developer with fix instructions. Retry ≤ 2. |
+| `SPEC_VIOLATION` (verifier) | `BLOCK` | Return to developer with fix instructions. Retry ≤ 1. |
 | `CRITICAL_CVE` (dependency-auditor) | `BLOCK` | Block release pipeline only (report-only on feature pipeline). |
 | `DECISION_NEEDED` (planner) | `BLOCK` | Stop. Human must answer decision before continuing. |
 | `NO_TESTS` (refactorer) | `BLOCK` | Stop. Run test-writer first. Not a retry situation. |
-| Any agent `BLOCKED` after 2 retries | `ESCALATE` | Stop pipeline. Report attempt history to human. |
+| Any agent `BLOCKED` after 1 retry | `ESCALATE` | Stop pipeline. Report attempt history to human. |
 | Absent or malformed `<task-notification>` | `BLOCK` | Treat as BLOCK. Never assume PASS on missing data. |
 
 ---

@@ -90,7 +90,7 @@ Choose the appropriate predefined chain based on task type:
 
 ### New feature
 ```
-planner → developer → test-writer → code-reviewer → security-reviewer → verifier → git-assistant
+planner → developer → test-writer → [code-reviewer + security-reviewer in parallel] → verifier → git-assistant
 ```
 
 ### Bug fix
@@ -121,7 +121,7 @@ docs-writer → git-assistant
 
 ### Release prep
 ```
-dependency-auditor → git-assistant (release mode)
+[secret-scanner + dependency-auditor in parallel] → git-assistant (release mode)
 ```
 
 ### Custom pipeline
@@ -201,7 +201,7 @@ Do not assume the sub-agent has context from this conversation.
 
 Parse the `<task-notification>` XML from each completed agent to determine gate outcome. **If `<task-notification>` is absent or malformed, treat the outcome as `blocked` and escalate immediately.**
 
-Each stage has an independent retry counter. Max 2 retries per stage (3 total attempts). On the 3rd failure, stop the pipeline and escalate to human with: `pipeline-name`, `stage`, `agent`, attempt history (verdict + fix applied per attempt), remaining blockers verbatim, and `human-action-required` classification.
+Each stage has an independent retry counter. Max 1 retry per stage (2 total attempts). On the 2nd failure, stop the pipeline and escalate to human with: `pipeline-name`, `stage`, `agent`, attempt history (verdict + fix applied per attempt), remaining blockers verbatim, and `human-action-required` classification.
 
 | Agent | `<verdict>` | `<pipeline-gate>` | Action |
 |---|---|---|---|
@@ -214,7 +214,7 @@ Each stage has an independent retry counter. Max 2 retries per stage (3 total at
 | `verifier` | `VERIFIED` | PASS | Advance to git-assistant |
 | `dependency-auditor` | `CRITICAL_CVE` | BLOCK (release only) | Block release pipeline; report only on feature pipeline |
 | `dependency-auditor` | `CLEAN` or `HYGIENE_FLAGS` | PASS | Advance |
-| Any agent | `status=blocked` after 2 retries | ESCALATE | Stop pipeline. Report to human. |
+| Any agent | `status=blocked` after 1 retry | ESCALATE | Stop pipeline. Report to human. |
 
 **Security escalation:** `SECRET_FOUND` is never retried. The pipeline stops. Resume only after the human confirms: `RESOLVED` (credential rotated + history cleaned), `ACCEPTED-RISK` (documented exception), or `ABORT` (pipeline abandoned).
 
@@ -265,9 +265,9 @@ Include the stage results table and any blocking findings in the SAVE call so me
 
 ## Retry and escalation
 
-- Each stage gets **maximum 2 retries** after a failure before escalating.
+- Each stage gets **maximum 1 retry** after a failure before escalating.
 - On escalation: stop the pipeline, report the current state, describe exactly what failed and what information is needed from the human.
-- **Never loop indefinitely.** 2 retries → escalate, always.
+- **Never loop indefinitely.** 1 retry → escalate, always.
 
 ---
 
@@ -276,7 +276,7 @@ Include the stage results table and any blocking findings in the SAVE call so me
 1. **Never implement, test, write, or review code yourself.** Dispatch every task to the right agent.
 2. **Always provide full context to each sub-agent** — don't assume they remember prior conversation.
 3. **Enforce quality gates strictly.** A Critical finding from any agent blocks forward progress.
-4. **Max 2 retries per stage** then escalate to human.
+4. **Max 1 retry per stage** then escalate to human.
 5. **State every dispatch decision out loud** — which agent, why, with what inputs. The pipeline must be auditable.
 6. **Do not proceed with incomplete data.** If an agent returns an error or incomplete output, investigate before dispatching the next stage.
 7. **Parallel stages are only safe when outputs are independent.** Review stages (code-reviewer, security-reviewer, dependency-auditor) can run in parallel. Stages that depend on each other's output must run sequentially.
@@ -303,5 +303,4 @@ Include the stage results table and any blocking findings in the SAVE call so me
 | `docs-writer` | Update docs after code changes |
 | `git-assistant` | Create PR, clean commits, branch management |
 | `changelog-writer` | Write CHANGELOG.md entries at release time |
-| `knowledge-base` | Search `memory/knowledge/` for patterns, standards, idioms |
 | `memory-manager` | Load/save project knowledge to `.claude/memory/` |

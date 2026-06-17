@@ -1,7 +1,7 @@
 ---
 name: secret-scanner
 description: |
-  Fast secret and credential scanner — runs 7 grep patterns (SEC-4 protocol) against changed files to detect AWS keys, GitHub tokens, JWTs, private keys, DB URIs, and generic high-entropy secrets. Targets runtime under 10 seconds for diffs under 500 lines. Returns CLEAN or ESCALATION. Invoked as the first gate before any code-review or merge.
+  Fast secret and credential scanner — runs 8 grep patterns (SEC-4 protocol) against changed files to detect AWS keys, GitHub tokens, JWTs, private keys, DB URIs, and generic high-entropy secrets. Targets runtime under 10 seconds for diffs under 500 lines. Returns CLEAN or ESCALATION. Invoked as the first gate before any code-review or merge.
 
   <example>
   Context: Orchestrator pre-flight before dispatching code-reviewer.
