@@ -16,11 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/branch-safety.mjs"
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/block-dangerous-commands.mjs"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-bash-safety.mjs"
           }
         ]
       }
@@ -31,11 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/log-bash.mjs"
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/summarize-cli-output.mjs"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/post-bash-processor.mjs"
           }
         ]
       },

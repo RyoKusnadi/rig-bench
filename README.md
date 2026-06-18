@@ -206,6 +206,24 @@ operator (SHIP, release mode)
 
 ---
 
+## Model Routing
+
+Most `agent()` calls run on each agent's default model (Sonnet, from
+`operator.md`/`inspector.md` frontmatter). Two calls override it deliberately:
+
+| Call | Model | Why |
+|---|---|---|
+| `operator` SHIP-mode calls (all workflows) | Haiku | Pre-flight checks + PR/CHANGELOG formatting — no design or security judgment involved. |
+| `inspector:audit` in `release-prep` | Opus | The last gate before a release ships — the one spot worth paying for frontier reasoning. |
+
+`inspector`'s single-pass review (secrets + OWASP/STRIDE + deps + quality in
+one spawn) deliberately is **not** split across models per dimension — doing
+so would mean splitting that pass back into multiple spawns, undoing the
+spawn-tax reduction the Lean 2 roster was built for. See "Model routing per
+call" in [workflows/README.md](workflows/README.md) for the full rationale.
+
+---
+
 ## Quality Gates
 
 | Verdict | Stage | Action | Retries |
@@ -221,11 +239,18 @@ operator (SHIP, release mode)
 
 ## Hook System
 
-Eight hooks intercept tool calls and session lifecycle events Claude Code makes.
+Six hooks intercept tool calls and session lifecycle events Claude Code makes.
 All hooks are plain Node.js (`.mjs`, no dependencies) rather than Bash — Bash
 hooks throw pathing/quoting errors on native Windows (PowerShell has no `bash`
 on PATH by default), while Node ships wherever Claude Code itself runs.
 Shared stdin/repo-root/block helpers live in `hooks/lib/hook-utils.mjs`.
+
+`PreToolUse: Bash` and `PostToolUse: Bash` each run a single consolidated
+hook rather than two separate processes — `pre-bash-safety.mjs` (branch
+safety + generic destructive-command blocking) and `post-bash-processor.mjs`
+(audit log + verbose-output summarization) — since both halves fire on
+*every* Bash call. One Node process per event instead of two halves the
+spawn overhead on the hottest path in the harness.
 
 ### `hooks/session-start.mjs` (SessionStart)
 
@@ -244,12 +269,17 @@ injects, as `additionalContext`:
 
 Always exits 0 — this hook only adds context, it never blocks a session from starting.
 
-### `hooks/branch-safety.mjs` (PreToolUse)
+### `hooks/pre-bash-safety.mjs` (PreToolUse)
 
-Runs **before** every Bash tool use. Blocks:
+Runs **before** every Bash tool use (merges what used to be two separate hooks,
+`branch-safety.mjs` + `block-dangerous-commands.mjs`). Blocks:
 - Direct push to default branch (`main` / `master`)
 - Force push (`--force`, `--force-with-lease`, `-f`)
 - `git reset --hard` (destructive — user must run manually)
+- `rm -rf` against `/`, `~`, or `.`; fork bombs; `dd`/`mkfs` against block
+  devices; recursive `chmod 777 /`; redirecting into a raw block device;
+  piping a downloaded script straight into a shell (`curl ... | sh`); mass
+  working-tree wipes (`git clean -fd`, `git checkout -- .`)
 
 Exit 0 = allow. Exit 2 = block with message shown to the model.
 
@@ -257,39 +287,36 @@ Exit 0 = allow. Exit 2 = block with message shown to the model.
 Claude issues Bash("git push origin main")
     │
     ▼
-branch-safety.mjs reads stdin JSON
+pre-bash-safety.mjs reads stdin JSON
     │
-    ├── not a git push? ──► exit 0 (allow)
-    ├── push to non-default? ──► exit 0 (allow)
-    └── push to main / force push ──► exit 2 (BLOCKED, message shown)
+    ├── not Bash, or no blocked pattern matched? ──► exit 0 (allow)
+    └── push to main / force push / destructive pattern ──► exit 2 (BLOCKED, message shown)
 ```
 
-### `hooks/log-bash.mjs` (PostToolUse)
+### `hooks/post-bash-processor.mjs` (PostToolUse)
 
-Runs **after** every Bash tool use. Appends to `.claude/bash.log`:
+Runs **after** every Bash tool use (merges what used to be two separate hooks,
+`log-bash.mjs` + `summarize-cli-output.mjs`). Always appends an audit-trail
+line to `.claude/bash.log`:
 
 ```
 [2026-06-16 14:23:01] exit=0 cmd=go test ./...
 [2026-06-16 14:23:08] exit=1 cmd=go build ./cmd/server
 ```
 
-### `hooks/block-dangerous-commands.mjs` (PreToolUse)
-
-Runs **before** every Bash tool use, alongside `branch-safety.mjs`. Blocks generic
-destructive commands unrelated to git branches: `rm -rf` against `/`, `~`, or `.`;
-fork bombs; `dd`/`mkfs` against block devices; recursive `chmod 777 /`; redirecting
-into a raw block device; piping a downloaded script straight into a shell
-(`curl ... | sh`); and mass working-tree wipes (`git clean -fd`, `git checkout -- .`).
-
-```
-Claude issues Bash("rm -rf /")
-    │
-    ▼
-block-dangerous-commands.mjs reads stdin JSON
-    │
-    ├── not Bash, or no destructive pattern matched? ──► exit 0 (allow)
-    └── matches a blocked pattern ──► exit 2 (BLOCKED, message shown)
-```
+Then, if the command matches a known verbose tool (`npm audit`, `go test`,
+`golangci-lint`, `pytest`, `cargo audit`, `pip-audit`, `govulncheck`), greps
+the already-returned output for counts and the first failure, and prints a
+condensed JSON pointer alongside it. **Limitation — by design, not a bug to
+fix:** Claude Code's `PostToolUse` hook contract has no field to override or
+shrink the Bash tool's own returned `stdout`; `additionalContext` only adds
+to what the model sees, it never replaces it. So a hook can't truncate a
+5,000-line `go test`/`npm audit` transcript after the fact — the only real
+lever is the command invocation itself. See "Token-conscious command
+invocation" in `subagents/operator/operator.md` and Step 3 of
+`subagents/inspector/inspector.md` for where that's actually enforced
+(quiet-by-default test flags, `head -N`/`--json` on every static-analysis
+and dependency-audit command).
 
 ### `hooks/auto-run-tests.mjs` (PostToolUse)
 
@@ -302,16 +329,6 @@ extension isn't covered) rather than nagging on every doc/config edit. This is t
 `auto-run-tests` hook from `todo.md` Phase 2 — it doesn't replace the standalone
 verifier step (that's now part of `operator`'s self-verification gate), it just adds a
 fast, cheap pass/fail signal right after a file changes.
-
-### `hooks/summarize-cli-output.mjs` (PostToolUse)
-
-Runs **after** every Bash call, alongside `log-bash.mjs`. When the command matches a
-known verbose tool (`npm audit`, `go test`, `golangci-lint`, `pytest`, `cargo audit`,
-`pip-audit`, `govulncheck`), greps the already-returned output for counts and the
-first failure, and prints a condensed JSON pointer. **Limitation:** a `PostToolUse`
-hook's stdout is *additional* context — it cannot shrink or replace the verbose
-output the Bash tool already returned. This hook adds a "here's the gist" line next
-to a long transcript; it does not truncate it.
 
 ### `hooks/evaluate-session.mjs` (Stop)
 
@@ -345,6 +362,15 @@ user-turn messages from the transcript (the closest available proxy for "the
 original task") into `.claude/session-state/compact.json`, so a long `operator` run
 doesn't lose track of its original request across a compaction. **Always exits 0** —
 exit 2 on PreCompact blocks compaction entirely, which is never the intent here.
+
+`SessionStart` only re-injects this snapshot at the *start* of a session — if
+compaction happens mid-session (a long BUILD task, or a `maximum`-effort
+inspector run), nothing fires automatically to put it back in front of the
+model. `operator.md`'s "Context recovery" section and the matching note in
+`inspector.md` cover that case: if the agent suspects it just got compacted
+(it's unsure of the original task, or about to re-derive a decision it's
+fairly sure it already made), it `Read`s `compact.json` itself and
+cross-checks against the actual working tree before continuing.
 
 ---
 

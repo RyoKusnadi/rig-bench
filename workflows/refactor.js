@@ -109,7 +109,9 @@ log('operator: pushing branch and creating draft PR...')
 
 const ship = await agent(
   `Mode: SHIP\n\nRefactoring complete: ${target} (goal: ${goal})\n\nRun pre-flight checks, push the branch, create a draft PR noting what smells were fixed and that tests are unchanged, and save the refactor outcome to .claude/memory/.`,
-  { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator' }
+  // SHIP is pre-flight checks + PR formatting, no design/security judgment —
+  // Haiku is plenty for it and costs a fraction of Sonnet.
+  { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator', model: 'claude-haiku-4-5-20251001' }
 )
 
 if (!ship || ship.pipeline_gate === 'BLOCK') {

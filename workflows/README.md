@@ -213,3 +213,41 @@ return { outcome: 'COMPLETE', summary: '...' }
 ```
 
 See [SCHEMA.md](../subagents/SCHEMA.md) for the full agent frontmatter reference.
+
+---
+
+## Prompt minimality (audited)
+
+Every `agent()` call across all six workflows passes only a high-level task
+description (the caller's `task`/`bug`/`target`/`trigger`, plus retry
+findings already extracted into `{severity, file, line, message}` — never raw
+text). None inline a `git diff`, full file contents, or a raw tool-output
+blob into the prompt string — `operator` and `inspector` are expected to
+`Grep`/`Read` their own way to the relevant code (see "Context isolation" at
+the top of each agent's `.md`). If you add a workflow, keep that invariant:
+the prompt is the *what*, not the *where* — let the agent fetch the *where*
+itself, so spawn-time context stays proportional to the task, not the diff
+size.
+
+## Model routing per call
+
+`agent()` accepts a `model` override per call (see `opts.model` above). This
+harness uses it sparingly, not per the literal "quality dimension → model"
+table you might expect from a generic cost-optimization checklist:
+
+| Call | Model | Why |
+|---|---|---|
+| `operator` SHIP-mode calls (all workflows) | Haiku | Pre-flight checks + PR/CHANGELOG formatting — no design or security judgment involved. |
+| `inspector:audit` in `release-prep` | Opus | The last gate before a release ships — the one spot worth paying for frontier reasoning. |
+| Everything else (`operator` BUILD/REFACTOR/DOCS, every other `inspector` call) | Default (Sonnet, from each agent's frontmatter) | Left alone deliberately. |
+
+**Why `inspector` isn't split by dimension (quality vs. security) onto
+different models:** `inspector` runs secrets, OWASP/STRIDE, dependency audit,
+and code quality in **one pass, one spawn** — that consolidation (replacing 3
+separate reviewers) is the entire point of the "Lean 2" roster and the
+spawn-tax reduction it bought. Routing each dimension to a different model
+would mean splitting that single pass back into multiple `agent()` calls,
+which reintroduces the per-spawn overhead this harness was built to
+eliminate. If a specific pipeline turns out to need frontier-level security
+reasoning on every run (not just `release-prep`), override `model` on that
+pipeline's `inspector` call — don't fragment the agent itself.
