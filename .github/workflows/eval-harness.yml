@@ -14,18 +14,34 @@ jobs:
     # this needs a few real runs against this repo's own baseline before
     # it's trusted to block a merge on token/pass@1 regressions.
     continue-on-error: true
-    if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
+      # The `secrets` context can't be referenced directly in a job-level
+      # `if:` — so check for the key here and gate every later step on this
+      # step's output instead.
+      - name: Check for ANTHROPIC_API_KEY
+        id: check
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.check.outputs.has_key == 'true'
         with:
           node-version: '20'
 
       - name: Install Claude Code CLI
+        if: steps.check.outputs.has_key == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Run golden-task eval
+        if: steps.check.outputs.has_key == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node eval-harness/run-eval.js
