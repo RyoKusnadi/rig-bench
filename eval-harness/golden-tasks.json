@@ -1,0 +1,12 @@
+[
+  {
+    "id": "task-01",
+    "prompt": "Add JWT refresh token support to the auth module",
+    "expected_artifacts": ["jwt"]
+  },
+  {
+    "id": "task-02",
+    "prompt": "Refactor the database connection pool to use pgBouncer",
+    "expected_artifacts": ["pgbouncer", "pool"]
+  }
+]

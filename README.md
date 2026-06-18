@@ -23,12 +23,13 @@ A production-grade multi-agent harness for AI-driven software engineering. Provi
 rig-bench/
 ├── subagents/       # 2 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster
 ├── workflows/       # 6 deterministic pipelines (.js orchestration scripts)
-├── hooks/           # Git/Claude Code safety hooks (.sh)
+├── hooks/           # Git/Claude Code safety + lifecycle hooks (.mjs, Node.js — cross-platform)
 ├── memory/          # Portable cross-project context (personas, projects, knowledge)
+├── eval-harness/    # Golden-task harness proving pass@1 stayed stable as the roster shrank
 └── .claude/         # Project-level settings, commands, and codebase memory
-    ├── settings.json         # Hook wiring (PreToolUse / PostToolUse)
+    ├── settings.json         # Hook wiring (SessionStart / PreToolUse / PostToolUse / Stop / PreCompact)
     ├── settings.local.json   # Permissions allowlist
-    ├── commands/             # Custom slash commands (/ship, /audit, /review)
+    ├── commands/             # Custom slash commands (/ship, /audit, /review, /evolve)
     └── memory/               # Codebase facts (conventions, architecture, gotchas)
 ```
 
@@ -42,6 +43,11 @@ Each agent is a single `.md` file with YAML frontmatter declaring its model, too
 |---|---|---|---|
 | `operator` | Plans, implements (TDD), tests, self-verifies, refactors, diagnoses bugs, writes docs/CHANGELOG, ships (commit + draft PR) — run in BUILD / REFACTOR / DOCS / SHIP mode | Sonnet | manual |
 | `inspector` | Read-only adversarial review in one pass: secrets (SEC-4), OWASP/STRIDE, dependency/CVE audit, two-pass code quality (low / medium / high / maximum effort) | Sonnet | semi-auto |
+
+Both agents are spawned with zero pre-loaded file context — they `Grep` for the
+modules/symbols the task names and `Read` only what that turns up, instead of
+expecting the orchestrator to paste the codebase into the prompt. See the
+"Context isolation" section at the top of each agent's `.md` file.
 
 This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction).
 
@@ -215,9 +221,30 @@ operator (SHIP, release mode)
 
 ## Hook System
 
-Seven hooks intercept tool calls and session lifecycle events Claude Code makes:
+Eight hooks intercept tool calls and session lifecycle events Claude Code makes.
+All hooks are plain Node.js (`.mjs`, no dependencies) rather than Bash — Bash
+hooks throw pathing/quoting errors on native Windows (PowerShell has no `bash`
+on PATH by default), while Node ships wherever Claude Code itself runs.
+Shared stdin/repo-root/block helpers live in `hooks/lib/hook-utils.mjs`.
 
-### `hooks/branch-safety.sh` (PreToolUse)
+### `hooks/session-start.mjs` (SessionStart)
+
+Runs **before the user's first prompt** of every session. Closes the loop the
+other two lifecycle hooks open: `evaluate-session.mjs` (Stop) writes instincts
+and `pre-compact.mjs` (PreCompact) snapshots in-flight task state, but neither
+fires again to put that information back in front of the model. This hook
+injects, as `additionalContext`:
+
+1. The top 3 pending instincts by `occurrences` from `.claude/instincts/pending/`
+   (with a pointer to `/evolve` once any of them recur enough to promote).
+2. The last `PreCompact` snapshot (`.claude/session-state/compact.json`), if one
+   exists — branch, diff stat, and the last user message before compaction.
+3. `.claude/memory/MEMORY.md`, so a plain conversational turn (no agent
+   dispatch) still sees the project memory index.
+
+Always exits 0 — this hook only adds context, it never blocks a session from starting.
+
+### `hooks/branch-safety.mjs` (PreToolUse)
 
 Runs **before** every Bash tool use. Blocks:
 - Direct push to default branch (`main` / `master`)
@@ -230,14 +257,14 @@ Exit 0 = allow. Exit 2 = block with message shown to the model.
 Claude issues Bash("git push origin main")
     │
     ▼
-branch-safety.sh reads stdin JSON
+branch-safety.mjs reads stdin JSON
     │
     ├── not a git push? ──► exit 0 (allow)
     ├── push to non-default? ──► exit 0 (allow)
     └── push to main / force push ──► exit 2 (BLOCKED, message shown)
 ```
 
-### `hooks/log-bash.sh` (PostToolUse)
+### `hooks/log-bash.mjs` (PostToolUse)
 
 Runs **after** every Bash tool use. Appends to `.claude/bash.log`:
 
@@ -246,9 +273,9 @@ Runs **after** every Bash tool use. Appends to `.claude/bash.log`:
 [2026-06-16 14:23:08] exit=1 cmd=go build ./cmd/server
 ```
 
-### `hooks/block-dangerous-commands.sh` (PreToolUse)
+### `hooks/block-dangerous-commands.mjs` (PreToolUse)
 
-Runs **before** every Bash tool use, alongside `branch-safety.sh`. Blocks generic
+Runs **before** every Bash tool use, alongside `branch-safety.mjs`. Blocks generic
 destructive commands unrelated to git branches: `rm -rf` against `/`, `~`, or `.`;
 fork bombs; `dd`/`mkfs` against block devices; recursive `chmod 777 /`; redirecting
 into a raw block device; piping a downloaded script straight into a shell
@@ -258,13 +285,13 @@ into a raw block device; piping a downloaded script straight into a shell
 Claude issues Bash("rm -rf /")
     │
     ▼
-block-dangerous-commands.sh reads stdin JSON
+block-dangerous-commands.mjs reads stdin JSON
     │
     ├── not Bash, or no destructive pattern matched? ──► exit 0 (allow)
     └── matches a blocked pattern ──► exit 2 (BLOCKED, message shown)
 ```
 
-### `hooks/auto-run-tests.sh` (PostToolUse)
+### `hooks/auto-run-tests.mjs` (PostToolUse)
 
 Runs **after** every Write/Edit to a `.go`/`.ts`/`.tsx`/`.js`/`.jsx`/`.py` file. Walks
 up to the nearest `go.mod`/`package.json`/`pyproject.toml`/`setup.py`, runs a scoped
@@ -276,9 +303,9 @@ extension isn't covered) rather than nagging on every doc/config edit. This is t
 verifier step (that's now part of `operator`'s self-verification gate), it just adds a
 fast, cheap pass/fail signal right after a file changes.
 
-### `hooks/summarize-cli-output.sh` (PostToolUse)
+### `hooks/summarize-cli-output.mjs` (PostToolUse)
 
-Runs **after** every Bash call, alongside `log-bash.sh`. When the command matches a
+Runs **after** every Bash call, alongside `log-bash.mjs`. When the command matches a
 known verbose tool (`npm audit`, `go test`, `golangci-lint`, `pytest`, `cargo audit`,
 `pip-audit`, `govulncheck`), greps the already-returned output for counts and the
 first failure, and prints a condensed JSON pointer. **Limitation:** a `PostToolUse`
@@ -286,7 +313,7 @@ hook's stdout is *additional* context — it cannot shrink or replace the verbos
 output the Bash tool already returned. This hook adds a "here's the gist" line next
 to a long transcript; it does not truncate it.
 
-### `hooks/evaluate-session.sh` (Stop)
+### `hooks/evaluate-session.mjs` (Stop)
 
 Runs **after every session stop** (no matcher — Stop isn't tool-scoped). Scans the
 session transcript for our own failure vocabulary (`GATE_FAIL`, `NO_TESTS`,
@@ -294,9 +321,9 @@ session transcript for our own failure vocabulary (`GATE_FAIL`, `NO_TESTS`,
 `BLOCKED`, `ESCALATE`) and writes/updates an instinct file under
 `.claude/instincts/pending/INST-<hash>.md` — frontmatter with `confidence: 0.3` and
 an `occurrences:` counter that increments on repeat sightings of the same pattern.
-This is the Capture step (plus a cheap Validate) from `todo.md`'s Instincts v2
-pipeline — full auto-promotion to `.claude/rules/common/` and the `/evolve`
-clustering command are not implemented. **Always exits 0** — it's purely
+This is the Capture step (plus a cheap Validate, via the occurrence counter) from
+`todo.md`'s Instincts v2 pipeline — promotion to `subagents/rules/common/` happens
+via the `/evolve` command, not automatically here. **Always exits 0** — it's purely
 observational and must never force the session to keep going (exit 2 on a Stop hook
 blocks stopping).
 
@@ -304,13 +331,13 @@ blocks stopping).
 Claude finishes a response, session stops
     │
     ▼
-evaluate-session.sh reads stdin JSON (transcript_path, session_id)
+evaluate-session.mjs reads stdin JSON (transcript_path, session_id)
     │
     ├── no failure keywords found in transcript? ──► exit 0, no-op
     └── match found ──► write/bump .claude/instincts/pending/INST-<hash>.md, exit 0
 ```
 
-### `hooks/pre-compact.sh` (PreCompact)
+### `hooks/pre-compact.mjs` (PreCompact)
 
 Runs **before context gets compacted** (matcher `""` — both manual and auto
 compaction). Snapshots the current branch, `git diff HEAD --stat`, and the last few
@@ -326,10 +353,17 @@ exit 2 on PreCompact blocks compaction entirely, which is never the intent here.
 `.claude/instincts/pending/` and `.claude/session-state/compact.json` are
 gitignored, session-local artifacts (same treatment as `.claude/bash.log`) — they
 accumulate observations across runs on one machine but aren't meant to be committed.
-An instinct with a high `occurrences` count across distinct sessions is a candidate
-for manual promotion into a permanent convention in `.claude/memory/conventions.md`
-or a new `subagents/rules/` file; that promotion step is currently manual, not
-automated.
+
+```
+Stop hook        ──► capture failure pattern  ──► .claude/instincts/pending/INST-<hash>.md
+SessionStart hook ──► surface top-3 by occurrences at the start of the next session
+/evolve command  ──► cluster recurring instincts (occurrences ≥ 3, or seen across
+                     2+ sessions) into a permanent rule under subagents/rules/common/,
+                     update .claude/memory/conventions.md, delete the promoted files
+```
+
+Promotion via `/evolve` is a deliberate, reviewable step — run it when you notice
+the same instinct keeps reappearing, not on a timer.
 
 ---
 
@@ -375,6 +409,36 @@ Layer 3: model context  (in-flight only, not persisted)
 | `/ship <task>` | `new-feature` | Full feature delivery pipeline |
 | `/audit [version]` | `release-prep` | Security + dependency audit before release |
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
+| `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
+
+---
+
+## Eval Harness
+
+`eval-harness/` proves the agent-count reduction (15 agents → operator + inspector)
+didn't trade `pass@1` accuracy for the token savings it was built for.
+
+- **`golden-tasks.json`** — a fixed set of representative tasks with `expected_artifacts`
+  (substrings that must appear in the run's output for it to count as a pass).
+- **`run-eval.js`** — drives each golden task through the `new-feature` workflow via
+  the Claude Code CLI (`claude -p ... --output-format json`) and records, per task:
+  `total_tokens`, `subagent_spawns` (expected: 2 — one `operator:build` + one
+  `inspector`, ignoring retries/ship), `time_ms`, and `pass` (reached
+  `pipeline-gate=PASS`, no `BLOCK`/`ESCALATE`, expected artifacts present).
+- First run with no `eval-harness/baseline.json` records itself as the baseline.
+  Subsequent runs fail if total tokens rose >10% or `pass@1` dropped versus it.
+- `eval-harness/results/` and `baseline.json` are gitignored — they're run-local,
+  same treatment as `.claude/bash.log`.
+
+```bash
+node eval-harness/run-eval.js
+```
+
+Requires the `claude` CLI on `PATH` and `ANTHROPIC_API_KEY` set — it spends real API
+credits and lets agents commit/branch in the checkout, so it's not run as a side
+effect of anything else. `.github/workflows/eval-harness.yml` wires this into CI
+(`continue-on-error: true` for now, gated on the `ANTHROPIC_API_KEY` secret being
+set — same "prove it before it blocks a merge" posture as `agentshield.yml`).
 
 ---
 

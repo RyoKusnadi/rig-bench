@@ -1,0 +1,39 @@
+name: Eval harness (pass@1 / token regression)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # The eval harness drives real operator/inspector agent runs through the
+    # Claude Code CLI — it spends API credits and lets agents commit/branch
+    # in the checkout. continue-on-error for now, same as agentshield.yml:
+    # this needs a few real runs against this repo's own baseline before
+    # it's trusted to block a merge on token/pass@1 regressions.
+    continue-on-error: true
+    if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run golden-task eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node eval-harness/run-eval.js
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-harness-results
+          path: eval-harness/results/
+          if-no-files-found: ignore
