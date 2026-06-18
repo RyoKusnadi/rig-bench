@@ -7,6 +7,7 @@
 set -euo pipefail
 
 input=$(cat)
+repo_root="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 tool=$(echo "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || true)
 cmd=$(echo "$input"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || true)
@@ -18,13 +19,14 @@ fi
 
 # ── Check: git push ────────────────────────────────────────────────────────
 if echo "$cmd" | grep -q "git push"; then
-  # Detect the default branch
-  default=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}' || echo "main")
+  # Detect the default branch — always against the project repo, regardless of
+  # whatever cwd the triggering Bash call happened to drift to.
+  default=$(git -C "$repo_root" remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}' || echo "main")
 
   # Block direct push to default branch
   if echo "$cmd" | grep -qE "git push( -u)?( origin)?( ${default})?$|git push( -u)? origin ${default}"; then
     echo "BLOCKED by branch-safety hook: direct push to '${default}' is not allowed."
-    echo "Use the git-assistant agent to create a PR instead."
+    echo "Use the operator agent's SHIP mode to create a PR instead."
     echo "Command was: ${cmd}"
     exit 2
   fi

@@ -6,7 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash hooks/branch-safety.sh"
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/branch-safety.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/block-dangerous-commands.sh"
           }
         ]
       }
@@ -17,7 +21,41 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash hooks/log-bash.sh"
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/log-bash.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/summarize-cli-output.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/auto-run-tests.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/evaluate-session.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/pre-compact.sh"
           }
         ]
       }

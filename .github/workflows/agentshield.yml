@@ -1,0 +1,35 @@
+name: AgentShield security scan
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Non-blocking for now (continue-on-error) — flip to blocking once a few
+      # real reports have been reviewed and we're confident it doesn't
+      # false-positive on this repo's own hooks/settings.
+      #
+      # The exact flags below (--path/--format/--out) are inferred from the
+      # package's marketing copy, not a verified `ecc-agentshield --help` output —
+      # confirm them against the installed version before relying on this job.
+      - name: Run ecc-agentshield scan
+        continue-on-error: true
+        run: npx --yes ecc-agentshield scan --path .claude --format markdown --out agentshield-report.md
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentshield-report
+          path: agentshield-report.md
+          if-no-files-found: ignore

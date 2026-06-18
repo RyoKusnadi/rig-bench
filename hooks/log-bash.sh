@@ -6,7 +6,8 @@
 set -euo pipefail
 
 input=$(cat)
-log_file=".claude/bash.log"
+repo_root="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+log_file="$repo_root/.claude/bash.log"
 max_lines=500
 
 tool=$(echo "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || true)
