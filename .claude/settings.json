@@ -19,6 +19,15 @@
             "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-bash-safety.mjs"
           }
         ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/read-budget.mjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [

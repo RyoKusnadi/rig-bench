@@ -7,46 +7,32 @@
 // not (and cannot) shrink the Write/Edit tool's own result. It only replaces
 // what would otherwise be a separate, manually-run, verbose test command.
 //
+// Also persists a rolling last-3 results to .claude/session-state/
+// last-test-results.json, so pre-compact.mjs can fold recent test history
+// into its snapshot for mid-session compaction recovery.
+//
+// Respects RIGBENCH_DISABLED_HOOKS=auto-run-tests.
+//
 // Stdin: JSON with tool_name and tool_input.file_path
 // Exit 0 always — this hook informs, it never blocks.
 
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, basename, relative, extname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, basename, relative, extname, join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { readStdinJson, allow } from './lib/hook-utils.mjs';
+import { readStdinJson, repoRoot, complete, runHook } from './lib/hook-utils.mjs';
 
+const HOOK_NAME = 'auto-run-tests';
 const input = readStdinJson();
-if (input.tool_name !== 'Write' && input.tool_name !== 'Edit') allow();
-
-const file = input.tool_input?.file_path || '';
-if (!file || !existsSync(file)) allow();
-
-const ext = extname(file).slice(1);
-if (!['go', 'ts', 'tsx', 'js', 'jsx', 'py'].includes(ext)) allow();
-
-const dir = dirname(file);
+const root = repoRoot(import.meta.url);
 
 function findAncestor(startDir, marker) {
   let d = startDir;
-  while (d !== '/' && d !== '.') {
-    if (existsSync(`${d}/${marker}`)) return d;
+  for (;;) {
+    if (existsSync(join(d, marker))) return d;
     const parent = dirname(d);
-    if (parent === d) break;
+    if (parent === d) return null;
     d = parent;
   }
-  return null;
-}
-
-function emit(status, tool, exitCode, summary, firstError) {
-  console.log(
-    JSON.stringify({
-      status,
-      tool,
-      exit_code: exitCode,
-      summary: summary || 'no output',
-      first_error: firstError || '',
-    })
-  );
 }
 
 function runWithTimeout(command, cwd) {
@@ -59,35 +45,67 @@ function runWithTimeout(command, cwd) {
   }
 }
 
-if (ext === 'go') {
-  const root = findAncestor(dir, 'go.mod');
-  if (!root) allow();
-  const pkgDir = relative(root, dir);
-  const pkgPattern = pkgDir === '' || pkgDir === '.' ? './...' : `./${pkgDir}/...`;
-  const { out, code } = runWithTimeout(`go test ${pkgPattern}`, root);
-  const summary = (out.match(/^(ok|FAIL|---).*$/gm) || []).slice(-3).join(' ').slice(0, 200);
-  const firstError = (out.match(/^\s*--- FAIL.*$|panic:.*$/m) || [''])[0].slice(0, 200);
-  emit(code === 0 ? 'pass' : 'fail', 'go test', code, summary, firstError);
-} else if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
-  const root = findAncestor(dir, 'package.json');
-  if (!root) allow();
-  const pkgJson = readFileSync(`${root}/package.json`, 'utf8');
-  if (!/"(test|jest|vitest)"/.test(pkgJson)) {
-    emit('skip', 'npm test', 0, 'no test script found in package.json', '');
-    process.exit(0);
+function recordResult(result) {
+  const stateDir = join(root, '.claude', 'session-state');
+  const path = join(stateDir, 'last-test-results.json');
+  let history = [];
+  try {
+    if (existsSync(path)) history = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    history = [];
   }
-  const base = basename(file);
-  const { out, code } = runWithTimeout(`npm test -- --testPathPattern='${base}'`, root);
-  const summary = (out.match(/^.*?(tests:|passed|failed).*$/gim) || []).slice(-3).join(' ').slice(0, 200);
-  const firstError = (out.match(/^.*(✕|FAIL ).*$/m) || [''])[0].slice(0, 200);
-  emit(code === 0 ? 'pass' : 'fail', 'npm test', code, summary, firstError);
-} else if (ext === 'py') {
-  const root = findAncestor(dir, 'pyproject.toml') || findAncestor(dir, 'setup.py');
-  if (!root) allow();
-  const { out, code } = runWithTimeout(`pytest '${dir}' -q`, root);
-  const summary = out.split('\n').slice(-3).join(' ').slice(0, 200);
-  const firstError = (out.match(/^FAILED.*$|^E .*$/m) || [''])[0].slice(0, 200);
-  emit(code === 0 ? 'pass' : 'fail', 'pytest', code, summary, firstError);
+  history.push({ ...result, timestamp: new Date().toISOString() });
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(path, JSON.stringify(history.slice(-3), null, 2));
 }
 
-process.exit(0);
+runHook(HOOK_NAME, 'PostToolUse', root, input.tool_name, () => {
+  if (input.tool_name !== 'Write' && input.tool_name !== 'Edit') complete();
+
+  const file = input.tool_input?.file_path || '';
+  if (!file || !existsSync(file)) complete();
+
+  const ext = extname(file).slice(1);
+  if (!['go', 'ts', 'tsx', 'js', 'jsx', 'py'].includes(ext)) complete();
+
+  const dir = dirname(file);
+  let result = null;
+
+  if (ext === 'go') {
+    const pkgRoot = findAncestor(dir, 'go.mod');
+    if (!pkgRoot) complete();
+    const pkgDir = relative(pkgRoot, dir);
+    const pkgPattern = pkgDir === '' || pkgDir === '.' ? './...' : `./${pkgDir}/...`;
+    const { out, code } = runWithTimeout(`go test ${pkgPattern}`, pkgRoot);
+    const summary = (out.match(/^(ok|FAIL|---).*$/gm) || []).slice(-3).join(' ').slice(0, 200);
+    const firstError = (out.match(/^\s*--- FAIL.*$|panic:.*$/m) || [''])[0].slice(0, 200);
+    result = { status: code === 0 ? 'pass' : 'fail', tool: 'go test', exit_code: code, summary: summary || 'no output', first_error: firstError };
+  } else if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
+    const pkgRoot = findAncestor(dir, 'package.json');
+    if (!pkgRoot) complete();
+    const pkgJson = readFileSync(join(pkgRoot, 'package.json'), 'utf8');
+    if (!/"(test|jest|vitest)"/.test(pkgJson)) {
+      result = { status: 'skip', tool: 'npm test', exit_code: 0, summary: 'no test script found in package.json', first_error: '' };
+    } else {
+      const base = basename(file);
+      const { out, code } = runWithTimeout(`npm test -- --testPathPattern='${base}'`, pkgRoot);
+      const summary = (out.match(/^.*?(tests:|passed|failed).*$/gim) || []).slice(-3).join(' ').slice(0, 200);
+      const firstError = (out.match(/^.*(✕|FAIL ).*$/m) || [''])[0].slice(0, 200);
+      result = { status: code === 0 ? 'pass' : 'fail', tool: 'npm test', exit_code: code, summary: summary || 'no output', first_error: firstError };
+    }
+  } else if (ext === 'py') {
+    const pkgRoot = findAncestor(dir, 'pyproject.toml') || findAncestor(dir, 'setup.py');
+    if (!pkgRoot) complete();
+    const { out, code } = runWithTimeout(`pytest '${dir}' -q`, pkgRoot);
+    const summary = out.split('\n').slice(-3).join(' ').slice(0, 200);
+    const firstError = (out.match(/^FAILED.*$|^E .*$/m) || [''])[0].slice(0, 200);
+    result = { status: code === 0 ? 'pass' : 'fail', tool: 'pytest', exit_code: code, summary: summary || 'no output', first_error: firstError };
+  }
+
+  if (result) {
+    console.log(JSON.stringify(result));
+    if (result.status !== 'skip') recordResult(result);
+  }
+
+  complete();
+});

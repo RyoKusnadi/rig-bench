@@ -1,6 +1,7 @@
 .claude/bash.log
+.claude/hooks.log
+.claude/hook-cache/
+.claude/agent-telemetry.json
 .claude/instincts/
 .claude/session-state/
-eval-harness/results/
-eval-harness/baseline.json
 todo.md

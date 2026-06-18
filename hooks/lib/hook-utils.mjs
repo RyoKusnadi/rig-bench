@@ -1,9 +1,11 @@
 // Shared helpers for Claude Code hooks. Plain Node.js (no deps) so hooks run
 // identically on macOS, Linux, and Windows — the reason this harness moved
-// off Bash (see todo.md "Cross-Platform Hook Migration").
+// off Bash (see todo.md "Cross-Platform Hook Migration"). Also centralizes
+// structured logging, fail-open error handling, and the RIGBENCH_* env vars
+// so every hook gets them uniformly instead of reimplementing them.
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function readStdinJson() {
@@ -16,16 +18,126 @@ export function readStdinJson() {
 
 export function repoRoot(importMetaUrl) {
   if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+  // hooks/<file>.mjs -> repo root is one level up. (Call this from a file
+  // directly under hooks/, not from hooks/lib/, or pass CLAUDE_PROJECT_DIR.)
   const hooksDir = dirname(fileURLToPath(importMetaUrl));
-  return resolve(hooksDir, '..');
+  return join(hooksDir, '..');
+}
+
+// ── RIGBENCH_* environment controls ─────────────────────────────────────
+
+export function isHookDisabled(name) {
+  const list = (process.env.RIGBENCH_DISABLED_HOOKS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.includes(name);
+}
+
+const PROFILES = ['minimal', 'standard', 'strict'];
+export function hookProfile() {
+  const p = process.env.RIGBENCH_HOOK_PROFILE;
+  return PROFILES.includes(p) ? p : 'standard';
+}
+
+// ── Structured logging + fail-open execution ──────────────────────────────
+
+let _ctx = null;
+
+function logEvent(decision, extra = {}) {
+  if (!_ctx) return;
+  try {
+    const logFile = join(_ctx.root, '.claude', 'hooks.log');
+    const duration_ms = Date.now() - _ctx.start;
+    const entry = {
+      timestamp: new Date().toISOString(),
+      hook: _ctx.name,
+      event: _ctx.event,
+      tool: _ctx.tool || null,
+      exit_code: decision === 'block' ? 2 : 0,
+      duration_ms,
+      decision,
+      ...extra,
+    };
+    mkdirSync(dirname(logFile), { recursive: true });
+    appendFileSync(logFile, `${JSON.stringify(entry)}\n`);
+
+    // Rotate: keep only the last 1000 lines, same treatment as bash.log.
+    const lines = readFileSync(logFile, 'utf8').split('\n');
+    if (lines.length > 1100) {
+      writeFileSync(logFile, lines.slice(-1000).join('\n'));
+    }
+
+    if (duration_ms > 500) {
+      console.error(`[${_ctx.name}] slow hook: ${duration_ms}ms`);
+    }
+  } catch {
+    // Logging must never be the reason a hook fails.
+  }
+}
+
+/**
+ * Wrap a hook's body so an unexpected exception fails open (exit 0, allowing
+ * the tool call) instead of crashing in a way Claude Code might treat as a
+ * hard error. Blocking is still a deliberate `block()` call inside `fn` —
+ * this only catches bugs/unexpected failures in the hook itself.
+ */
+export function runHook(name, event, root, tool, fn) {
+  _ctx = { name, event, root, tool, start: Date.now() };
+
+  if (isHookDisabled(name)) {
+    logEvent('skipped_disabled');
+    process.exit(0);
+  }
+
+  try {
+    fn();
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    logEvent('error', { error: message });
+    console.error(JSON.stringify({ hook: name, error: message, action: 'allowing_with_warning' }));
+    process.exit(0); // never let a hook bug block the agent
+  }
 }
 
 export function block(message, command) {
+  logEvent('block', { message });
   console.log(`BLOCKED: ${message}`);
   if (command) console.log(`Command was: ${command}`);
   process.exit(2);
 }
 
 export function allow() {
+  logEvent('allow');
   process.exit(0);
+}
+
+export function complete(extra) {
+  logEvent('completed', extra);
+  process.exit(0);
+}
+
+// ── Small TTL cache for slow/external lookups ─────────────────────────────
+// Only used for things that genuinely don't change often (e.g. the repo's
+// default branch name) — not a general-purpose cache.
+
+export function cached(root, key, ttlMs, compute) {
+  const cacheFile = join(root, '.claude', 'hook-cache', `${key}.json`);
+  try {
+    if (existsSync(cacheFile)) {
+      const { value, cachedAt } = JSON.parse(readFileSync(cacheFile, 'utf8'));
+      if (Date.now() - cachedAt < ttlMs) return value;
+    }
+  } catch {
+    // corrupt/missing cache entry — fall through and recompute
+  }
+
+  const value = compute();
+  try {
+    mkdirSync(dirname(cacheFile), { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify({ value, cachedAt: Date.now() }));
+  } catch {
+    // caching is an optimization, not a requirement — ignore write failures
+  }
+  return value;
 }

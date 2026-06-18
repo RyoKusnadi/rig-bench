@@ -6,28 +6,31 @@
 // Instincts v2 pipeline. Auto-promotion to subagents/rules/common/ happens
 // via the /evolve command (see .claude/commands/evolve.md), not here.
 //
+// Respects RIGBENCH_DISABLED_HOOKS=evaluate-session.
+//
 // Stdin: JSON with transcript_path, session_id (Stop hook payload)
 // This hook is purely observational — it must ALWAYS exit 0. Exiting 2 would
 // force Claude to keep going instead of stopping, which is not the intent.
+// runHook() already fails open on unexpected errors for the same reason.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { readStdinJson, repoRoot } from './lib/hook-utils.mjs';
+import { readStdinJson, repoRoot, complete, runHook } from './lib/hook-utils.mjs';
 
+const HOOK_NAME = 'evaluate-session';
 const input = readStdinJson();
 const root = repoRoot(import.meta.url);
 
-const transcriptPath = input.transcript_path || '';
-const sessionId = input.session_id || 'unknown';
+runHook(HOOK_NAME, 'Stop', root, null, () => {
+  const transcriptPath = input.transcript_path || '';
+  const sessionId = input.session_id || 'unknown';
 
-if (!transcriptPath || !existsSync(transcriptPath)) process.exit(0);
+  if (!transcriptPath || !existsSync(transcriptPath)) complete();
 
-const KEYWORDS = /\b(GATE_FAIL|NO_TESTS|REGRESSION|EXAMPLE_FAIL|PREFLIGHT_FAIL|CRITICAL_BLOCK|SECRET_FOUND|BLOCKED|ESCALATE)\b/;
+  const KEYWORDS = /\b(GATE_FAIL|NO_TESTS|REGRESSION|EXAMPLE_FAIL|PREFLIGHT_FAIL|CRITICAL_BLOCK|SECRET_FOUND|BLOCKED|ESCALATE)\b/;
+  const findings = []; // [keyword, snippet]
 
-const findings = []; // [keyword, snippet]
-
-try {
   const lines = readFileSync(transcriptPath, 'utf8').split('\n').filter((l) => l.trim());
   for (const line of lines) {
     let entry;
@@ -51,42 +54,39 @@ try {
       }
     }
   }
-} catch {
-  process.exit(0);
-}
 
-if (!findings.length) process.exit(0);
+  if (!findings.length) complete();
 
-const instinctsDir = join(root, '.claude', 'instincts', 'pending');
-mkdirSync(instinctsDir, { recursive: true });
+  const instinctsDir = join(root, '.claude', 'instincts', 'pending');
+  mkdirSync(instinctsDir, { recursive: true });
 
-const today = new Date().toISOString().slice(0, 10);
-const seenThisRun = new Set();
+  const today = new Date().toISOString().slice(0, 10);
+  const seenThisRun = new Set();
 
-for (const [keyword, snippet] of findings) {
-  const key = `${keyword}|${snippet.slice(0, 120)}`;
-  const h = createHash('sha1').update(key).digest('hex').slice(0, 8);
-  if (seenThisRun.has(h)) continue;
-  seenThisRun.add(h);
+  for (const [keyword, snippet] of findings) {
+    const key = `${keyword}|${snippet.slice(0, 120)}`;
+    const h = createHash('sha1').update(key).digest('hex').slice(0, 8);
+    if (seenThisRun.has(h)) continue;
+    seenThisRun.add(h);
 
-  const path = join(instinctsDir, `INST-${h}.md`);
+    const path = join(instinctsDir, `INST-${h}.md`);
 
-  if (existsSync(path)) {
-    let body = readFileSync(path, 'utf8');
-    const m = body.match(/^occurrences:\s*(\d+)/m);
-    if (m) {
-      body = body.replace(/^occurrences:\s*\d+/m, `occurrences: ${parseInt(m[1], 10) + 1}`);
+    if (existsSync(path)) {
+      let body = readFileSync(path, 'utf8');
+      const m = body.match(/^occurrences:\s*(\d+)/m);
+      if (m) {
+        body = body.replace(/^occurrences:\s*\d+/m, `occurrences: ${parseInt(m[1], 10) + 1}`);
+      } else {
+        body = body.replace('---\n', '---\noccurrences: 2\n');
+      }
+      if (/^last_seen:.*$/m.test(body)) {
+        body = body.replace(/^last_seen:.*$/m, `last_seen: ${today}`);
+      } else {
+        body = body.replace('---\n', `---\nlast_seen: ${today}\n`);
+      }
+      writeFileSync(path, body);
     } else {
-      body = body.replace('---\n', '---\noccurrences: 2\n');
-    }
-    if (/^last_seen:.*$/m.test(body)) {
-      body = body.replace(/^last_seen:.*$/m, `last_seen: ${today}`);
-    } else {
-      body = body.replace('---\n', `---\nlast_seen: ${today}\n`);
-    }
-    writeFileSync(path, body);
-  } else {
-    const content = `---
+      const content = `---
 name: inst-${h}
 keyword: ${keyword}
 confidence: 0.3
@@ -109,8 +109,9 @@ Promote to \`subagents/rules/common/\` (via \`/evolve\`) once this instinct has
 recurred enough times across distinct sessions to be confident it's a real,
 generalizable pattern rather than a one-off.
 `;
-    writeFileSync(path, content);
+      writeFileSync(path, content);
+    }
   }
-}
 
-process.exit(0);
+  complete();
+});

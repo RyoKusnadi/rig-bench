@@ -78,8 +78,10 @@ Recovery steps:
 
 1. Stop and `Read` `.claude/session-state/compact.json` (written by the
    PreCompact hook just before compaction).
-2. Re-align with `recent_user_messages` (the original ask) and `git_diff_stat`
-   (what was already in flight) from that file.
+2. Re-align with `recent_user_messages` (the original ask), `git_diff_stat` /
+   `active_files` (what was already in flight), and `last_test_results` (the
+   last 3 `auto-run-tests` outcomes — were you mid-TDD-cycle red or green?)
+   from that file.
 3. Cross-check against the actual working tree (`git status`, `git diff
    HEAD`) before continuing — the snapshot is a best-effort proxy, not a
    source of truth; the working tree always wins if they disagree.

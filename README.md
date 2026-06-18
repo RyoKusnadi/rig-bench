@@ -25,7 +25,6 @@ rig-bench/
 ├── workflows/       # 6 deterministic pipelines (.js orchestration scripts)
 ├── hooks/           # Git/Claude Code safety + lifecycle hooks (.mjs, Node.js — cross-platform)
 ├── memory/          # Portable cross-project context (personas, projects, knowledge)
-├── eval-harness/    # Golden-task harness proving pass@1 stayed stable as the roster shrank
 └── .claude/         # Project-level settings, commands, and codebase memory
     ├── settings.json         # Hook wiring (SessionStart / PreToolUse / PostToolUse / Stop / PreCompact)
     ├── settings.local.json   # Permissions allowlist
@@ -239,11 +238,25 @@ call" in [workflows/README.md](workflows/README.md) for the full rationale.
 
 ## Hook System
 
-Six hooks intercept tool calls and session lifecycle events Claude Code makes.
+Seven hooks intercept tool calls and session lifecycle events Claude Code makes.
 All hooks are plain Node.js (`.mjs`, no dependencies) rather than Bash — Bash
 hooks throw pathing/quoting errors on native Windows (PowerShell has no `bash`
-on PATH by default), while Node ships wherever Claude Code itself runs.
-Shared stdin/repo-root/block helpers live in `hooks/lib/hook-utils.mjs`.
+on PATH by default), while Node ships wherever Claude Code itself runs. (This
+repo's own dev environment is macOS — the cross-platform claim rests on using
+only `node:fs`/`node:path`/`node:child_process` and avoiding hardcoded `/`
+path joins, not on having run a Windows test pass; there's no hands-on
+Windows/Linux verification to report here.)
+
+Shared stdin/repo-root/logging/caching helpers live in
+`hooks/lib/hook-utils.mjs`. Every hook is wrapped in `runHook()`, which:
+- Fails open (exit 0) on any uncaught exception, so a bug in the hook itself
+  never blocks the agent — it logs the error and a `console.error` warning
+  instead of crashing the tool call.
+- Writes one structured JSON line per invocation to `.claude/hooks.log`
+  (`timestamp`, `hook`, `event`, `tool`, `exit_code`, `duration_ms`,
+  `decision`), and warns on stderr if a hook takes >500ms.
+- Honors `RIGBENCH_DISABLED_HOOKS` (comma-separated hook names) to skip a
+  hook entirely — e.g. `RIGBENCH_DISABLED_HOOKS=read-budget,auto-run-tests`.
 
 `PreToolUse: Bash` and `PostToolUse: Bash` each run a single consolidated
 hook rather than two separate processes — `pre-bash-safety.mjs` (branch
@@ -251,6 +264,15 @@ safety + generic destructive-command blocking) and `post-bash-processor.mjs`
 (audit log + verbose-output summarization) — since both halves fire on
 *every* Bash call. One Node process per event instead of two halves the
 spawn overhead on the hottest path in the harness.
+
+`RIGBENCH_HOOK_PROFILE` (`minimal` | `standard` | `strict`, default
+`standard`) scales `pre-bash-safety.mjs`'s check set:
+
+| Profile | Checks |
+|---|---|
+| `minimal` | Git branch safety only (push-to-main, force-push, `reset --hard`) |
+| `standard` | + generic destructive-command blocking (default — this is everything described below) |
+| `strict` | + blocks `git add .`/`git add -A` and `--no-verify` |
 
 ### `hooks/session-start.mjs` (SessionStart)
 
@@ -263,9 +285,23 @@ injects, as `additionalContext`:
 1. The top 3 pending instincts by `occurrences` from `.claude/instincts/pending/`
    (with a pointer to `/evolve` once any of them recur enough to promote).
 2. The last `PreCompact` snapshot (`.claude/session-state/compact.json`), if one
-   exists — branch, diff stat, and the last user message before compaction.
+   exists — branch, diff stat, active files, last test result, and the last
+   user message before compaction.
 3. `.claude/memory/MEMORY.md`, so a plain conversational turn (no agent
    dispatch) still sees the project memory index.
+
+Total injected context is capped at `RIGBENCH_SESSION_START_MAX_CHARS`
+(default 8000) — sections are dropped lowest-priority-first (memory index,
+then resumed context, then instincts) until it fits, with a warning logged
+if truncation happened.
+
+**Deliberately not task-type-aware** (e.g. "load `gotchas.md` for bug-fix,
+`conventions.md` for new-feature"): `SessionStart` fires before the user's
+first prompt, so there's no workflow/task signal yet to filter on. That kind
+of task-aware retrieval already happens correctly elsewhere — `operator.md`
+Step 0 greps `.claude/memory/` for keywords from the actual task once it's
+known. Duplicating that here would just be a second, out-of-sync mechanism
+for the same job.
 
 Always exits 0 — this hook only adds context, it never blocks a session from starting.
 
@@ -280,6 +316,12 @@ Runs **before** every Bash tool use (merges what used to be two separate hooks,
   devices; recursive `chmod 777 /`; redirecting into a raw block device;
   piping a downloaded script straight into a shell (`curl ... | sh`); mass
   working-tree wipes (`git clean -fd`, `git checkout -- .`)
+
+Resolving the default branch name (for the push check) calls `git remote
+show origin`, which hits the network — that result is cached for 1 hour in
+`.claude/hook-cache/default-branch.json` via the shared `cached()` helper, so
+a flurry of `git push` attempts in one session doesn't re-pay that cost every
+time (first call: ~3s cold; cached calls: ~0ms).
 
 Exit 0 = allow. Exit 2 = block with message shown to the model.
 
@@ -328,7 +370,32 @@ test command for that file (`timeout 30`), and emits a compact JSON summary —
 extension isn't covered) rather than nagging on every doc/config edit. This is the
 `auto-run-tests` hook from `todo.md` Phase 2 — it doesn't replace the standalone
 verifier step (that's now part of `operator`'s self-verification gate), it just adds a
-fast, cheap pass/fail signal right after a file changes.
+fast, cheap pass/fail signal right after a file changes. Also persists the
+rolling last 3 results to `.claude/session-state/last-test-results.json`, so
+`pre-compact.mjs` can fold recent test history into its compaction snapshot.
+
+### `hooks/read-budget.mjs` (PreToolUse, matcher: `Read`)
+
+Runs **before** every `Read` tool call. Tracks how many files the current
+session has read (`session_id` → count, plus a capped recent-files list) in
+`.claude/agent-telemetry.json`, and blocks once a session exceeds
+`RIGBENCH_MAX_READS` (default **50** — the threshold from todo.md's "Context
+Isolation Enforcement" target). Reading more than ~50 files via the `Read`
+tool in one session usually means an agent gave up on `Grep`-based retrieval
+and started loading the repo wholesale — the block message tells it to
+narrow scope with `Grep` instead, or raise `RIGBENCH_MAX_READS` if the task
+genuinely needs that much.
+
+**Caveat — this is a budget guardrail, not a security boundary.** It only
+sees `Read` calls that pass through a session with this hook wired into its
+`settings.json`; it can't observe or enforce anything for a session that
+doesn't have it configured. It also can't distinguish "one agent reading 51
+different files" from "many short-lived subagents sharing one `session_id`"
+without inspecting how Claude Code scopes that field per spawn — if it turns
+out subagents inherit the parent's `session_id`, this budget is shared across
+an entire workflow run (operator + inspector combined) rather than per-agent;
+if each spawn gets its own `session_id`, it's naturally per-agent. Tune
+`RIGBENCH_MAX_READS` per project if the default doesn't fit.
 
 ### `hooks/evaluate-session.mjs` (Stop)
 
@@ -357,11 +424,19 @@ evaluate-session.mjs reads stdin JSON (transcript_path, session_id)
 ### `hooks/pre-compact.mjs` (PreCompact)
 
 Runs **before context gets compacted** (matcher `""` — both manual and auto
-compaction). Snapshots the current branch, `git diff HEAD --stat`, and the last few
-user-turn messages from the transcript (the closest available proxy for "the
-original task") into `.claude/session-state/compact.json`, so a long `operator` run
-doesn't lose track of its original request across a compaction. **Always exits 0** —
+compaction). Snapshots the current branch, `git diff HEAD --stat`, the
+changed file list (`active_files`), the rolling last-3 `auto-run-tests`
+results (`last_test_results`, if any), and the last few user-turn messages
+from the transcript (the closest available proxy for "the original task")
+into `.claude/session-state/compact.json`, so a long `operator` run doesn't
+lose track of its original request across a compaction. **Always exits 0** —
 exit 2 on PreCompact blocks compaction entirely, which is never the intent here.
+
+**Note on the 85%-context auto-compact trigger:** the *threshold* Claude Code
+fires this hook at is an internal platform behavior — this hook only reacts
+once the `PreCompact` event arrives, it doesn't (and can't) assert that the
+trigger fired at the right usage percentage. That's not something a hook
+script can test from the outside.
 
 `SessionStart` only re-injects this snapshot at the *start* of a session — if
 compaction happens mid-session (a long BUILD task, or a `maximum`-effort
@@ -390,6 +465,12 @@ SessionStart hook ──► surface top-3 by occurrences at the start of the nex
 
 Promotion via `/evolve` is a deliberate, reviewable step — run it when you notice
 the same instinct keeps reappearing, not on a timer.
+
+`.claude/hooks.log` (structured per-hook invocation log), `.claude/hook-cache/`
+(TTL cache, e.g. the resolved default branch), and `.claude/agent-telemetry.json`
+(`read-budget.mjs`'s per-session Read counts) are the same kind of gitignored,
+session-local artifact — useful for debugging a specific hook locally, not
+meant to be committed.
 
 ---
 
@@ -436,35 +517,6 @@ Layer 3: model context  (in-flight only, not persisted)
 | `/audit [version]` | `release-prep` | Security + dependency audit before release |
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
 | `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
-
----
-
-## Eval Harness
-
-`eval-harness/` proves the agent-count reduction (15 agents → operator + inspector)
-didn't trade `pass@1` accuracy for the token savings it was built for.
-
-- **`golden-tasks.json`** — a fixed set of representative tasks with `expected_artifacts`
-  (substrings that must appear in the run's output for it to count as a pass).
-- **`run-eval.js`** — drives each golden task through the `new-feature` workflow via
-  the Claude Code CLI (`claude -p ... --output-format json`) and records, per task:
-  `total_tokens`, `subagent_spawns` (expected: 2 — one `operator:build` + one
-  `inspector`, ignoring retries/ship), `time_ms`, and `pass` (reached
-  `pipeline-gate=PASS`, no `BLOCK`/`ESCALATE`, expected artifacts present).
-- First run with no `eval-harness/baseline.json` records itself as the baseline.
-  Subsequent runs fail if total tokens rose >10% or `pass@1` dropped versus it.
-- `eval-harness/results/` and `baseline.json` are gitignored — they're run-local,
-  same treatment as `.claude/bash.log`.
-
-```bash
-node eval-harness/run-eval.js
-```
-
-Requires the `claude` CLI on `PATH` and `ANTHROPIC_API_KEY` set — it spends real API
-credits and lets agents commit/branch in the checkout, so it's not run as a side
-effect of anything else. `.github/workflows/eval-harness.yml` wires this into CI
-(`continue-on-error: true` for now, gated on the `ANTHROPIC_API_KEY` secret being
-set — same "prove it before it blocks a merge" posture as `agentshield.yml`).
 
 ---
 
