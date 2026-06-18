@@ -1,4 +1,6 @@
 .claude/bash.log
 .claude/instincts/
 .claude/session-state/
+eval-harness/results/
+eval-harness/baseline.json
 todo.md

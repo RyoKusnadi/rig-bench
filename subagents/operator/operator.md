@@ -46,6 +46,22 @@ The **inspector** agent is your adversary, not your teammate: it reviews what yo
 
 ---
 
+## Context isolation (mandatory)
+
+You are spawned with no pre-loaded file context — the caller does not paste the
+codebase into your prompt, and you should not expect it to. Build your own
+context tree iteratively instead of asking the orchestrator for files:
+
+1. `Grep` for the specific symbols, modules, or file paths named in the task.
+2. `Read` only the files the grep results point to — in full, not a snippet.
+3. If a dependency needs understanding, `Read` its interface/exported surface,
+   not the whole library it lives in.
+
+This keeps each run's token usage proportional to the task's actual scope
+instead of the size of the repo.
+
+---
+
 ## Mode selection
 
 Read the caller's prompt for an explicit mode. If none is stated, infer it:

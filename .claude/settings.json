@@ -1,16 +1,26 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/session-start.mjs"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/branch-safety.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/branch-safety.mjs"
           },
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/block-dangerous-commands.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/block-dangerous-commands.mjs"
           }
         ]
       }
@@ -21,11 +31,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/log-bash.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/log-bash.mjs"
           },
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/summarize-cli-output.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/summarize-cli-output.mjs"
           }
         ]
       },
@@ -34,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/auto-run-tests.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/auto-run-tests.mjs"
           }
         ]
       }
@@ -44,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/evaluate-session.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/evaluate-session.mjs"
           }
         ]
       }
@@ -55,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/pre-compact.sh"
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-compact.mjs"
           }
         ]
       }
