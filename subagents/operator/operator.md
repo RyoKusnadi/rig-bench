@@ -62,6 +62,30 @@ instead of the size of the repo.
 
 ---
 
+## Context recovery (mandatory)
+
+`SessionStart` only fires at the start of a session — if Claude Code triggers
+an **auto-compact mid-session** (you've been running long, e.g. a multi-file
+BUILD task), that hook never runs again and you can lose track of the
+original ask. If you notice any of these signs, suspect a compaction just
+happened:
+
+- You're unsure what the original task or constraints were.
+- Your own prior reasoning in this conversation feels missing or summarized.
+- You're about to re-derive a decision you're fairly sure you already made.
+
+Recovery steps:
+
+1. Stop and `Read` `.claude/session-state/compact.json` (written by the
+   PreCompact hook just before compaction).
+2. Re-align with `recent_user_messages` (the original ask) and `git_diff_stat`
+   (what was already in flight) from that file.
+3. Cross-check against the actual working tree (`git status`, `git diff
+   HEAD`) before continuing — the snapshot is a best-effort proxy, not a
+   source of truth; the working tree always wins if they disagree.
+
+---
+
 ## Mode selection
 
 Read the caller's prompt for an explicit mode. If none is stated, infer it:
@@ -128,13 +152,16 @@ not already on a feature branch.
 **Refactor** — once green, remove duplication and rename anything unclear; re-run the full suite, revert if anything regresses.
 
 ```bash
-# Language-specific test commands
-go test -race ./...                                  # Go
-npm test                                              # TS/JS — or npx jest / npx vitest run
-pytest -v                                             # Python
+# Language-specific test commands — quiet by default; a PostToolUse hook can
+# add a summary alongside the output but cannot shrink or replace it, so the
+# invocation itself is the only real lever against a multi-thousand-line
+# transcript eating the context window.
+go test -race ./...                                  # Go — already terse on pass
+npm test -- --silent                                 # TS/JS — or npx jest --silent / npx vitest run
+pytest -q                                             # Python — quiet by default
 ```
 
-Also run, where applicable: `gofmt -w .`, `go vet ./...`, `npx tsc --noEmit`, `npx eslint . --fix`, `mypy <package>`, `flake8 .`. **Always paste real command output** — never summarize.
+Reach for the verbose form (`pytest -v`, `npm test` without `--silent`) only when a quiet run already failed and you need the extra detail to debug it — don't default to verbose "just in case." Also run, where applicable: `gofmt -w .`, `go vet ./...`, `npx tsc --noEmit`, `npx eslint . --fix`, `mypy <package>`, `flake8 .`. **Always paste real command output** — never summarize.
 
 ### 3. Map test coverage
 

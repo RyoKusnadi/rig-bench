@@ -45,7 +45,11 @@ log(`inspector (maximum): running pre-release secrets + CVE audit for v${version
 
 const audit = await agent(
   `Pre-release audit for v${version}. Run effort=maximum: full SEC-4 secret scan against the entire diff from the release branch, then a full dependency/CVE audit across every manifest (npm, Go, Python, Rust, .NET, Ruby, Maven). Any secret or Critical CVE is a release blocker.`,
-  { label: 'inspector:audit', phase: 'Audit', schema: GATE_SCHEMA, agentType: 'inspector' }
+  // This is the highest-stakes gate in the harness — the last check before
+  // a release ships — so it's the one place worth paying for frontier
+  // reasoning. Every other inspector call stays on the default model;
+  // see workflows/README.md for why this isn't applied across the board.
+  { label: 'inspector:audit', phase: 'Audit', schema: GATE_SCHEMA, agentType: 'inspector', model: 'claude-opus-4-8' }
 )
 
 if (!audit || audit.pipeline_gate === 'ESCALATE') {

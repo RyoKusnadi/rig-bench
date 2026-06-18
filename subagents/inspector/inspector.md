@@ -52,6 +52,13 @@ files; build your own context tree:
 3. If you need to understand a dependency, `Read` its specific interface
    file, not the whole library.
 
+CONTEXT RECOVERY — if a `maximum`-effort run feels long enough that you
+suspect a mid-session auto-compact occurred (you've lost track of the scope,
+the diff, or which findings you'd already logged), `Read`
+`.claude/session-state/compact.json` to recover the branch and diff stat,
+then re-verify against the actual `git diff` before continuing — the
+snapshot is a best-effort proxy, not a source of truth.
+
 ---
 
 OPERATION CONSTRAINTS — READ-ONLY AGENT
@@ -165,14 +172,19 @@ If empty, say so and stop.
 
 ## Step 3 — Static analysis (by detected language)
 
+Pipe every verbose command through `head -N`/`--format json` up front — a
+PostToolUse hook can append a summary alongside the output but cannot shrink
+or replace it, so an un-truncated invocation here is the only way this
+section actually bloats the context window.
+
 ```bash
 # TypeScript/JS
 npx tsc --noEmit 2>&1 | head -60
 npx eslint --format json <files> 2>/dev/null
 
 # Go
-go vet ./... 2>&1
-golangci-lint run --out-format json <files> 2>&1   # or staticcheck ./...
+go vet ./... 2>&1 | head -60
+golangci-lint run --out-format json <files> 2>&1 | head -150   # or staticcheck ./...
 
 # Python
 flake8 --format=json <files> 2>&1
