@@ -4,7 +4,7 @@ title: TypeScript / JavaScript linting and type-checking rules
 
 ## Overview
 
-The code-reviewer agent uses **tsc** (type checking), **ESLint** (lint), and **mcp__ide__getDiagnostics** (IDE LSP) to analyze TypeScript and JavaScript files. Run all three — they catch different classes of issues.
+The `operator` and `inspector` agents use **tsc** (type checking), **ESLint** (lint), and **mcp__ide__getDiagnostics** (IDE LSP) to analyze TypeScript and JavaScript files. Run all three — they catch different classes of issues.
 
 ---
 

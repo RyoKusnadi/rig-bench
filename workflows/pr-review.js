@@ -1,22 +1,17 @@
 export const meta = {
   name: 'pr-review',
-  description: 'PR quality review: secret-scanner → code-reviewer + security-reviewer + dependency-auditor (parallel) → synthesize → optional verifier',
+  description: 'PR quality review: single inspector pass covering secrets + security + dependencies + code quality, plus optional spec compliance',
   phases: [
-    { title: 'Pre-flight', detail: 'secret-scanner credential check' },
-    { title: 'Review', detail: 'parallel: code-reviewer + security-reviewer + dependency-auditor' },
-    { title: 'Synthesize', detail: 'orchestrator merges all findings' },
-    { title: 'Verify', detail: 'optional spec-compliance check' },
+    { title: 'Inspect', detail: 'inspector runs the full adversarial review in one pass' },
   ],
 }
 
 // args.pr        — optional: PR number (e.g. 42) — if omitted, reviews current HEAD diff
-// args.effort    — optional: code-reviewer effort mode (low|medium|high|maximum), default: medium
-// args.verify    — optional: set to true to run verifier after review (default: false)
-// args.spec      — optional: spec/requirements text for the verifier (required if verify=true)
+// args.effort    — optional: inspector effort mode (low|medium|high|maximum), default: medium
+// args.spec      — optional: spec/requirements text — when provided, inspector also checks spec compliance
 
 const pr = args && args.pr ? String(args.pr) : null
 const effort = args && args.effort ? args.effort : 'medium'
-const runVerifier = args && args.verify === true
 const spec = args && args.spec ? args.spec : ''
 const scope = pr ? `PR #${pr}` : 'current HEAD diff'
 
@@ -44,139 +39,37 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
-const SYNTHESIS_SCHEMA = {
-  type: 'object',
-  properties: {
-    blocking_count:    { type: 'number' },
-    critical_count:    { type: 'number' },
-    high_count:        { type: 'number' },
-    overall_gate:      { type: 'string', enum: ['PASS', 'BLOCK', 'ESCALATE'] },
-    merged_findings: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          severity: { type: 'string' },
-          source:   { type: 'string' },
-          file:     { type: 'string' },
-          line:     { type: 'number' },
-          message:  { type: 'string' },
-        },
-        required: ['severity', 'source', 'message'],
-      },
-    },
-    recommendation: { type: 'string' },
-  },
-  required: ['blocking_count', 'overall_gate', 'merged_findings', 'recommendation'],
-}
+// ── Stage 1: Inspect ──────────────────────────────────────────────────────
+phase('Inspect')
+log(`inspector (${effort}): running full adversarial review on ${scope}...`)
 
-// ── Stage 1: Secret scan ───────────────────────────────────────────────────
-phase('Pre-flight')
-log('secret-scanner: checking for credentials...')
+const specContext = spec ? `\n\nSpec / requirements to check for compliance:\n${spec}` : ''
 
-const scanPrompt = pr
-  ? `Run the 8 SEC-4 patterns against the diff for PR #${pr}. Report CLEAN or ESCALATION.`
-  : `Run the 8 SEC-4 patterns against the current HEAD diff. Report CLEAN or ESCALATION.`
-
-const scan = await agent(scanPrompt, {
-  label: 'secret-scanner',
-  phase: 'Pre-flight',
-  schema: GATE_SCHEMA,
-  agentType: 'secret-scanner',
-})
-
-if (!scan || scan.pipeline_gate === 'ESCALATE') {
-  log('ESCALATION: secret found — pipeline blocked. Rotate credential before continuing.')
-  return {
-    outcome: 'BLOCKED',
-    stage: 'secret-scanner',
-    reason: scan ? scan.summary : 'No response — treated as ESCALATE',
-  }
-}
-log(`secret-scanner: ${scan.verdict}`)
-
-// ── Stage 2: Parallel review ──────────────────────────────────────────────
-phase('Review')
-log(`Running code-reviewer (${effort}), security-reviewer, dependency-auditor in parallel...`)
-
-const diffContext = pr ? `PR #${pr}` : 'current HEAD diff'
-
-const [crResult, secResult, depResult] = await parallel([
-  () => agent(
-    `Review ${diffContext} with effort=${effort}. Run static analysis, Pass A (spec compliance), Pass B (quality audit across correctness, security, test coverage, performance).`,
-    { label: 'code-reviewer', phase: 'Review', schema: GATE_SCHEMA, agentType: 'code-reviewer', isolation: 'worktree' }
-  ),
-  () => agent(
-    `Security audit ${diffContext}. Run OWASP A01–A10, STRIDE, secrets detection, dependency check. Cite file:line for every finding.`,
-    { label: 'security-reviewer', phase: 'Review', schema: GATE_SCHEMA, agentType: 'security-reviewer', isolation: 'worktree' }
-  ),
-  () => agent(
-    `Audit all package manifests in the repository for CVEs, unpinned versions, abandoned packages, and license conflicts. Every finding must include the exact fix command.`,
-    { label: 'dependency-auditor', phase: 'Review', schema: GATE_SCHEMA, agentType: 'dependency-auditor', isolation: 'worktree' }
-  ),
-])
-
-// Check for secret escalation from security-reviewer
-if (secResult && secResult.pipeline_gate === 'ESCALATE') {
-  log('ESCALATION: secret found by security-reviewer — pipeline blocked.')
-  return {
-    outcome: 'BLOCKED',
-    stage: 'security-reviewer',
-    reason: secResult.summary,
-    findings: secResult.findings,
-  }
-}
-
-const allFindings = [
-  ...(crResult ? crResult.findings.map(f => ({ ...f, source: 'code-reviewer' })) : []),
-  ...(secResult ? secResult.findings.map(f => ({ ...f, source: 'security-reviewer' })) : []),
-  ...(depResult ? depResult.findings.map(f => ({ ...f, source: 'dependency-auditor' })) : []),
-]
-
-log(`Parallel review done. code-reviewer: ${crResult ? crResult.verdict : 'N/A'} | security: ${secResult ? secResult.verdict : 'N/A'} | deps: ${depResult ? depResult.verdict : 'N/A'}`)
-
-// ── Stage 3: Synthesize ───────────────────────────────────────────────────
-phase('Synthesize')
-log('Synthesizing findings across all review agents...')
-
-const findingsList = allFindings
-  .map(f => `- [${f.severity}] [${f.source}] ${f.file || '?'}:${f.line || 0} — ${f.message}`)
-  .join('\n') || 'No findings.'
-
-const synthesis = await agent(
-  `Synthesize the following findings from a parallel review of ${diffContext}. Deduplicate (same issue reported by multiple agents = 1 entry), prioritize by severity, and produce a merged report with an overall gate recommendation.\n\nFindings:\n${findingsList}`,
-  { label: 'synthesizer', phase: 'Synthesize', schema: SYNTHESIS_SCHEMA }
+const result = await agent(
+  `Review ${scope} with effort=${effort}. Run secrets detection (SEC-4) first, then OWASP A01–A10, STRIDE (if applicable), full dependency/CVE audit across all manifests, and the two-pass code-quality review.${specContext}`,
+  { label: 'inspector', phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
 )
 
-const overallGate = synthesis ? synthesis.overall_gate : (allFindings.some(f => f.severity === 'Critical') ? 'BLOCK' : 'PASS')
-const blockingCount = synthesis ? synthesis.blocking_count : allFindings.filter(f => f.severity === 'Critical').length
-
-log(`Synthesis: ${overallGate} — ${blockingCount} blocking findings | ${synthesis ? synthesis.recommendation : ''}`)
-
-// ── Stage 4: Verify (optional) ────────────────────────────────────────────
-if (runVerifier && spec) {
-  phase('Verify')
-  log('verifier: checking spec compliance...')
-
-  const vfResult = await agent(
-    `Spec: ${spec}\n\nVerify ${diffContext} meets every stated requirement. Gather real execution evidence. Return VERIFIED or SPEC_VIOLATION.`,
-    { label: 'verifier', phase: 'Verify', schema: GATE_SCHEMA, agentType: 'verifier' }
-  )
-
-  log(`verifier: ${vfResult ? vfResult.verdict : 'N/A'} — ${vfResult ? vfResult.summary : ''}`)
+if (!result || result.pipeline_gate === 'ESCALATE') {
+  log('ESCALATION: secret or critical CVE found — pipeline blocked, zero retries.')
+  return {
+    outcome: 'BLOCKED',
+    stage: 'inspector',
+    reason: result ? result.summary : 'No response — treated as ESCALATE',
+    findings: result ? result.findings : [],
+  }
 }
 
+log(`inspector: ${result.verdict} — ${result.summary}`)
+
+const blockingCount = (result.findings || []).filter(f => f.severity === 'Critical' || f.severity === 'High').length
+
 return {
-  outcome: overallGate === 'PASS' ? 'COMPLETE' : 'REVIEW_FINDINGS',
+  outcome: result.pipeline_gate === 'PASS' ? 'COMPLETE' : 'REVIEW_FINDINGS',
   pipeline: 'pr-review',
   scope,
-  overall_gate: overallGate,
+  overall_gate: result.pipeline_gate,
   blocking_findings: blockingCount,
-  finding_breakdown: {
-    code_review: crResult ? crResult.verdict : 'N/A',
-    security:    secResult ? secResult.verdict : 'N/A',
-    dependencies: depResult ? depResult.verdict : 'N/A',
-  },
-  recommendation: synthesis ? synthesis.recommendation : (overallGate === 'PASS' ? 'Safe to merge.' : `${blockingCount} blocking findings — fix before merging.`),
-  merged_findings: synthesis ? synthesis.merged_findings : allFindings,
+  recommendation: result.pipeline_gate === 'PASS' ? 'Safe to merge.' : `${blockingCount} blocking findings — fix before merging.`,
+  merged_findings: result.findings,
 }

@@ -4,7 +4,7 @@ title: Go linting and static analysis rules
 
 ## Overview
 
-The code-reviewer agent uses **golangci-lint** (preferred), **staticcheck**, and **go vet** to analyze Go source files. `golint` is **deprecated** and must not be used — it was archived in 2022 and is no longer maintained.
+The `operator` and `inspector` agents use **golangci-lint** (preferred), **staticcheck**, and **go vet** to analyze Go source files. `golint` is **deprecated** and must not be used — it was archived in 2022 and is no longer maintained.
 
 ---
 

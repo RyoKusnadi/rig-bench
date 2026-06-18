@@ -1,10 +1,10 @@
 export const meta = {
   name: 'docs-update',
-  description: 'Docs update pipeline: memory-load → docs-writer → git-assistant → memory-save',
+  description: 'Docs update pipeline: operator(docs) → inspector(light review) → operator(ship)',
   phases: [
-    { title: 'Write', detail: 'docs-writer updates README, CLAUDE.md, docstrings' },
-    { title: 'PR', detail: 'git-assistant creates draft PR' },
-    { title: 'Memory', detail: 'save docs update outcome' },
+    { title: 'Write', detail: 'operator updates README, CLAUDE.md, docstrings, CHANGELOG' },
+    { title: 'Inspect', detail: 'inspector runs a light review (examples verified, no secrets)' },
+    { title: 'Ship', detail: 'operator pushes the branch and opens the draft PR' },
   ],
 }
 
@@ -38,54 +38,59 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
-// ── Stage 0: Write docs ───────────────────────────────────────────────────
+// ── Stage 1: Write docs ───────────────────────────────────────────────────
 phase('Write')
-log('docs-writer: reading changes and updating documentation...')
+log('operator: reading changes and updating documentation...')
 
 const docs = await agent(
-  `Trigger: ${trigger}${scope}\n\nRead what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings. Verify every code example actually runs. Do NOT touch CHANGELOG.md.`,
-  { label: 'docs-writer', phase: 'Write', schema: GATE_SCHEMA, agentType: 'docs-writer' }
+  `Mode: DOCS\n\nTrigger: ${trigger}${scope}\n\nRead what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings, and CHANGELOG.md if user-facing. Verify every code example actually runs, then commit locally.`,
+  { label: 'operator:docs', phase: 'Write', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
 if (!docs || docs.verdict === 'EXAMPLE_FAIL' || docs.pipeline_gate === 'BLOCK') {
-  log(`docs-writer: EXAMPLE_FAIL or BLOCK — ${docs ? docs.summary : 'no response'}. Fix broken examples before continuing.`)
-  return {
-    outcome: 'BLOCKED',
-    stage: 'docs-writer',
-    reason: docs ? docs.summary : 'No response',
-    findings: docs ? docs.findings : [],
-  }
+  log(`operator: EXAMPLE_FAIL or BLOCK — ${docs ? docs.summary : 'no response'}. Fix broken examples before continuing.`)
+  return { outcome: 'BLOCKED', stage: 'operator:docs', reason: docs ? docs.summary : 'No response', findings: docs ? docs.findings : [] }
 }
-log(`docs-writer: ${docs.verdict} — ${docs.summary}`)
+log(`operator: ${docs.verdict} — ${docs.summary}`)
 
-// ── Stage 2: PR ───────────────────────────────────────────────────────────
-phase('PR')
-log('git-assistant: creating draft PR...')
+// ── Stage 2: Light inspect ────────────────────────────────────────────────
+phase('Inspect')
+log('inspector: light review of doc changes...')
 
-const pr = await agent(
-  `Docs updated for: ${trigger}\n\nRun pre-flight checks, validate commits follow conventional commits (docs: ...), push the branch, and create a draft PR listing which files were updated and why.`,
-  { label: 'git-assistant', phase: 'PR', schema: GATE_SCHEMA, agentType: 'git-assistant' }
+const inspectResult = await agent(
+  `Trigger: ${trigger}\n\nRun a light review (effort=low) of the documentation diff: secrets check, no accidental code changes mixed in, terminology matches the actual source.`,
+  { label: 'inspector', phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
 )
 
-if (!pr || pr.pipeline_gate === 'BLOCK') {
-  log(`git-assistant: PREFLIGHT_FAIL — ${pr ? pr.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'git-assistant', reason: pr ? pr.summary : 'No response' }
+if (inspectResult && inspectResult.pipeline_gate === 'ESCALATE') {
+  log('ESCALATION: secret found in doc diff — pipeline blocked, zero retries.')
+  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings }
 }
+if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
+  log(`inspector: findings — ${inspectResult.summary}`)
+  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings }
+}
+log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'}`)
 
-log(`git-assistant: ${pr ? pr.verdict : 'PR_CREATED'} — ${pr ? pr.summary : ''}`)
+// ── Stage 3: Ship ───────────────────────────────────────────────────────────
+phase('Ship')
+log('operator: pushing branch and creating draft PR...')
 
-// ── Stage 3: Memory save ──────────────────────────────────────────────────
-phase('Memory')
-log('memory-manager: saving docs update outcome...')
-await agent(
-  `SAVE pipeline=docs-update outcome=COMPLETE task="docs update: ${trigger}" summary="${pr ? pr.summary : 'Docs updated, PR created'}". Record which files were updated and what triggered the change.`,
-  { label: 'memory-manager:save', phase: 'Memory', agentType: 'memory-manager' }
+const ship = await agent(
+  `Mode: SHIP\n\nDocs updated for: ${trigger}\n\nRun pre-flight checks, push the branch, and create a draft PR listing which files were updated and why.`,
+  { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator' }
 )
+
+if (!ship || ship.pipeline_gate === 'BLOCK') {
+  log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response' }
+}
+log(`operator: ${ship.verdict} — ${ship.summary}`)
 
 return {
   outcome: 'COMPLETE',
   pipeline: 'docs-update',
   trigger,
-  files_updated: docs ? docs.findings.map(f => f.file).filter(Boolean) : [],
-  summary: pr ? pr.summary : 'Draft PR created. Docs updated.',
+  files_updated: docs && docs.findings ? docs.findings.map(f => f.file).filter(Boolean) : [],
+  summary: ship.summary || 'Draft PR created. Docs updated.',
 }

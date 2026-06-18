@@ -1,13 +1,10 @@
 export const meta = {
   name: 'refactor',
-  description: 'Refactor pipeline: memory-load → refactorer → code-reviewer → verifier → git-assistant → memory-save',
+  description: 'Refactor pipeline: operator(refactor) → inspector(review, retry≤1) → operator(ship)',
   phases: [
-    { title: 'Memory', detail: 'load prior context for target module' },
-    { title: 'Refactor', detail: 'refactorer cleans code smell by smell with test verification' },
-    { title: 'Review', detail: 'code-reviewer confirms quality improvement' },
-    { title: 'Verify', detail: 'verifier confirms behavior unchanged' },
-    { title: 'PR', detail: 'git-assistant creates draft PR' },
-    { title: 'Memory', detail: 'save lessons learned from refactor run' },
+    { title: 'Refactor', detail: 'operator confirms test baseline, refactors smell-by-smell' },
+    { title: 'Inspect', detail: 'inspector confirms behavior unchanged and quality improved' },
+    { title: 'Ship', detail: 'operator pushes the branch and opens the draft PR' },
   ],
 }
 
@@ -47,117 +44,84 @@ function formatFindings(result) {
   return result.findings.map(f => `  - [${f.severity}] ${f.file || '?'}:${f.line || 0} — ${f.message}`).join('\n')
 }
 
-// ── Stage 0: Memory load ──────────────────────────────────────────────────
-phase('Memory')
-log('memory-manager: loading prior context for target module...')
-
-const memBrief = await agent(
-  `LOAD task="refactor ${target} for ${goal}". Read .claude/memory/ and return a context brief of relevant conventions, code smells already addressed, prior refactor outcomes, and gotchas for this module.`,
-  { label: 'memory-manager:load', phase: 'Memory', agentType: 'memory-manager' }
-)
-log('memory loaded.')
-
 // ── Stage 1: Refactor ─────────────────────────────────────────────────────
 phase('Refactor')
-log('refactorer: confirming test baseline and identifying smells...')
+log('operator: confirming test baseline and refactoring smell-by-smell...')
 
 const refactor = await agent(
-  `Target: ${target}\nGoal: ${goal}\n\n${memBrief ? `Prior project memory:\n${memBrief}\n\n` : ''}Confirm a passing test baseline exists, identify code smells, then refactor one smell at a time — running tests after each change. Do not change external behavior or add features.`,
-  { label: 'refactorer', phase: 'Refactor', schema: GATE_SCHEMA, agentType: 'refactorer' }
+  `Mode: REFACTOR\n\nTarget: ${target}\nGoal: ${goal}\n\nLoad relevant .claude/memory/ context. Confirm a passing test baseline exists, identify code smells, then refactor one smell at a time — running tests after each change and committing each independently. Do not change external behavior or add features.`,
+  { label: 'operator:refactor', phase: 'Refactor', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
 if (!refactor || refactor.verdict === 'NO_TESTS') {
-  log('refactorer: NO_TESTS — no test baseline. Run test-writer first.')
+  log('operator: NO_TESTS — no test baseline. Run in BUILD mode to add tests first.')
   return {
     outcome: 'BLOCKED',
-    stage: 'refactorer',
-    reason: 'No tests exist. Run test-writer before refactoring.',
-    action: 'Run the test-writer agent first, then re-run this workflow.',
+    stage: 'operator:refactor',
+    reason: 'No tests exist. Run the new-feature/bug-fix workflow (BUILD mode) to add tests before refactoring.',
   }
 }
 
 if (!refactor || refactor.verdict === 'REGRESSION' || refactor.pipeline_gate === 'BLOCK') {
-  log(`refactorer: REGRESSION or BLOCK — ${refactor ? refactor.summary : 'no response'}. Escalating.`)
-  return {
-    outcome: 'BLOCKED',
-    stage: 'refactorer',
-    reason: refactor ? refactor.summary : 'No response',
-    findings: refactor ? refactor.findings : [],
-  }
+  log(`operator: REGRESSION or BLOCK — ${refactor ? refactor.summary : 'no response'}. Escalating.`)
+  return { outcome: 'BLOCKED', stage: 'operator:refactor', reason: refactor ? refactor.summary : 'No response', findings: refactor ? refactor.findings : [] }
 }
-log(`refactorer: ${refactor.verdict} — ${refactor.summary}`)
+log(`operator: ${refactor.verdict} — ${refactor.summary}`)
 
-// ── Stage 2: Code review ─────────────────────────────────────────────────
-phase('Review')
-let crResult = null
-let crRetries = 0
+// ── Stage 2: Inspect (retry ≤ 1) ─────────────────────────────────────────────
+phase('Inspect')
+let inspectResult = null
+let retries = 0
 
-while (crRetries <= MAX_RETRIES) {
-  log(crRetries === 0 ? 'code-reviewer: confirming quality improved...' : `code-reviewer: retry ${crRetries}/${MAX_RETRIES}...`)
+while (retries <= MAX_RETRIES) {
+  log(retries === 0 ? 'inspector: confirming behavior unchanged and quality improved...' : `inspector: re-reviewing after fix ${retries}/${MAX_RETRIES}...`)
 
-  crResult = await agent(
-    `Target refactored: ${target}\n\nReview the refactoring with effort=medium. Confirm: (1) external behavior unchanged, (2) no new bugs introduced, (3) code quality improved vs before. Flag any Critical issues.`,
-    { label: `code-reviewer${crRetries > 0 ? `-r${crRetries}` : ''}`, phase: 'Review', schema: GATE_SCHEMA, agentType: 'code-reviewer' }
+  inspectResult = await agent(
+    `Target refactored: ${target} (goal: ${goal})\n\nReview with effort=medium. Confirm: (1) external behavior unchanged — run all tests, check public API surface, (2) no new bugs introduced, (3) code quality improved vs before.`,
+    { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
-  if (!crResult || crResult.pipeline_gate !== 'BLOCK') break
-  crRetries++
-}
-
-if (crRetries > MAX_RETRIES) {
-  log(`code-reviewer: exceeded ${MAX_RETRIES} retries — escalating.`)
-  return { outcome: 'BLOCKED', stage: 'code-reviewer', retries: crRetries, findings: crResult ? crResult.findings : [] }
-}
-log(`code-reviewer: ${crResult ? crResult.verdict : 'PASS'} — ${crResult ? crResult.summary : ''}`)
-
-// ── Stage 3: Verify ───────────────────────────────────────────────────────
-phase('Verify')
-log('verifier: confirming behavior is unchanged...')
-
-const vfResult = await agent(
-  `Target refactored: ${target}\n\nVerify that external behavior is unchanged: run all tests, check public API surface is intact, confirm no integration points were broken. Return VERIFIED only if behavior is provably the same.`,
-  { label: 'verifier', phase: 'Verify', schema: GATE_SCHEMA, agentType: 'verifier' }
-)
-
-if (!vfResult || vfResult.pipeline_gate === 'BLOCK') {
-  log(`verifier: SPEC_VIOLATION — ${vfResult ? vfResult.summary : 'no response'}`)
-  return {
-    outcome: 'BLOCKED',
-    stage: 'verifier',
-    reason: vfResult ? vfResult.summary : 'No response',
-    findings: vfResult ? vfResult.findings : [],
+  if (!inspectResult || inspectResult.pipeline_gate === 'ESCALATE') {
+    log('ESCALATION: secret or critical issue found — pipeline blocked, zero retries.')
+    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [] }
   }
-}
-log(`verifier: ${vfResult.verdict} — ${vfResult.summary}`)
 
-// ── Stage 4: PR ───────────────────────────────────────────────────────────
-phase('PR')
-log('git-assistant: creating draft PR...')
+  if (inspectResult.pipeline_gate !== 'BLOCK') break
+  if (retries >= MAX_RETRIES) break
 
-const pr = await agent(
-  `Refactoring complete: ${target} (goal: ${goal})\n\nRun pre-flight checks, validate commits follow conventional commits (refactor: ...), push the branch, and create a draft PR noting what smells were fixed and that tests are unchanged.`,
-  { label: 'git-assistant', phase: 'PR', schema: GATE_SCHEMA, agentType: 'git-assistant' }
-)
-
-if (!pr || pr.pipeline_gate === 'BLOCK') {
-  log(`git-assistant: PREFLIGHT_FAIL — ${pr ? pr.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'git-assistant', reason: pr ? pr.summary : 'No response' }
+  log(`inspector: issues found — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
+  await agent(
+    `Mode: REFACTOR\n\nTarget: ${target}\n\nFix the following findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(inspectResult)}\n\nFix only the listed items, one at a time, re-running tests after each.`,
+    { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator' }
+  )
+  retries++
 }
 
-log(`git-assistant: ${pr ? pr.verdict : 'PR_CREATED'} — ${pr ? pr.summary : ''}`)
+if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
+  log(`inspector: exceeded ${MAX_RETRIES} retries — escalating.`)
+  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings }
+}
+log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspectResult ? inspectResult.summary : ''}`)
 
-// ── Stage 5: Memory save ──────────────────────────────────────────────────
-phase('Memory')
-log('memory-manager: saving refactor outcomes...')
-await agent(
-  `SAVE pipeline=refactor outcome=COMPLETE task="refactor ${target} for ${goal}" summary="${pr ? pr.summary : 'Refactor complete, PR created'}". Record what smells were fixed, test baseline state, and any gotchas discovered during the refactor.`,
-  { label: 'memory-manager:save', phase: 'Memory', agentType: 'memory-manager' }
+// ── Stage 3: Ship ────────────────────────────────────────────────────────
+phase('Ship')
+log('operator: pushing branch and creating draft PR...')
+
+const ship = await agent(
+  `Mode: SHIP\n\nRefactoring complete: ${target} (goal: ${goal})\n\nRun pre-flight checks, push the branch, create a draft PR noting what smells were fixed and that tests are unchanged, and save the refactor outcome to .claude/memory/.`,
+  { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator' }
 )
+
+if (!ship || ship.pipeline_gate === 'BLOCK') {
+  log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response' }
+}
+log(`operator: ${ship.verdict} — ${ship.summary}`)
 
 return {
   outcome: 'COMPLETE',
   pipeline: 'refactor',
   target,
   goal,
-  summary: pr ? pr.summary : 'Draft PR created. Behavior unchanged.',
+  summary: ship.summary || 'Draft PR created. Behavior unchanged.',
 }

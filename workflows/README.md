@@ -1,12 +1,12 @@
 # Workflows
 
-JavaScript workflow scripts that orchestrate the agents in deterministic pipelines. Each script handles retry logic, quality gates, and escalation in code — not in a model's judgment.
+JavaScript workflow scripts that orchestrate `operator` and `inspector` in deterministic pipelines. Each script handles retry logic, quality gates, and escalation in code — not in a model's judgment.
 
 ---
 
-## How workflows differ from the orchestrator agent
+## How workflows differ from calling agents directly
 
-| | Orchestrator agent | Workflow scripts |
+| | Calling an agent directly | Workflow scripts |
 |---|---|---|
 | **Control flow** | Model decides what to do next | Code (loops, conditionals) |
 | **Parallelism** | Sequential by default | True `parallel()` support |
@@ -14,7 +14,7 @@ JavaScript workflow scripts that orchestrate the agents in deterministic pipelin
 | **Resumability** | Starts fresh each run | Resume from a `runId` on failure |
 | **Debugging** | Read the conversation | Read the script |
 
-Use workflows when you want guaranteed, auditable execution. Use the orchestrator agent for exploratory or one-off tasks where flexibility matters more than determinism.
+Use workflows when you want guaranteed, auditable execution. Call `operator`/`inspector` directly for exploratory or one-off tasks where flexibility matters more than determinism.
 
 ---
 
@@ -29,10 +29,10 @@ cp workflows/*.js your-project/.claude/workflows/
 
 # Workflows also need the agents installed
 mkdir -p your-project/.claude/agents
-for f in agents/*/; do
-  name=$(basename "$f")
-  cp "agents/$name/$name.md" "your-project/.claude/agents/$name.md"
-done
+cp ../subagents/operator/operator.md your-project/.claude/agents/operator.md
+cp ../subagents/inspector/inspector.md your-project/.claude/agents/inspector.md
+mkdir -p your-project/.claude/agents/rules
+cp ../subagents/rules/*.md your-project/.claude/agents/rules/
 ```
 
 ---
@@ -52,7 +52,7 @@ done
 ```javascript
 Workflow({ name: 'new-feature', args: { task: 'add JWT refresh token support', effort: 'high' } })
 Workflow({ name: 'bug-fix', args: { bug: 'nil pointer in cache.Get()', known_cause: true } })
-Workflow({ name: 'pr-review', args: { pr: 15, verify: true, spec: 'Rate limit must return 429 with Retry-After header' } })
+Workflow({ name: 'pr-review', args: { pr: 15, spec: 'Rate limit must return 429 with Retry-After header' } })
 ```
 
 ### Resume a failed run
@@ -67,26 +67,21 @@ Workflow({ scriptPath: '.claude/workflows/new-feature.js', resumeFromRunId: 'wf_
 
 ### `new-feature.js`
 
-Full feature delivery pipeline with quality gate loops.
+Full feature delivery pipeline with a quality gate loop.
 
 ```
-secret-scanner → planner → developer ←──────────────────────────┐
-                                 ↓                              │
-                           test-writer                          │
-                                 ↓                    retry ≤ 1 │
-                    ┌── code-reviewer ─ CRITICAL ───────────────┤
-                    │   security-reviewer ─ ESCALATE → human    │
-                    └────────────── (parallel) ─────────────────┘
-                                 ↓
-                            verifier ─ SPEC_VIOLATION → developer (retry ≤ 1)
-                                 ↓
-                          git-assistant → Draft PR
+operator (BUILD) → inspector ─ BLOCK, retry ≤ 1 → operator (BUILD fix) ─┐
+                       │                                                │
+                       └────────────────────── re-inspect ──────────────┘
+                       │ PASS
+                       ▼
+                  operator (SHIP) → Draft PR
 ```
 
 | Arg | Type | Required | Description |
 |---|---|---|---|
 | `task` | string | Yes | What to implement |
-| `effort` | string | No | `low` / `medium` / `high` / `maximum` (default: `medium`) |
+| `effort` | string | No | `low` / `medium` / `high` / `maximum` — inspector's effort (default: `medium`) |
 | `branch` | string | No | Feature branch name hint |
 
 ---
@@ -96,14 +91,14 @@ secret-scanner → planner → developer ←────────────
 Bug fix from diagnosis to PR.
 
 ```
-debugger (optional) → developer → test-writer → verifier → git-assistant → Draft PR
+operator (BUILD: diagnose + fix) → inspector ─ retry ≤ 1 → operator (SHIP) → Draft PR
 ```
 
 | Arg | Type | Required | Description |
 |---|---|---|---|
 | `bug` | string | Yes | Bug description or failing test name |
-| `known_cause` | boolean | No | Set `true` to skip debugger (default: `false`) |
-| `stack_trace` | string | No | Paste the stack trace for better debugger context |
+| `known_cause` | boolean | No | Set `true` to skip diagnosis (default: `false`) |
+| `stack_trace` | string | No | Paste the stack trace for better diagnosis context |
 
 ---
 
@@ -112,9 +107,9 @@ debugger (optional) → developer → test-writer → verifier → git-assistant
 Cleanup pipeline that requires tests to exist before starting.
 
 ```
-refactorer → code-reviewer → verifier → git-assistant → Draft PR
-         ↑                                    ↑
-    NO_TESTS → block         SPEC_VIOLATION → refactorer (retry ≤ 1)
+operator (REFACTOR) → inspector ─ retry ≤ 1 → operator (SHIP) → Draft PR
+       ↑
+  NO_TESTS → block (run new-feature/bug-fix in BUILD mode to add tests first)
 ```
 
 | Arg | Type | Required | Description |
@@ -126,20 +121,17 @@ refactorer → code-reviewer → verifier → git-assistant → Draft PR
 
 ### `pr-review.js`
 
-Parallel review across three dimensions, synthesized into one report.
+Single-pass review across secrets, security, dependencies, and code quality.
 
 ```
-secret-scanner → ┌─ code-reviewer ─────────┐
-                 ├─ security-reviewer ──────┤ → synthesize → optional verifier
-                 └─ dependency-auditor ─────┘
+inspector ── secrets (SEC-4) → OWASP/STRIDE → dependency/CVE audit → quality (+ spec check if `spec` given)
 ```
 
 | Arg | Type | Required | Description |
 |---|---|---|---|
 | `pr` | number | No | PR number — omit to review current HEAD diff |
-| `effort` | string | No | code-reviewer effort mode (default: `medium`) |
-| `verify` | boolean | No | Run verifier after review (default: `false`) |
-| `spec` | string | No | Requirements text for verifier (required if `verify=true`) |
+| `effort` | string | No | inspector effort mode (default: `medium`) |
+| `spec` | string | No | Requirements text — when present, inspector also checks spec compliance |
 
 ---
 
@@ -148,7 +140,7 @@ secret-scanner → ┌─ code-reviewer ─────────┐
 Keeps docs in sync after a code change.
 
 ```
-docs-writer → git-assistant → Draft PR
+operator (DOCS) → inspector (light review) → operator (SHIP) → Draft PR
 ```
 
 | Arg | Type | Required | Description |
@@ -163,11 +155,9 @@ docs-writer → git-assistant → Draft PR
 Pre-release security + CVE gate, then creates a release PR with CHANGELOG.
 
 ```
-┌── secret-scanner ──────────────────┐
-│   dependency-auditor               │ (parallel)
-└──────────── ESCALATION → stop ─────┘
+inspector (effort=maximum) ── ESCALATION / CRITICAL_CVE → stop
                    ↓
-        git-assistant (release mode) → Release PR
+        operator (SHIP, release mode) → Release PR
 ```
 
 | Arg | Type | Required | Description |
@@ -185,10 +175,9 @@ Every workflow enforces these gates:
 | Signal | Action | Retries |
 |---|---|---|
 | `SECRET_FOUND` / `ESCALATION` | Pipeline stops immediately | **0** — human must rotate credential |
-| `CRITICAL_BLOCK` (code-reviewer) | Return to developer with `file:line` fixes | Max 1 |
-| `SPEC_VIOLATION` (verifier) | Return to developer with unmet requirements | Max 1 |
-| `CRITICAL_CVE` (dependency-auditor) | Release pipeline blocked | 0 — fix CVE first |
-| `NO_TESTS` (refactorer) | Block — run test-writer first | N/A |
+| `CRITICAL_BLOCK` (inspector) | Return to operator with `file:line` fixes | Max 1 |
+| `CRITICAL_CVE` (inspector) | Release pipeline blocked | 0 — fix CVE first |
+| `NO_TESTS` (operator REFACTOR mode) | Block — run BUILD mode to add tests first | N/A |
 | Any gate after 1 retry | Escalate to human with full attempt history | — |
 | Missing `<task-notification>` | Treated as `BLOCK` | — |
 
@@ -204,14 +193,13 @@ const result = await agent('prompt', {
   label: 'display-name',
   phase: 'Phase Name',
   schema: GATE_SCHEMA,        // forces structured output
-  agentType: 'developer',     // invokes .claude/agents/developer.md
+  agentType: 'operator',      // invokes .claude/agents/operator.md
 })
 
 // Run agents in parallel (all start at once, wait for all)
-const [a, b, c] = await parallel([
-  () => agent('...', { agentType: 'code-reviewer' }),
-  () => agent('...', { agentType: 'security-reviewer' }),
-  () => agent('...', { agentType: 'dependency-auditor' }),
+const [a, b] = await parallel([
+  () => agent('...', { agentType: 'operator' }),
+  () => agent('...', { agentType: 'inspector' }),
 ])
 
 // Log progress (shown in /workflows UI)
@@ -224,4 +212,4 @@ phase('Review')
 return { outcome: 'COMPLETE', summary: '...' }
 ```
 
-See [SCHEMA.md](../agents/SCHEMA.md) for the full agent frontmatter reference.
+See [SCHEMA.md](../subagents/SCHEMA.md) for the full agent frontmatter reference.

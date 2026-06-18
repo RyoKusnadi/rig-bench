@@ -1,8 +1,8 @@
 # Agent Harness
 
-A set of Claude Code subagents covering the full engineering cycle — from understanding a requirement to opening a reviewed, tested, and secure pull request.
+A "Lean 2" pair of Claude Code subagents covering the full engineering cycle — from understanding a requirement to opening a reviewed, tested, and secure pull request.
 
-Each agent is a self-contained `.md` file with a YAML header and a system prompt. Drop any of them into `.claude/agents/` and Claude Code picks them up automatically.
+Each agent is a self-contained `.md` file with a YAML header and a system prompt. Drop either of them into `.claude/agents/` and Claude Code picks them up automatically.
 
 ---
 
@@ -12,39 +12,35 @@ Each agent is a self-contained `.md` file with a YAML header and a system prompt
 
 You type a goal in Claude Code — "implement per-tenant rate limiting" or "review PR #42 before I merge it".
 
-### 2. The orchestrator selects and sequences agents
+### 2. The operator does the work
 
-The **orchestrator** reads the request, picks the right pipeline from its built-in chains, and dispatches each specialist agent one at a time — passing a synthesized prompt (never raw output) to each stage.
+The **operator** plans (if the change is non-trivial), implements with TDD, writes tests, self-verifies, and — once review passes — commits, pushes, and opens the draft PR. One agent, run end-to-end inside a single task, instead of handing off between a planner/developer/tester/git-assistant chain.
 
-### 3. Each agent does one job
+### 3. The inspector checks it independently
 
-Every agent:
-- Has a defined role and tool list enforced at runtime
-- Follows a numbered step procedure
-- Emits a structured `<task-notification>` XML block at the end so the orchestrator knows the verdict
+The **inspector** runs read-only, adversarial, and never trusts the operator's self-report: secrets detection, OWASP/STRIDE, dependency/CVE audit, and a two-pass code-quality review all happen in one pass. It emits a `<task-notification>` the calling workflow reads to decide whether to advance, retry, or escalate.
 
 ### 4. Quality gates enforce correctness
 
-Before advancing to the next stage, the orchestrator reads the `<task-notification>` verdict. A `CRITICAL_BLOCK` from code-reviewer or a `SPEC_VIOLATION` from verifier loops the pipeline back to developer with specific `file:line` fix instructions. A `SECRET_FOUND` stops everything with zero retries.
+A `CRITICAL_BLOCK` from inspector loops back to the operator with specific `file:line` fix instructions (max 1 retry). A `SECRET_FOUND` or `CRITICAL_CVE` stops everything with zero retries.
 
 ### 5. The PR arrives clean
 
-git-assistant creates a draft PR only after every gate has passed.
+The operator creates a draft PR only after inspector has passed.
 
 ---
 
 ## Installation
 
 ```bash
-# Copy a single agent
-cp agents/developer/developer.md your-project/.claude/agents/developer.md
-
-# Copy all agents at once
+# Copy both agents
 mkdir -p your-project/.claude/agents
-for f in agents/*/; do
-  name=$(basename "$f")
-  cp "agents/$name/$name.md" "your-project/.claude/agents/$name.md"
-done
+cp subagents/operator/operator.md your-project/.claude/agents/operator.md
+cp subagents/inspector/inspector.md your-project/.claude/agents/inspector.md
+
+# Shared linting/rule references both agents read
+mkdir -p your-project/.claude/agents/rules
+cp subagents/rules/*.md your-project/.claude/agents/rules/
 ```
 
 Claude Code picks up any `.md` file in `.claude/agents/` automatically — no config needed.
@@ -53,11 +49,9 @@ Claude Code picks up any `.md` file in `.claude/agents/` automatically — no co
 
 ## Where to start
 
-**New to this?** Start with the orchestrator. Say `"implement X end to end"` or `"review PR #N"` and it handles the rest.
+**New to this?** Say `"implement X end to end"` or `"review PR #N"` — the [workflow scripts](../workflows/README.md) sequence `operator` and `inspector` for you with deterministic retry/escalation logic.
 
-**Want deterministic, resumable pipelines?** Use the [workflow scripts](../workflows/README.md) — same pipelines as the orchestrator but controlled by code instead of a model.
-
-**Comfortable with individual agents?** Call any agent directly — each is fully self-contained and works without the orchestrator.
+**Want full control?** Call either agent directly — both are fully self-contained. Tell `operator` which mode to run (`BUILD`, `REFACTOR`, `DOCS`, or `SHIP`); tell `inspector` an effort level (`low`/`medium`/`high`/`maximum`).
 
 ---
 
@@ -65,114 +59,33 @@ Claude Code picks up any `.md` file in `.claude/agents/` automatically — no co
 
 | Agent | Role | Permission | Model |
 |---|---|---|---|
-| [memory-manager](#memory-manager) | Reads/writes `.claude/memory/` — project knowledge store | `semi-auto` | Haiku |
-| [orchestrator](#orchestrator) | Pipeline conductor — sequences all other agents | `auto` | Sonnet |
-| [planner](#planner) | Produces a concrete, file-level implementation plan | `auto` | Sonnet |
-| [developer](#developer) | Implements features, bug fixes, refactors | `manual` | Sonnet |
-| [test-writer](#test-writer) | Writes and verifies tests (AAA, TDD) | `semi-auto` | Sonnet |
-| [refactorer](#refactorer) | Restructures code without changing behavior | `semi-auto` | Sonnet |
-| [code-reviewer](#code-reviewer) | Two-pass code review with 4 effort modes | `semi-auto` | Sonnet |
-| [security-reviewer](#security-reviewer) | OWASP A01–A10 + STRIDE audit | `semi-auto` | Sonnet |
-| [secret-scanner](#secret-scanner) | Fast SEC-4 credential scan (target <10 sec) | `semi-auto` | Haiku |
-| [dependency-auditor](#dependency-auditor) | CVE scan, license check, version hygiene | `semi-auto` | Sonnet |
-| [verifier](#verifier) | Binary spec-compliance check with real evidence | `semi-auto` | Sonnet |
-| [debugger](#debugger) | Root-cause analysis, never applies fixes | `semi-auto` | Sonnet |
-| [docs-writer](#docs-writer) | Keeps README, CLAUDE.md, docstrings in sync | `semi-auto` | Sonnet |
-| [git-assistant](#git-assistant) | Conventional commits, draft PRs, branch safety | `manual` | Sonnet |
-| [changelog-writer](#changelog-writer) | CHANGELOG.md entries in Keep a Changelog format | `semi-auto` | Sonnet |
+| [operator](#operator) | Plans, implements (TDD), tests, self-verifies, refactors, diagnoses bugs, writes docs/CHANGELOG, ships (commit + draft PR) | `manual` | Sonnet |
+| [inspector](#inspector) | Read-only adversarial review: secrets, OWASP/STRIDE, dependency/CVE audit, two-pass code quality | `semi-auto` | Sonnet |
 
 ---
 
 ## Pipelines
 
-### New feature
+### New feature / bug fix / refactor
 
 ```mermaid
 flowchart TD
-    Start([User: implement X]) --> SS[secret-scanner]
+    Start([User: implement / fix / refactor X]) --> OP[operator]
 
-    SS --> SS_gate{CLEAN?}
-    SS_gate -- ESCALATION --> BLOCKED1([🚨 BLOCKED\nRotate credential first])
-    SS_gate -- CLEAN --> PL[planner]
+    OP --> OP_gate{pipeline_gate?}
+    OP_gate -- BLOCK --> Human1([🤚 Gate failure\nneeds human input])
+    OP_gate -- PASS --> INS[inspector]
 
-    PL --> PL_gate{PLAN_READY?}
-    PL_gate -- DECISION_NEEDED --> Human1([🤚 Human decision\nneeded])
-    PL_gate -- PLAN_READY --> DEV[developer]
+    INS --> INS_gate{pipeline_gate?}
+    INS_gate -- ESCALATE --> BLOCKED([🚨 BLOCKED\nSecret or critical CVE — zero retries])
+    INS_gate -- BLOCK\nretry ≤ 1 --> OP
+    INS_gate -- BLOCK\nretry > 1 --> Human2([🤚 Escalate to human])
+    INS_gate -- PASS --> SHIP[operator: SHIP mode]
 
-    DEV --> TW[test-writer]
-    TW --> Parallel
-
-    subgraph Parallel [Run in parallel]
-        CR[code-reviewer]
-        SR[security-reviewer]
-    end
-
-    CR --> CR_gate{verdict?}
-    CR_gate -- CRITICAL_BLOCK\nretry ≤ 1 --> DEV
-    CR_gate -- CRITICAL_BLOCK\nretry > 1 --> Human2([🤚 Escalate to human])
-    CR_gate -- CLEAN / MAJOR_ONLY --> VF[verifier]
-
-    SR --> SR_gate{verdict?}
-    SR_gate -- SECRET_FOUND --> BLOCKED2([🚨 BLOCKED\nZero retries])
-    SR_gate -- CRITICAL_BLOCK --> Human3([🤚 Escalate to human])
-    SR_gate -- CLEAN --> VF
-
-    VF --> VF_gate{VERIFIED?}
-    VF_gate -- SPEC_VIOLATION\nretry ≤ 1 --> DEV
-    VF_gate -- SPEC_VIOLATION\nretry > 1 --> Human4([🤚 Escalate to human])
-    VF_gate -- VERIFIED --> GA[git-assistant]
-
-    GA --> PR([✅ Draft PR created])
+    SHIP --> PR([✅ Draft PR created])
 ```
 
----
-
-### Bug fix
-
-```mermaid
-flowchart TD
-    Start([User: fix bug X]) --> DBG{Root cause\nknown?}
-
-    DBG -- No --> Debugger[debugger]
-    DBG -- Yes --> DEV[developer]
-
-    Debugger --> DBG_gate{verdict?}
-    DBG_gate -- INCONCLUSIVE --> Human1([🤚 Escalate to human])
-    DBG_gate -- ROOT_CAUSE_FOUND --> DEV
-
-    DEV --> TW[test-writer]
-    TW --> VF[verifier]
-
-    VF --> VF_gate{VERIFIED?}
-    VF_gate -- SPEC_VIOLATION\nretry ≤ 1 --> DEV
-    VF_gate -- VERIFIED --> GA[git-assistant]
-
-    GA --> PR([✅ Draft PR created])
-```
-
----
-
-### Refactor
-
-```mermaid
-flowchart TD
-    Start([User: refactor X]) --> RF[refactorer]
-
-    RF --> RF_gate{verdict?}
-    RF_gate -- NO_TESTS --> TW([Blocked: run\ntest-writer first])
-    RF_gate -- REGRESSION --> Human1([🤚 Escalate to human])
-    RF_gate -- REFACTORED --> CR[code-reviewer]
-
-    CR --> CR_gate{verdict?}
-    CR_gate -- CRITICAL_BLOCK\nretry ≤ 1 --> RF
-    CR_gate -- CLEAN / MAJOR_ONLY --> VF[verifier]
-
-    VF --> VF_gate{VERIFIED?}
-    VF_gate -- SPEC_VIOLATION --> RF
-    VF_gate -- VERIFIED --> GA[git-assistant]
-
-    GA --> PR([✅ Draft PR created])
-```
+Refactor mode adds one extra short-circuit: `operator` returns `NO_TESTS` if no baseline exists, blocking before any code is touched.
 
 ---
 
@@ -180,39 +93,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start([User: review PR #N]) --> SS[secret-scanner]
+    Start([User: review PR #N]) --> INS[inspector\nsingle pass]
 
-    SS --> SS_gate{CLEAN?}
-    SS_gate -- ESCALATION --> BLOCKED([🚨 BLOCKED])
-    SS_gate -- CLEAN --> Parallel
-
-    subgraph Parallel [Run in parallel]
-        CR[code-reviewer]
-        SEC[security-reviewer]
-        DA[dependency-auditor]
-    end
-
-    Parallel --> Synth[orchestrator\nsynthesises findings]
-
-    Synth --> Gate{Any\nCRITICAL?}
-    Gate -- Yes --> Report([Report blockers\nto author])
-    Gate -- No --> VF[verifier\noptional]
-
-    VF --> Done([✅ Review complete])
+    INS --> INS_gate{pipeline_gate?}
+    INS_gate -- ESCALATE --> BLOCKED([🚨 BLOCKED])
+    INS_gate -- BLOCK --> Report([Report blockers to author])
+    INS_gate -- PASS --> Done([✅ Review complete])
 ```
 
----
-
-### Docs update
-
-```mermaid
-flowchart LR
-    Start([Code changed]) --> DW[docs-writer]
-    DW --> DW_gate{DOCS_UPDATED?}
-    DW_gate -- EXAMPLE_FAIL --> Human([🤚 Fix broken example])
-    DW_gate -- DOCS_UPDATED --> GA[git-assistant]
-    GA --> PR([✅ Draft PR])
-```
+One `inspector` call replaces the old parallel code-reviewer + security-reviewer + dependency-auditor + synthesis step — inspector already covers all four dimensions per pass.
 
 ---
 
@@ -220,191 +109,53 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Start([Cutting a release]) --> Parallel
+    Start([Cutting a release]) --> INS[inspector\neffort=maximum]
 
-    subgraph Parallel [Run in parallel]
-        SS[secret-scanner]
-        DA[dependency-auditor]
-    end
+    INS --> INS_gate{verdict?}
+    INS_gate -- ESCALATE / CRITICAL_CVE --> BLOCKED([🚨 BLOCKED])
+    INS_gate -- PASS / hygiene flags --> OP[operator: SHIP mode\nrelease]
 
-    SS --> SS_gate{CLEAN?}
-    SS_gate -- ESCALATION --> BLOCKED1([🚨 BLOCKED\nRotate credential])
-    DA --> DA_gate{verdict?}
-    DA_gate -- CRITICAL_CVE --> BLOCKED2([🚨 BLOCKED\nFix CVE first])
-    SS_gate -- CLEAN --> GA[git-assistant\nrelease mode]
-    DA_gate -- CLEAN / HYGIENE_FLAGS --> GA
-    GA --> PR([✅ Release PR created])
+    OP --> PR([✅ Release PR created])
 ```
 
 ---
 
 ## Agent details
 
-### memory-manager
+### operator
 
-**Role:** Project knowledge store. Reads `.claude/memory/` to give agents context before a run (LOAD), and writes findings after a run (SAVE). Runs on Haiku for speed — it's called at the start and end of every pipeline.
+**Role:** Single heavyweight execution engine, run in one of four modes selected by the caller's prompt:
 
-**Operations:** `LOAD` (context brief before a task) · `SAVE` (record findings after a run) · `UPDATE` (revise a stale entry) · `QUERY` (answer a specific question from memory)
-
-**Memory files managed:**
-
-| File | Contains |
+| Mode | What it does |
 |---|---|
-| `conventions.md` | Coding patterns, idioms, style rules |
-| `architecture.md` | Module structure, data flow, key invariants |
-| `gotchas.md` | Things that broke, edge cases, surprises |
-| `lessons-learned.md` | Agent run outcomes, retry patterns |
-| `decisions.md` | Architectural choices and rationale |
+| `BUILD` | Load memory → plan (if 3+ files) → TDD implement → map test coverage → two-stage self-verify (Gate A spec, Gate B quality) → local commit. Folds in root-cause diagnosis for bug fixes with unknown cause. |
+| `REFACTOR` | Confirm test baseline → refactor one smell at a time, testing after each → re-verify behavior unchanged. |
+| `DOCS` | Update README/CLAUDE.md/docstrings/CHANGELOG → verify every code example runs. |
+| `SHIP` | Pre-flight checks → push → draft PR with structured body → save findings to `.claude/memory/`. |
 
-**Call it with:** `"remember that this project uses table-driven tests"` · `"what do we know about the cache layer?"` · runs automatically at start/end of `new-feature` and `bug-fix` workflows.
-
----
-
-### orchestrator
-
-**Role:** Pipeline conductor. Decides which chain to run, dispatches each agent with a synthesized prompt (including specific `file:line` references from prior stages), enforces quality gates, and escalates to you only when automation is exhausted.
-
-**Key behaviors:**
-- **Mandatory synthesis step** — before every dispatch, reads the prior agent's `<task-notification>` XML and `## HANDOFF` YAML, extracts `file:line` findings, and builds a targeted `<synthesis>` XML block. Never pipes raw output forward.
-- **Per-stage retry counter** — max 1 retry per stage (2 total attempts), then escalates to you with the full attempt history.
-- **SECRET_FOUND zero retries** — any secret escalation immediately stops the pipeline. Resume only after you confirm `RESOLVED`, `ACCEPTED-RISK`, or `ABORT`.
-
-**Call it with:** `"implement X end to end"` · `"review PR #N before I merge"` · `"fix this bug and get it to a PR"`
+**Call it with:** `"implement X end to end"` · `"fix this bug"` · `"refactor the cache layer"` · `"ship the change"`
 
 ---
 
-### planner
+### inspector
 
-**Role:** Read-only. Reads the codebase, asks at most 2–3 targeted clarifying questions, and produces a phased, file-level implementation plan. Never writes code.
+**Role:** Isolated, adversarial reviewer. One pass, in priority order: SEC-4 secrets (zero-retry escalation) → OWASP A01–A10 + STRIDE (skipped/noted if not applicable) → dependency/CVE audit across every manifest → two-pass code-quality review (spec compliance, then correctness/security/quality/test-coverage/performance) at one of four effort modes (`low`/`medium`/`high`/`maximum`).
 
-**Output includes:** files to touch, files NOT to touch, implementation steps with `file:line`, risk flags, decisions needed.
+**Why merged from 4 agents into 1:** the old code-reviewer/security-reviewer/secret-scanner/dependency-auditor split meant 4 spawns reviewing the same diff. Inspector reads the diff once and runs all four passes in the same context.
 
-**Call it when:** task touches 3+ files, has architecture decisions, or you want a blueprint before writing any code.
-
----
-
-### developer
-
-**Role:** Implements features, bug fixes, and refactors following TDD (Red → Green → Refactor). Runs a two-stage self-validation gate (spec compliance, then code quality) and requires real test output before reporting done.
-
-**Languages:** Go, TypeScript/JavaScript, Python, Rust, .NET
-
-**Hard rules:** never pushes directly except initial `git push -u`; never uses `git add .`; always on a feature branch.
-
----
-
-### test-writer
-
-**Role:** Writes tests in AAA pattern (Arrange / Act / Assert). Maps every code path — happy path, error paths, boundary conditions, concurrency — before writing a single test. Verifies every test actually fails before the implementation (Red) and passes after (Green).
-
-**Coverage targets:** 95% business logic · 85% application layer · 80% infrastructure
-
----
-
-### refactorer
-
-**Role:** Restructures working code without changing external behavior. Requires a passing test baseline before starting. Refactors one smell at a time, runs tests after each change, commits each independently.
-
-**Refuses to start when:** no tests exist (hands off to test-writer) · tests are already failing · the task is about to delete the code.
-
----
-
-### code-reviewer
-
-**Role:** Two-pass review with 4 effort modes. Pass A = spec compliance. Pass B = quality audit across correctness, security (STRIDE), code quality, test coverage, and performance.
-
-**Effort modes:**
-
-| Mode | Tool budget | Use for |
-|---|---|---|
-| `low` | ≤12 calls | Small PRs, config-only changes |
-| `medium` | ≤25 calls | Default — feature PRs, bug fixes |
-| `high` | ≤40 calls | Auth, API, security-sensitive code |
-| `maximum` | ≤60 calls | Pre-release, critical paths, post-incident |
-
-Call with: `"review with effort=high"` to override the default.
-
----
-
-### security-reviewer
-
-**Role:** Full security audit — OWASP A01–A10, STRIDE threat model, real grep patterns for 7 secret types, dependency vulnerability check. Every finding cites `file:line` with a concrete attack scenario and severity justification.
-
-**SEC-4 escalation:** any hardcoded secret (AWS key, GitHub token, JWT, private key, DB URI, high-entropy generic) → pipeline stops immediately, human must rotate and clean history before resuming.
-
----
-
-### secret-scanner
-
-**Role:** Fast, focused first gate. Runs 8 grep patterns from the SEC-4 protocol against changed files only. Designed to run in under 10 seconds before any other analysis agent starts.
-
-**Why a separate agent from security-reviewer?** Speed and scope. secret-scanner checks only the diff for credentials in seconds — it doesn't read full files, audit dependencies, or do OWASP analysis. Use it as a cheap always-on first gate; use security-reviewer for the full audit.
-
-**Verdicts:** `CLEAN` → pipeline proceeds · `ESCALATION` → pipeline blocked, zero retries.
-
----
-
-### dependency-auditor
-
-**Role:** Scans every package manifest (npm, Go modules, pip, Rust, .NET, Ruby, Maven) for CVEs, unpinned versions, missing lock files, abandoned packages, and license conflicts. Every finding includes the exact command to fix it.
-
-**Multi-ecosystem:** works across all ecosystems in one pass. Deduplicates: the same CVE in 3 workspaces = 1 finding.
-
----
-
-### verifier
-
-**Role:** Independent spec-compliance check — does the implementation actually do what was asked? Returns binary `VERIFIED` or `SPEC_VIOLATION` with real execution evidence (test output, grep results, curl responses) for every stated requirement. Never trusts the developer agent's self-report.
-
-**PARTIAL counts as SPEC_VIOLATION** — every requirement must be fully MET for a VERIFIED verdict.
-
----
-
-### debugger
-
-**Role:** Root-cause analysis only. Reproduces the failure, forms 2–3 ranked hypotheses, tests the cheapest ones first, and produces a diagnosis with a suggested fix snippet. Never applies the fix.
-
-**Anti-sycophancy rule:** if evidence disproves the caller's hypothesis, states the actual cause and cites the disconfirming `file:line`.
-
-**Time-boxed** at ~10 tool calls. Reports partial findings if not converged — never spins.
-
----
-
-### docs-writer
-
-**Role:** Keeps documentation in sync with code. Verifies every code example it writes actually runs. Archives stale docs with `git mv` (never deletes). Does not touch CHANGELOG.md — routes that to git-assistant.
-
-**Checks after writing:** function names, config keys, CLI flags, and env var names all verified against the actual source.
-
----
-
-### git-assistant
-
-**Role:** Git safety officer. Validates conventional commit messages, checks branch hygiene before touching anything, creates draft PRs with a structured body template. Routes CHANGELOG updates to changelog-writer.
-
-**Hard rules:** no `git push --force`; no `git push --force-with-lease`; no direct push to `main`/`master`; no `git add .`; PRs always start as drafts.
-
----
-
-### changelog-writer
-
-**Role:** CHANGELOG.md specialist. Reads recent commits and PR descriptions, classifies them into Keep a Changelog sections (Added / Changed / Fixed / Removed / Security), and writes user-facing entries. Filters out dev-internal commits (tests, CI, chores). Handles both `[Unreleased]` entries and named version releases.
-
-**Does NOT touch:** source code, tests, or any other docs file.
-
-**Routing:** git-assistant routes changelog work here; docs-writer also routes here when CHANGELOG.md would otherwise be skipped.
+**Call it with:** `"review PR #N"` · `"security review before merging"` · `"audit dependencies before release"` (pass `effort=high` or `effort=maximum` to override auto-detection)
 
 ---
 
 ## Communication protocol
 
-Every agent ends its response with two structured blocks that the orchestrator reads:
+Every agent ends its response with two structured blocks the calling workflow reads:
 
 ### `<task-notification>` — completion signal
 
 ```xml
 <task-notification>
-  <agent>code-reviewer</agent>
+  <agent>inspector</agent>
   <status>done</status>
   <verdict>CRITICAL_BLOCK</verdict>
   <effort-mode>medium</effort-mode>
@@ -412,55 +163,34 @@ Every agent ends its response with two structured blocks that the orchestrator r
   <blocking>true</blocking>
   <artifacts>
     <artifact>Pass A (spec compliance): PASS</artifact>
-    <artifact>Pass B (quality): 2 findings</artifact>
+    <artifact>Pass B (quality + security + deps): 2 findings</artifact>
   </artifacts>
   <summary>1 Critical finding blocks merge. SQL injection at handler.go:88.</summary>
   <pipeline-gate>BLOCK</pipeline-gate>
 </task-notification>
 ```
 
-The orchestrator parses `<verdict>` and `<pipeline-gate>` to decide whether to advance, loop back, or escalate. If `<task-notification>` is absent or malformed — treated as `BLOCK`.
-
-### `## HANDOFF` — data for the next agent
-
 ```yaml
-agent: code-reviewer
-status: BLOCKED
-task_id: "feat-rate-limit-001"
-artifacts:
-  - "Spec compliance: PASS"
-  - "Quality findings: 1 critical, 1 major"
+## HANDOFF
 findings:
-  - severity: Critical
-    file: "internal/handler/support.go"
-    line: 88
-    message: "SQL injection via string concat in query builder"
-retry_count: 0
-next_inputs:
-  critical_count: 1
-  pipeline_gate: BLOCK
+  - file:line — description
 ```
 
-The orchestrator reads `findings` to build the targeted synthesis prompt for the next agent — never pipes raw output forward.
+Calling workflows parse `pipeline-gate` to decide: advance → retry → escalate. They never pipe raw text between agents — they extract findings and re-structure the next prompt before dispatching.
 
 ---
 
 ## Verdict vocabulary
 
-| Agent | Verdicts |
-|---|---|
-| `secret-scanner` | `CLEAN` · `ESCALATION` |
-| `planner` | `PLAN_READY` · `DECISION_NEEDED` |
-| `developer` | `IMPLEMENTED` · `GATE_FAIL` |
-| `test-writer` | `TESTS_PASS` · `COVERAGE_MISS` · `TEST_FAIL` |
-| `refactorer` | `REFACTORED` · `NO_TESTS` · `REGRESSION` |
-| `code-reviewer` | `CLEAN` · `MAJOR_ONLY` · `CRITICAL_BLOCK` |
-| `security-reviewer` | `CLEAN` · `HIGH_BLOCK` · `CRITICAL_BLOCK` · `SECRET_FOUND` |
-| `dependency-auditor` | `CLEAN` · `HYGIENE_FLAGS` · `HIGH_CVE` · `CRITICAL_CVE` |
-| `verifier` | `VERIFIED` · `SPEC_VIOLATION` · `BLOCKED` |
-| `debugger` | `ROOT_CAUSE_FOUND` · `INCONCLUSIVE` |
-| `docs-writer` | `DOCS_UPDATED` · `EXAMPLE_FAIL` |
-| `git-assistant` | `PR_CREATED` · `PREFLIGHT_FAIL` |
+| Agent | Mode/context | Verdicts |
+|---|---|---|
+| `operator` | BUILD | `IMPLEMENTED` · `GATE_FAIL` |
+| `operator` | REFACTOR | `REFACTORED` · `NO_TESTS` · `REGRESSION` |
+| `operator` | DOCS | `DOCS_UPDATED` · `EXAMPLE_FAIL` |
+| `operator` | SHIP | `PR_CREATED` · `PREFLIGHT_FAIL` |
+| `inspector` | any | `CLEAN` · `MAJOR_ONLY` · `CRITICAL_BLOCK` · `SECRET_FOUND` · `HIGH_CVE` · `CRITICAL_CVE` |
+
+Both agents always emit `pipeline_gate` (`PASS`/`BLOCK`/`ESCALATE`) — calling workflows branch on that field, not on the free-text verdict.
 
 ---
 
@@ -477,11 +207,11 @@ description: |
   <example>
   Context: user just finished implementing something.
   user: "Review my changes"
-  assistant: "I'll use the code-reviewer agent."
-  <uses code-reviewer agent>
+  assistant: "I'll use the inspector agent."
+  <uses inspector agent>
   </example>
 tools: Read, Bash, Grep, Glob
-disallowedTools: [Write, Edit, MultiEdit, NotebookEdit]  # read-only agents
+disallowedTools: [Write, Edit, MultiEdit, NotebookEdit]  # inspector only — it's read-only
 model: claude-sonnet-4-6
 color: yellow
 permission_mode: semi-auto   # auto | semi-auto | manual
@@ -495,12 +225,12 @@ You are a [role]. [System prompt follows...]
 
 **`<example>` blocks** in `description` drive Claude Code's auto-routing — when the user's message matches the pattern, Claude suggests the agent.
 
-**`disallowedTools`** blocks tool calls at the Claude Code runtime level. Read-only agents also include an `OPERATION CONSTRAINTS` prose block in the system prompt for a second enforcement layer at the model level.
+**`disallowedTools`** blocks tool calls at the Claude Code runtime level. `inspector` also includes an `OPERATION CONSTRAINTS` prose block in its system prompt for a second enforcement layer at the model level.
 
 **`permission_mode`** controls how tool calls are approved:
-- `auto` — all calls proceed without prompting (orchestrator, planner)
-- `semi-auto` — low-risk calls auto-approved, file mutations need approval (most agents)
-- `manual` — every call needs explicit approval (developer, git-assistant)
+- `auto` — all calls proceed without prompting
+- `semi-auto` — low-risk calls auto-approved, file mutations need approval (`inspector` — though it never mutates files anyway)
+- `manual` — every tool call requires explicit approval (`operator` — it writes code and pushes to git)
 
 ---
 
@@ -508,4 +238,4 @@ You are a [role]. [System prompt follows...]
 
 - `isolation: worktree` in agent frontmatter — run parallel mutating agents in isolated git worktrees without conflicts (runtime `isolation` in workflow `agent()` calls already works; frontmatter field is reserved)
 - IDE LSP integration — `mcp__ide__getDiagnostics` always active for TypeScript projects
-- Reviewer merge — combine `code-reviewer` + `security-reviewer` into a single two-pass agent to reduce parallel agent overhead
+- Hook-driven automation (`PreToolUse`/`PostToolUse`/`Stop` hooks) to replace some of operator's and inspector's deterministic steps (test runs, dependency audits, secret scans) with scripts instead of LLM tool calls — see `todo.md` Phase 2

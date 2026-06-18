@@ -1,11 +1,9 @@
 export const meta = {
   name: 'release-prep',
-  description: 'Release prep pipeline: memory-load → secret-scanner → dependency-auditor → git-assistant (release mode) → memory-save',
+  description: 'Release prep pipeline: inspector(audit) → operator(release PR with CHANGELOG)',
   phases: [
-    { title: 'Memory', detail: 'load prior release context and known CVE history' },
-    { title: 'Pre-flight', detail: 'secret-scanner + dependency-auditor in parallel' },
-    { title: 'Release', detail: 'git-assistant creates release PR with CHANGELOG' },
-    { title: 'Memory', detail: 'save release outcome and CVE findings' },
+    { title: 'Audit', detail: 'inspector runs secrets + CVE audit on the release branch' },
+    { title: 'Release', detail: 'operator validates commits, updates CHANGELOG, creates release PR' },
   ],
 }
 
@@ -41,84 +39,54 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
-// ── Stage 0: Memory load ──────────────────────────────────────────────────
-phase('Memory')
-log('memory-manager: loading prior release context...')
+// ── Stage 1: Audit ─────────────────────────────────────────────────────────
+phase('Audit')
+log(`inspector (maximum): running pre-release secrets + CVE audit for v${version}...`)
 
-const memBrief = await agent(
-  `LOAD task="release prep v${version}". Read .claude/memory/ and return a context brief of prior release blockers, known CVE history, dependency audit outcomes, and any release gotchas.`,
-  { label: 'memory-manager:load', phase: 'Memory', agentType: 'memory-manager' }
+const audit = await agent(
+  `Pre-release audit for v${version}. Run effort=maximum: full SEC-4 secret scan against the entire diff from the release branch, then a full dependency/CVE audit across every manifest (npm, Go, Python, Rust, .NET, Ruby, Maven). Any secret or Critical CVE is a release blocker.`,
+  { label: 'inspector:audit', phase: 'Audit', schema: GATE_SCHEMA, agentType: 'inspector' }
 )
-log('memory loaded.')
 
-// ── Stages 1+2: Secret scan + Dependency audit (parallel) ─────────────────
-phase('Pre-flight')
-log('secret-scanner + dependency-auditor: running in parallel...')
-
-const [scan, deps] = await parallel([
-  () => agent(
-    `Pre-release SEC-4 scan for v${version}. Run all 8 patterns against the full diff from the release branch. Any match blocks the release.`,
-    { label: 'secret-scanner', phase: 'Pre-flight', schema: GATE_SCHEMA, agentType: 'secret-scanner' }
-  ),
-  () => agent(
-    `Pre-release dependency audit for v${version}. Scan all manifests (npm, Go, Python, Rust, .NET, Ruby, Maven) for CVEs, unpinned versions, abandoned packages, and license conflicts. Every Critical CVE is a release blocker.`,
-    { label: 'dependency-auditor', phase: 'Pre-flight', schema: GATE_SCHEMA, agentType: 'dependency-auditor' }
-  ),
-])
-
-if (!scan || scan.pipeline_gate === 'ESCALATE') {
+if (!audit || audit.pipeline_gate === 'ESCALATE') {
   log('ESCALATION: secret found — release blocked. Rotate credential, clean history, then rerun.')
-  return {
-    outcome: 'BLOCKED',
-    stage: 'secret-scanner',
-    reason: scan ? scan.summary : 'No response — treated as ESCALATE',
-  }
+  return { outcome: 'BLOCKED', stage: 'inspector:audit', reason: audit ? audit.summary : 'No response — treated as ESCALATE' }
 }
-log(`secret-scanner: ${scan.verdict} — branch is clean`)
 
-if (!deps || deps.verdict === 'CRITICAL_CVE' || deps.pipeline_gate === 'BLOCK') {
-  log(`dependency-auditor: CRITICAL_CVE or BLOCK — release blocked. ${deps ? deps.summary : 'No response.'}`)
+if (audit.verdict === 'CRITICAL_CVE' || audit.pipeline_gate === 'BLOCK') {
+  log(`inspector: CRITICAL_CVE or BLOCK — release blocked. ${audit.summary}`)
   return {
     outcome: 'BLOCKED',
-    stage: 'dependency-auditor',
-    reason: deps ? deps.summary : 'No response',
-    findings: deps ? deps.findings : [],
+    stage: 'inspector:audit',
+    reason: audit.summary,
+    findings: audit.findings,
     action: 'Fix Critical CVEs listed above, then rerun release-prep.',
   }
 }
 
-const hygiene = deps && deps.verdict === 'HYGIENE_FLAGS'
-log(`dependency-auditor: ${deps ? deps.verdict : 'CLEAN'}${hygiene ? ' — hygiene flags noted, not blocking' : ''}`)
+const hygiene = audit.verdict === 'HYGIENE_FLAGS' || audit.verdict === 'HIGH_CVE'
+log(`inspector: ${audit.verdict}${hygiene ? ' — hygiene flags noted, not blocking' : ''}`)
 
-// ── Stage 3: Release PR ───────────────────────────────────────────────────
+// ── Stage 2: Release PR ───────────────────────────────────────────────────
 phase('Release')
-log(`git-assistant: creating release PR for v${version}...`)
+log(`operator: creating release PR for v${version}...`)
 
-const pr = await agent(
-  `Create release PR for v${version} targeting ${branch}.\n\n1. Validate all commits since last tag follow conventional commits.\n2. Update CHANGELOG.md — move [Unreleased] entries under [${version}].\n3. Push the branch and create a draft PR titled "Release v${version}".\n4. Include dependency audit summary in the PR body.${notes}`,
-  { label: 'git-assistant', phase: 'Release', schema: GATE_SCHEMA, agentType: 'git-assistant' }
+const ship = await agent(
+  `Mode: SHIP\n\nCreate release PR for v${version} targeting ${branch}.\n\n1. Validate all commits since last tag follow Conventional Commits.\n2. Update CHANGELOG.md — rename [Unreleased] to [${version}] with today's date, add a fresh empty [Unreleased] above it.\n3. Push the branch and create a draft PR titled "Release v${version}".\n4. Include the dependency audit summary in the PR body, and save the release outcome to .claude/memory/.${notes}`,
+  { label: 'operator:release', phase: 'Release', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
-if (!pr || pr.pipeline_gate === 'BLOCK') {
-  log(`git-assistant: PREFLIGHT_FAIL — ${pr ? pr.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'git-assistant', reason: pr ? pr.summary : 'No response' }
+if (!ship || ship.pipeline_gate === 'BLOCK') {
+  log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
+  return { outcome: 'BLOCKED', stage: 'operator:release', reason: ship ? ship.summary : 'No response' }
 }
-
-log(`git-assistant: ${pr ? pr.verdict : 'PR_CREATED'} — ${pr ? pr.summary : ''}`)
-
-// ── Stage 4: Memory save ──────────────────────────────────────────────────
-phase('Memory')
-log('memory-manager: saving release prep outcome...')
-await agent(
-  `SAVE pipeline=release-prep outcome=COMPLETE task="release v${version}" summary="${pr ? pr.summary : `Release PR for v${version} created`}". Record dependency audit verdict (${deps ? deps.verdict : 'CLEAN'}), any hygiene flags, and the release PR reference.`,
-  { label: 'memory-manager:save', phase: 'Memory', agentType: 'memory-manager' }
-)
+log(`operator: ${ship.verdict} — ${ship.summary}`)
 
 return {
   outcome: 'COMPLETE',
   pipeline: 'release-prep',
   version,
-  dependency_verdict: deps ? deps.verdict : 'CLEAN',
-  hygiene_flags: hygiene ? (deps ? deps.findings : []) : [],
-  summary: pr ? pr.summary : `Release PR for v${version} created as draft.`,
+  dependency_verdict: audit.verdict,
+  hygiene_flags: hygiene ? audit.findings : [],
+  summary: ship.summary || `Release PR for v${version} created as draft.`,
 }

@@ -25,12 +25,12 @@ Every agent file begins with a YAML frontmatter block (between `---` delimiters)
 ### `name`
 
 ```yaml
-name: code-reviewer
+name: inspector
 ```
 
 - Lowercase kebab-case only
-- Must exactly match the directory name and the filename (e.g., agent at `agents/code-reviewer/code-reviewer.md` → `name: code-reviewer`)
-- Used in `<task-notification>` XML, HANDOFF YAML, and orchestrator pipeline logs
+- Must exactly match the directory name and the filename (e.g., agent at `subagents/inspector/inspector.md` → `name: inspector`)
+- Used in `<task-notification>` XML, HANDOFF YAML, and calling-workflow pipeline logs
 
 ---
 
@@ -102,8 +102,8 @@ Allowed model IDs:
 
 | Model | ID | When to use |
 |---|---|---|
-| Haiku 4.5 | `claude-haiku-4-5` | Fast, low-cost passes — secret-scanner, simple grep agents |
-| Sonnet 4.6 | `claude-sonnet-4-6` | Default for most agents — good balance of speed and capability |
+| Haiku 4.5 | `claude-haiku-4-5` | Fast, low-cost passes — simple grep-only agents |
+| Sonnet 4.6 | `claude-sonnet-4-6` | Default for both `operator` and `inspector` — good balance of speed and capability |
 | Opus 4.8 | `claude-opus-4-8` | Complex reasoning, architectural analysis, maximum effort reviews |
 
 Default to `claude-sonnet-4-6` unless there is a clear reason to use a different tier.
@@ -120,19 +120,8 @@ Used for terminal display only. Suggested per-agent colors for visual differenti
 
 | Agent | Color |
 |---|---|
-| `orchestrator` | `purple` |
-| `planner` | `orange` |
-| `developer` | `blue` |
-| `refactorer` | `blue` |
-| `test-writer` | `green` |
-| `docs-writer` | `green` |
-| `code-reviewer` | `yellow` |
-| `security-reviewer` | `red` |
-| `secret-scanner` | `red` |
-| `dependency-auditor` | `orange` |
-| `verifier` | `cyan` |
-| `debugger` | `yellow` |
-| `git-assistant` | `green` |
+| `operator` | `blue` |
+| `inspector` | `red` |
 
 ---
 
@@ -144,9 +133,9 @@ permission_mode: semi-auto
 
 | Value | Meaning | Use for |
 |---|---|---|
-| `auto` | All tool calls proceed without user confirmation | Read-only agents (planner, orchestrator) |
-| `semi-auto` | Low-risk tools auto-approved; file mutations and Bash need approval | Most agents |
-| `manual` | Every tool call requires explicit user approval | Agents that write code or push to git (developer, git-assistant) |
+| `auto` | All tool calls proceed without user confirmation | Read-only, low-risk agents |
+| `semi-auto` | Low-risk tools auto-approved; file mutations and Bash need approval | `inspector` — read-only, but Bash needs approval |
+| `manual` | Every tool call requires explicit user approval | `operator` — writes code and pushes to git |
 
 ---
 
@@ -218,12 +207,12 @@ Read-only agents use **dual enforcement**:
 
 Both layers are required. A frontmatter block without a prose constraint allows the model to "try and fail"; a prose constraint without a frontmatter block allows the runtime to be bypassed by an explicit instruction.
 
-See any read-only agent (planner, verifier, debugger, security-reviewer, dependency-auditor, secret-scanner) for the canonical OPERATION CONSTRAINTS block format.
+See `inspector.md` for the canonical OPERATION CONSTRAINTS block format — it's the only read-only agent in the current roster.
 
 ---
 
 ## Completion signal convention
 
-Every agent must emit a `<task-notification>` XML block as the **last element** of every response, followed by a `## HANDOFF` YAML block. These enable the orchestrator to parse structured completion data without reading free-form text.
+Every agent must emit a `<task-notification>` XML block as the **last element** of every response, followed by a `## HANDOFF` YAML block. These enable the calling workflow to parse structured completion data without reading free-form text.
 
 See any agent file for the canonical format for its verdict vocabulary.
