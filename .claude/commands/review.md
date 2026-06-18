@@ -10,6 +10,6 @@ If a PR number was provided above, use `pr=$ARGUMENTS`. If no argument was given
 
 Always use `effort=high` for reviews triggered via this command.
 
-Include the verifier only if a spec or acceptance criteria can be inferred from the PR description or the task context — otherwise skip it.
+Pass `spec=<requirements text>` only if a spec or acceptance criteria can be inferred from the PR description or the task context — otherwise omit it and inspector skips the spec-compliance check.
 
 Start by saying: "Starting pr-review pipeline$ARGUMENTS" then invoke the workflow.
