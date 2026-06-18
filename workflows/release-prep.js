@@ -15,6 +15,17 @@ const version = args && args.version ? String(args.version) : 'next'
 const branch = args && args.branch ? args.branch : 'main'
 const notes = args && args.notes ? `\n\nRelease notes / highlights:\n${args.notes}` : ''
 
+// Per-stage token telemetry — budget.spent() is the only token signal a
+// workflow script can read (no fs access here, so this can't write
+// telemetry/token-usage.json; it rides along in the return value instead).
+const tokenLog = []
+async function trackedAgent(prompt, opts) {
+  const before = budget.spent()
+  const result = await agent(prompt, opts)
+  tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  return result
+}
+
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -43,7 +54,7 @@ const GATE_SCHEMA = {
 phase('Audit')
 log(`inspector (maximum): running pre-release secrets + CVE audit for v${version}...`)
 
-const audit = await agent(
+const audit = await trackedAgent(
   `Pre-release audit for v${version}. Run effort=maximum: full SEC-4 secret scan against the entire diff from the release branch, then a full dependency/CVE audit across every manifest (npm, Go, Python, Rust, .NET, Ruby, Maven). Any secret or Critical CVE is a release blocker.`,
   // This is the highest-stakes gate in the harness — the last check before
   // a release ships — so it's the one place worth paying for frontier
@@ -54,7 +65,7 @@ const audit = await agent(
 
 if (!audit || audit.pipeline_gate === 'ESCALATE') {
   log('ESCALATION: secret found — release blocked. Rotate credential, clean history, then rerun.')
-  return { outcome: 'BLOCKED', stage: 'inspector:audit', reason: audit ? audit.summary : 'No response — treated as ESCALATE' }
+  return { outcome: 'BLOCKED', stage: 'inspector:audit', reason: audit ? audit.summary : 'No response — treated as ESCALATE', token_telemetry: tokenLog }
 }
 
 if (audit.verdict === 'CRITICAL_CVE' || audit.pipeline_gate === 'BLOCK') {
@@ -65,6 +76,7 @@ if (audit.verdict === 'CRITICAL_CVE' || audit.pipeline_gate === 'BLOCK') {
     reason: audit.summary,
     findings: audit.findings,
     action: 'Fix Critical CVEs listed above, then rerun release-prep.',
+    token_telemetry: tokenLog,
   }
 }
 
@@ -75,14 +87,14 @@ log(`inspector: ${audit.verdict}${hygiene ? ' — hygiene flags noted, not block
 phase('Release')
 log(`operator: creating release PR for v${version}...`)
 
-const ship = await agent(
+const ship = await trackedAgent(
   `Mode: SHIP\n\nCreate release PR for v${version} targeting ${branch}.\n\n1. Validate all commits since last tag follow Conventional Commits.\n2. Update CHANGELOG.md — rename [Unreleased] to [${version}] with today's date, add a fresh empty [Unreleased] above it.\n3. Push the branch and create a draft PR titled "Release v${version}".\n4. Include the dependency audit summary in the PR body, and save the release outcome to .claude/memory/.${notes}`,
   { label: 'operator:release', phase: 'Release', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
 if (!ship || ship.pipeline_gate === 'BLOCK') {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:release', reason: ship ? ship.summary : 'No response' }
+  return { outcome: 'BLOCKED', stage: 'operator:release', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
@@ -93,4 +105,5 @@ return {
   dependency_verdict: audit.verdict,
   hygiene_flags: hygiene ? audit.findings : [],
   summary: ship.summary || `Release PR for v${version} created as draft.`,
+  token_telemetry: tokenLog,
 }

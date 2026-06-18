@@ -15,6 +15,17 @@ const effort = args && args.effort ? args.effort : 'medium'
 const spec = args && args.spec ? args.spec : ''
 const scope = pr ? `PR #${pr}` : 'current HEAD diff'
 
+// Per-stage token telemetry — budget.spent() is the only token signal a
+// workflow script can read (no fs access here, so this can't write
+// telemetry/token-usage.json; it rides along in the return value instead).
+const tokenLog = []
+async function trackedAgent(prompt, opts) {
+  const before = budget.spent()
+  const result = await agent(prompt, opts)
+  tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  return result
+}
+
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -45,7 +56,7 @@ log(`inspector (${effort}): running full adversarial review on ${scope}...`)
 
 const specContext = spec ? `\n\nSpec / requirements to check for compliance:\n${spec}` : ''
 
-const result = await agent(
+const result = await trackedAgent(
   `Review ${scope} with effort=${effort}. Run secrets detection (SEC-4) first, then OWASP A01–A10, STRIDE (if applicable), full dependency/CVE audit across all manifests, and the two-pass code-quality review.${specContext}`,
   { label: 'inspector', phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
 )
@@ -57,6 +68,7 @@ if (!result || result.pipeline_gate === 'ESCALATE') {
     stage: 'inspector',
     reason: result ? result.summary : 'No response — treated as ESCALATE',
     findings: result ? result.findings : [],
+    token_telemetry: tokenLog,
   }
 }
 
@@ -72,4 +84,5 @@ return {
   blocking_findings: blockingCount,
   recommendation: result.pipeline_gate === 'PASS' ? 'Safe to merge.' : `${blockingCount} blocking findings — fix before merging.`,
   merged_findings: result.findings,
+  token_telemetry: tokenLog,
 }

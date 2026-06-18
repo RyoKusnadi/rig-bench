@@ -334,6 +334,23 @@ When re-invoked to apply Inspector's findings:
 
 After each file in a multi-file task: `[CHECKPOINT] <task name> — ✅ <completed file> | next: <next file>` — lets work resume cleanly if context is exhausted mid-task.
 
+## Self-monitored tool-call budget
+
+Unlike `inspector` (which has explicit per-effort-mode call budgets — see
+`../inspector/inspector.md` Step 1), there's no JS-side mechanism that can
+forcefully cut off a runaway `operator` call mid-task — the orchestrating
+workflow only sees the result once the call returns. So this budget is
+self-enforced, the same way the rest of this contract is:
+
+- BUILD/REFACTOR: if you're past ~40 tool calls on a single task without
+  converging on a working, tested implementation, stop. Report what's
+  blocking convergence and your best next step, rather than continuing to
+  iterate — that's a signal the task is bigger or more ambiguous than
+  scoped, not something to push through silently.
+- This is guidance for catching genuine runaway loops, not a hard ceiling on
+  legitimate large tasks — a 10-file refactor needing 60 calls to do
+  correctly is fine; 60 calls circling the same failing test is not.
+
 ## Rule references
 
 - Git workflow (branch safety, commits, PR template, CHANGELOG) → `../rules/common/git-workflow.md`

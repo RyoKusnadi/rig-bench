@@ -251,3 +251,58 @@ which reintroduces the per-spawn overhead this harness was built to
 eliminate. If a specific pipeline turns out to need frontier-level security
 reasoning on every run (not just `release-prep`), override `model` on that
 pipeline's `inspector` call — don't fragment the agent itself.
+
+---
+
+## Already true by construction (no code change needed)
+
+A few generic multi-agent-harness optimization checklist items turn out to
+already hold here, as a direct consequence of how the Workflow tool and this
+repo's two-agent design work — not because anyone hand-implemented them:
+
+- **Prompt caching ordering** (static content first, dynamic content last).
+  Each agent's system prompt (`operator.md`/`inspector.md`) is the stable,
+  cacheable prefix; the `agent()` call's `prompt` argument — the task
+  description — is the only dynamic part, and it's a separate string, not
+  interleaved with the static prompt. There's no reordering to do.
+- **Structured outputs over conversational text.** Every `agent()` call
+  across all six workflows passes `schema: GATE_SCHEMA`, which forces the
+  subagent through the Workflow tool's `StructuredOutput` tool-call layer —
+  this was already true before this round, just confirmed again here.
+- **Lightweight supervisor / orchestration in code, not the model.** This
+  *is* what `workflows/*.js` are — `phase()`/`agent()`/`parallel()` are
+  deterministic JS; the LLM only executes the task handed to it for that
+  node. There's no "heavy orchestrator model" to lighten.
+- **Boundary schema validation between handoffs.** The `schema` option on
+  `agent()` already validates structurally at the tool-call layer per the
+  Workflow tool's own contract — hand-rolling a second validation pass in
+  workflow JS would just duplicate what the harness already guarantees.
+- **Context isolation per agent / no leaked conversation history between
+  stages.** Each `agent()` call spawns an independent subagent with no
+  shared transcript — there's no "session" to `/clear` between stages,
+  because there was never a continuous one to begin with. A manual
+  `/clear`-equivalent would add an op with nothing to clean up.
+
+## Declined
+
+- **Vector search over `.claude/memory/`/`memory/`.** At the current corpus
+  size (a handful of markdown files), `Grep`-based keyword retrieval —
+  already how `operator` Step 0 works — gets equivalent results to top-k
+  embedding search, with no new dependency, index, or embedding-API cost.
+  Revisit if the memory corpus grows large enough that keyword matches start
+  missing semantically related entries.
+- **Dynamic MCP server enable/disable per workflow stage.** No such
+  hook/API is exposed to project `settings.json` or workflow scripts. Tool
+  (including MCP tool) access is already scoped per agent via the
+  `tools:`/`disallowedTools:` YAML frontmatter in each agent's `.md` — that's
+  the real, supported mechanism for this, already in place.
+- **Hard, JS-enforced token budgets with forced mid-call termination.** No
+  such primitive exists in `agent()` — no timeout/max-tokens parameter, no
+  kill switch once a call is in flight. See "Token Telemetry" in the root
+  [README.md](../README.md) for what's in place instead (self-monitored
+  budgets in each agent's own instructions).
+- **A "token cost per pipeline" dashboard script.** Would mean reintroducing
+  a `claude -p`-headless-CLI-driving script in the same shape as the
+  `eval-harness/` infrastructure a previous revision removed at explicit
+  request. The per-stage `token_telemetry` already returned by every
+  workflow gives the same per-pipeline breakdown in-band.

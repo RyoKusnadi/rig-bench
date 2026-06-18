@@ -14,6 +14,17 @@ export const meta = {
 const trigger = args && args.trigger ? args.trigger : 'recent code changes'
 const scope = args && args.scope ? `\nScope: ${args.scope}` : ''
 
+// Per-stage token telemetry — budget.spent() is the only token signal a
+// workflow script can read (no fs access here, so this can't write
+// telemetry/token-usage.json; it rides along in the return value instead).
+const tokenLog = []
+async function trackedAgent(prompt, opts) {
+  const before = budget.spent()
+  const result = await agent(prompt, opts)
+  tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  return result
+}
+
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -42,14 +53,14 @@ const GATE_SCHEMA = {
 phase('Write')
 log('operator: reading changes and updating documentation...')
 
-const docs = await agent(
+const docs = await trackedAgent(
   `Mode: DOCS\n\nTrigger: ${trigger}${scope}\n\nRead what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings, and CHANGELOG.md if user-facing. Verify every code example actually runs, then commit locally.`,
   { label: 'operator:docs', phase: 'Write', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
 if (!docs || docs.verdict === 'EXAMPLE_FAIL' || docs.pipeline_gate === 'BLOCK') {
   log(`operator: EXAMPLE_FAIL or BLOCK — ${docs ? docs.summary : 'no response'}. Fix broken examples before continuing.`)
-  return { outcome: 'BLOCKED', stage: 'operator:docs', reason: docs ? docs.summary : 'No response', findings: docs ? docs.findings : [] }
+  return { outcome: 'BLOCKED', stage: 'operator:docs', reason: docs ? docs.summary : 'No response', findings: docs ? docs.findings : [], token_telemetry: tokenLog }
 }
 log(`operator: ${docs.verdict} — ${docs.summary}`)
 
@@ -57,18 +68,18 @@ log(`operator: ${docs.verdict} — ${docs.summary}`)
 phase('Inspect')
 log('inspector: light review of doc changes...')
 
-const inspectResult = await agent(
+const inspectResult = await trackedAgent(
   `Trigger: ${trigger}\n\nRun a light review (effort=low) of the documentation diff: secrets check, no accidental code changes mixed in, terminology matches the actual source.`,
   { label: 'inspector', phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
 )
 
 if (inspectResult && inspectResult.pipeline_gate === 'ESCALATE') {
   log('ESCALATION: secret found in doc diff — pipeline blocked, zero retries.')
-  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings }
+  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings, token_telemetry: tokenLog }
 }
 if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
   log(`inspector: findings — ${inspectResult.summary}`)
-  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings }
+  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings, token_telemetry: tokenLog }
 }
 log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'}`)
 
@@ -76,7 +87,7 @@ log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'}`)
 phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
-const ship = await agent(
+const ship = await trackedAgent(
   `Mode: SHIP\n\nDocs updated for: ${trigger}\n\nRun pre-flight checks, push the branch, and create a draft PR listing which files were updated and why.`,
   // SHIP is pre-flight checks + PR formatting, no design/security judgment —
   // Haiku is plenty for it and costs a fraction of Sonnet.
@@ -85,7 +96,7 @@ const ship = await agent(
 
 if (!ship || ship.pipeline_gate === 'BLOCK') {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response' }
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
@@ -95,4 +106,5 @@ return {
   trigger,
   files_updated: docs && docs.findings ? docs.findings.map(f => f.file).filter(Boolean) : [],
   summary: ship.summary || 'Draft PR created. Docs updated.',
+  token_telemetry: tokenLog,
 }

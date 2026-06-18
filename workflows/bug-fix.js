@@ -17,6 +17,17 @@ const knownCause = args && args.known_cause === true
 const stackTrace = args && args.stack_trace ? `\n\nStack trace:\n${args.stack_trace}` : ''
 const MAX_RETRIES = 1
 
+// Per-stage token telemetry — budget.spent() is the only token signal a
+// workflow script can read (no fs access here, so this can't write
+// telemetry/token-usage.json; it rides along in the return value instead).
+const tokenLog = []
+async function trackedAgent(prompt, opts) {
+  const before = budget.spent()
+  const result = await agent(prompt, opts)
+  tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  return result
+}
+
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -51,14 +62,14 @@ phase('Fix')
 const causeNote = knownCause ? `\n\nRoot cause provided by caller — skip diagnosis: ${bug}` : ''
 log(knownCause ? 'operator: applying known-cause fix...' : 'operator: diagnosing root cause and fixing...')
 
-const fix = await agent(
+const fix = await trackedAgent(
   `Mode: BUILD\n\nBug: ${bug}${stackTrace}${causeNote}\n\nLoad relevant .claude/memory/ context (gotchas, prior fixes in this area).${knownCause ? '' : ' Reproduce the failure, form ranked hypotheses, and identify the root cause before fixing.'} Write a failing regression test FIRST, then apply the minimal fix. Run the full suite and commit locally.`,
   { label: 'operator:fix', phase: 'Fix', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
 if (!fix || fix.pipeline_gate === 'BLOCK') {
   log(`operator: GATE_FAIL — ${fix ? fix.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:fix', reason: fix ? fix.summary : 'No response', findings: fix ? fix.findings : [] }
+  return { outcome: 'BLOCKED', stage: 'operator:fix', reason: fix ? fix.summary : 'No response', findings: fix ? fix.findings : [], token_telemetry: tokenLog }
 }
 log(`operator: ${fix.verdict} — ${fix.summary}`)
 
@@ -70,21 +81,21 @@ let retries = 0
 while (retries <= MAX_RETRIES) {
   log(retries === 0 ? 'inspector: confirming fix resolves the bug with no regressions...' : `inspector: re-reviewing after fix ${retries}/${MAX_RETRIES}...`)
 
-  inspectResult = await agent(
+  inspectResult = await trackedAgent(
     `Bug: ${bug}\n\nVerify: (1) the specific failure no longer reproduces, (2) the regression test passes, (3) no adjacent behavior was broken, (4) no security or dependency issues were introduced.`,
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
   if (!inspectResult || inspectResult.pipeline_gate === 'ESCALATE') {
     log('ESCALATION: secret or critical issue found — pipeline blocked, zero retries.')
-    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [] }
+    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [], token_telemetry: tokenLog }
   }
 
   if (inspectResult.pipeline_gate !== 'BLOCK') break
   if (retries >= MAX_RETRIES) break
 
   log(`inspector: issues found — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
-  await agent(
+  await trackedAgent(
     `Mode: BUILD\n\nBug: ${bug}\n\nFix the following findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(inspectResult)}\n\nFix only the listed items. Re-run tests and commit.`,
     { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator' }
   )
@@ -93,7 +104,7 @@ while (retries <= MAX_RETRIES) {
 
 if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
   log(`inspector: exceeded ${MAX_RETRIES} retries — escalating.`)
-  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings }
+  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings, token_telemetry: tokenLog }
 }
 log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspectResult ? inspectResult.summary : ''}`)
 
@@ -101,7 +112,7 @@ log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspect
 phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
-const ship = await agent(
+const ship = await trackedAgent(
   `Mode: SHIP\n\nBug fixed: ${bug}\n\nRun pre-flight checks, push the branch, create a draft PR (include "Closes #<issue>" if an issue number is in the bug description), and save the root cause + fix approach to .claude/memory/gotchas.md and lessons-learned.md.`,
   // SHIP is pre-flight checks + PR formatting, no design/security judgment —
   // Haiku is plenty for it and costs a fraction of Sonnet.
@@ -110,7 +121,7 @@ const ship = await agent(
 
 if (!ship || ship.pipeline_gate === 'BLOCK') {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response' }
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
@@ -120,4 +131,5 @@ return {
   bug,
   skipped_diagnosis: knownCause,
   summary: ship.summary || 'Draft PR created. Bug resolved.',
+  token_telemetry: tokenLog,
 }
