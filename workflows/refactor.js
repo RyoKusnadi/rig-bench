@@ -15,6 +15,17 @@ const target = args && args.target ? args.target : 'the specified module'
 const goal = args && args.goal ? args.goal : 'readability'
 const MAX_RETRIES = 1
 
+// Per-stage token telemetry — budget.spent() is the only token signal a
+// workflow script can read (no fs access here, so this can't write
+// telemetry/token-usage.json; it rides along in the return value instead).
+const tokenLog = []
+async function trackedAgent(prompt, opts) {
+  const before = budget.spent()
+  const result = await agent(prompt, opts)
+  tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  return result
+}
+
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -48,7 +59,7 @@ function formatFindings(result) {
 phase('Refactor')
 log('operator: confirming test baseline and refactoring smell-by-smell...')
 
-const refactor = await agent(
+const refactor = await trackedAgent(
   `Mode: REFACTOR\n\nTarget: ${target}\nGoal: ${goal}\n\nLoad relevant .claude/memory/ context. Confirm a passing test baseline exists, identify code smells, then refactor one smell at a time — running tests after each change and committing each independently. Do not change external behavior or add features.`,
   { label: 'operator:refactor', phase: 'Refactor', schema: GATE_SCHEMA, agentType: 'operator' }
 )
@@ -59,12 +70,13 @@ if (!refactor || refactor.verdict === 'NO_TESTS') {
     outcome: 'BLOCKED',
     stage: 'operator:refactor',
     reason: 'No tests exist. Run the new-feature/bug-fix workflow (BUILD mode) to add tests before refactoring.',
+    token_telemetry: tokenLog,
   }
 }
 
 if (!refactor || refactor.verdict === 'REGRESSION' || refactor.pipeline_gate === 'BLOCK') {
   log(`operator: REGRESSION or BLOCK — ${refactor ? refactor.summary : 'no response'}. Escalating.`)
-  return { outcome: 'BLOCKED', stage: 'operator:refactor', reason: refactor ? refactor.summary : 'No response', findings: refactor ? refactor.findings : [] }
+  return { outcome: 'BLOCKED', stage: 'operator:refactor', reason: refactor ? refactor.summary : 'No response', findings: refactor ? refactor.findings : [], token_telemetry: tokenLog }
 }
 log(`operator: ${refactor.verdict} — ${refactor.summary}`)
 
@@ -76,21 +88,21 @@ let retries = 0
 while (retries <= MAX_RETRIES) {
   log(retries === 0 ? 'inspector: confirming behavior unchanged and quality improved...' : `inspector: re-reviewing after fix ${retries}/${MAX_RETRIES}...`)
 
-  inspectResult = await agent(
+  inspectResult = await trackedAgent(
     `Target refactored: ${target} (goal: ${goal})\n\nReview with effort=medium. Confirm: (1) external behavior unchanged — run all tests, check public API surface, (2) no new bugs introduced, (3) code quality improved vs before.`,
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
   if (!inspectResult || inspectResult.pipeline_gate === 'ESCALATE') {
     log('ESCALATION: secret or critical issue found — pipeline blocked, zero retries.')
-    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [] }
+    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [], token_telemetry: tokenLog }
   }
 
   if (inspectResult.pipeline_gate !== 'BLOCK') break
   if (retries >= MAX_RETRIES) break
 
   log(`inspector: issues found — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
-  await agent(
+  await trackedAgent(
     `Mode: REFACTOR\n\nTarget: ${target}\n\nFix the following findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(inspectResult)}\n\nFix only the listed items, one at a time, re-running tests after each.`,
     { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator' }
   )
@@ -99,7 +111,7 @@ while (retries <= MAX_RETRIES) {
 
 if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
   log(`inspector: exceeded ${MAX_RETRIES} retries — escalating.`)
-  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings }
+  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings, token_telemetry: tokenLog }
 }
 log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspectResult ? inspectResult.summary : ''}`)
 
@@ -107,7 +119,7 @@ log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspect
 phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
-const ship = await agent(
+const ship = await trackedAgent(
   `Mode: SHIP\n\nRefactoring complete: ${target} (goal: ${goal})\n\nRun pre-flight checks, push the branch, create a draft PR noting what smells were fixed and that tests are unchanged, and save the refactor outcome to .claude/memory/.`,
   // SHIP is pre-flight checks + PR formatting, no design/security judgment —
   // Haiku is plenty for it and costs a fraction of Sonnet.
@@ -116,7 +128,7 @@ const ship = await agent(
 
 if (!ship || ship.pipeline_gate === 'BLOCK') {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response' }
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
@@ -126,4 +138,5 @@ return {
   target,
   goal,
   summary: ship.summary || 'Draft PR created. Behavior unchanged.',
+  token_telemetry: tokenLog,
 }

@@ -223,6 +223,36 @@ call" in [workflows/README.md](workflows/README.md) for the full rationale.
 
 ---
 
+## Token Telemetry
+
+Every `agent()` call in all six workflows is wrapped to record a token delta
+via `budget.spent()` (the Workflow tool's real, documented token-accounting
+API) before and after the call, and every return path — success or
+`BLOCKED` — includes a `token_telemetry: [{label, tokens}, ...]` array in its
+result. This is the in-band alternative to a `telemetry/token-usage.json`
+file: **workflow scripts have no filesystem access**, so they can't write a
+log file directly — the only place this data can go is the return value
+itself.
+
+We did not build a separate "token cost per pipeline" dashboard script. That
+would mean reintroducing a `claude -p`-headless-CLI-driving script in the
+same shape as the `eval-harness/` infrastructure this repo's previous
+revision removed at explicit request — `token_telemetry` already gives the
+same per-pipeline cost breakdown in-band, without bringing that category of
+infrastructure back.
+
+We also did not implement hard, JS-enforced token budgets that forcefully
+terminate an over-budget `agent()` call mid-execution — there's no such
+primitive in the Workflow tool's `agent()` API (no timeout/max-tokens
+parameter, no kill switch once a call is in flight). `inspector` already
+self-enforces a tool-call budget per effort mode (see Step 1 of
+`inspector.md`); `operator` now has an equivalent soft, self-monitored budget
+for BUILD/REFACTOR tasks (see "Self-monitored tool-call budget" in
+`operator.md`). Both are honor-system guardrails inside the agent's own
+instructions, not something the orchestrator can force from outside.
+
+---
+
 ## Quality Gates
 
 | Verdict | Stage | Action | Retries |
@@ -507,6 +537,20 @@ Layer 3: model context  (in-flight only, not persisted)
 
 `operator` reads relevant `.claude/memory/` context as Step 0 of every BUILD/REFACTOR/DOCS run, and writes new findings back to it during SHIP mode — so each run benefits from prior runs without a dedicated memory agent or manual bookkeeping.
 
+`memory/sessions/`'s 7-day TTL and `.claude/memory/`'s staleness are enforced by
+`/memory-prune`, not automatically — same "deliberate, reviewable step" posture
+as `/evolve`. It archives (never deletes) session notes past the TTL, and only
+*flags* stale-looking codebase-memory entries for a human to confirm before
+anything is removed.
+
+We deliberately did not build automatic vector-search retrieval over `.claude/memory/`
+and `memory/` (raised as a possible improvement, considered, declined): at the
+current corpus size — a handful of markdown files — keyword `Grep` (already how
+`operator` Step 0 retrieves relevant context) gets equivalent results to
+top-k embedding search with zero added infrastructure, dependencies, or
+embedding-API cost. Revisit if the memory corpus grows large enough that
+keyword matches start missing semantically-related entries.
+
 ---
 
 ## Custom Slash Commands
@@ -517,6 +561,7 @@ Layer 3: model context  (in-flight only, not persisted)
 | `/audit [version]` | `release-prep` | Security + dependency audit before release |
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
 | `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
+| `/memory-prune` | — | Archive stale `memory/sessions/` notes, flag stale `.claude/memory/` entries for review |
 
 ---
 

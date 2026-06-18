@@ -16,6 +16,17 @@ const task = args && args.task ? args.task : 'implement the feature as described
 const effort = args && args.effort ? args.effort : 'medium'
 const MAX_RETRIES = 1
 
+// Per-stage token telemetry — budget.spent() is the only token signal a
+// workflow script can read (no fs access here, so this can't write
+// telemetry/token-usage.json; it rides along in the return value instead).
+const tokenLog = []
+async function trackedAgent(prompt, opts) {
+  const before = budget.spent()
+  const result = await agent(prompt, opts)
+  tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  return result
+}
+
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -54,14 +65,14 @@ function formatFindings(findings) {
 phase('Build')
 log('operator: loading memory, planning, implementing with TDD, self-verifying...')
 
-let buildResult = await agent(
+let buildResult = await trackedAgent(
   `Mode: BUILD\n\nTask: ${task}\n\nLoad relevant .claude/memory/ context, plan if the change touches 3+ files, implement with TDD (Red/Green/Refactor), write tests mapping every code path, run both self-verification gates, and commit locally. Do not push or open a PR yet.`,
   { label: 'operator:build', phase: 'Build', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
 if (!buildResult || buildResult.pipeline_gate === 'BLOCK') {
   log(`operator: GATE_FAIL — ${buildResult ? buildResult.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:build', reason: buildResult ? buildResult.summary : 'No response', findings: buildResult ? buildResult.findings : [] }
+  return { outcome: 'BLOCKED', stage: 'operator:build', reason: buildResult ? buildResult.summary : 'No response', findings: buildResult ? buildResult.findings : [], token_telemetry: tokenLog }
 }
 log(`operator: ${buildResult.verdict} — ${buildResult.summary}`)
 
@@ -73,14 +84,14 @@ let retries = 0
 while (retries <= MAX_RETRIES) {
   log(retries === 0 ? `inspector (${effort}): running adversarial review...` : `inspector: re-reviewing after fix ${retries}/${MAX_RETRIES}...`)
 
-  inspectResult = await agent(
+  inspectResult = await trackedAgent(
     `Task: ${task}\n\nReview the operator's local commit(s) with effort=${effort}. Run secrets detection (SEC-4), OWASP A01–A10, STRIDE (if applicable), dependency audit, and the two-pass quality review.`,
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
   if (!inspectResult || inspectResult.pipeline_gate === 'ESCALATE') {
     log('ESCALATION: secret or critical issue found — pipeline blocked, zero retries.')
-    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [] }
+    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [], token_telemetry: tokenLog }
   }
 
   if (inspectResult.pipeline_gate !== 'BLOCK') break
@@ -88,7 +99,7 @@ while (retries <= MAX_RETRIES) {
   if (retries >= MAX_RETRIES) break
 
   log(`inspector: Critical findings — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
-  await agent(
+  await trackedAgent(
     `Mode: BUILD\n\nTask: ${task}\n\nFix the following Critical findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(criticalFindings(inspectResult))}\n\nFix only the listed items. Do not change unflagged code. Re-run tests and commit.`,
     { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator' }
   )
@@ -97,7 +108,7 @@ while (retries <= MAX_RETRIES) {
 
 if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
   log(`inspector: exceeded ${MAX_RETRIES} fix cycle(s) — escalating.`)
-  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings }
+  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings, token_telemetry: tokenLog }
 }
 log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspectResult ? inspectResult.summary : ''}`)
 
@@ -105,7 +116,7 @@ log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspect
 phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
-const ship = await agent(
+const ship = await trackedAgent(
   `Mode: SHIP\n\nTask: ${task}\n\nRun pre-flight checks, push the branch, create a draft PR with a structured body (What / How / Testing / Checklist), and save lessons learned to .claude/memory/.`,
   // SHIP is pre-flight checks + PR formatting, no design/security judgment —
   // Haiku is plenty for it and costs a fraction of Sonnet.
@@ -114,7 +125,7 @@ const ship = await agent(
 
 if (!ship || ship.pipeline_gate === 'BLOCK') {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', findings: ship ? ship.findings : [] }
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', findings: ship ? ship.findings : [], token_telemetry: tokenLog }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
@@ -124,4 +135,5 @@ return {
   task,
   stages: ['operator:build', 'inspector', 'operator:ship'],
   summary: ship.summary || 'Draft PR created. All gates passed.',
+  token_telemetry: tokenLog,
 }
