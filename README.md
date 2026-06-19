@@ -27,17 +27,24 @@ rig-bench/
 │   ├── model-tiers.json    # Tier registry: frontier/standard/economy → model ID, max_tokens, temperature
 │   └── schemas/             # Canonical JSON Schemas for operator/inspector output (direct-invocation path)
 ├── lib/
-│   └── schema-validator.mjs # Zero-dependency validator for the direct/manual invocation path
+│   ├── schema-validator.mjs # Zero-dependency validator for the direct/manual invocation path
+│   ├── pipeline-state.mjs   # Canonical pipeline_state shape/merge logic (documented reference — see below)
+│   └── memory-store.mjs     # Local TF-IDF vector store (better-sqlite3) for .claude/memory/ + memory/
 ├── scripts/
-│   └── report.mjs           # Reads telemetry/runs/*.jsonl, prints cost/escalation/outcome stats
+│   ├── report.mjs           # Reads telemetry/runs/*.jsonl, prints cost/escalation/outcome stats
+│   ├── ingest-memory.mjs    # Chunks .claude/memory/+memory/ markdown into the vector store
+│   ├── query-memory.mjs     # CLI agents run via Bash for top-K relevant memory chunks
+│   └── prune-memory.mjs     # Archives stale (30d+ unused) vectors, never deletes
 ├── hooks/           # Git/Claude Code safety + lifecycle hooks (.mjs, Node.js — cross-platform)
 ├── memory/          # Portable cross-project context (personas, projects, knowledge)
 ├── telemetry/runs/  # Gitignored — per-run JSONL written by hooks/telemetry-writer.mjs
+├── package.json     # Local tooling only (better-sqlite3) — never a runtime dep of workflows/*.js
 └── .claude/         # Project-level settings, commands, and codebase memory
     ├── settings.json         # Hook wiring (SessionStart / PreToolUse / PostToolUse / Stop / PreCompact)
     ├── settings.local.json   # Permissions allowlist
     ├── commands/             # Custom slash commands (/ship, /audit, /review, /evolve)
-    └── memory/               # Codebase facts (conventions, architecture, gotchas)
+    ├── memory/               # Codebase facts (conventions, architecture, gotchas)
+    └── memory-vectors.db     # Gitignored — sqlite vector store, regenerable via `npm run memory:ingest`
 ```
 
 ---
@@ -595,6 +602,9 @@ Layer 2: memory/  (portable — checked into repo, travels across machines)
 
 Layer 3: model context  (in-flight only, not persisted)
     Active session facts loaded by operator at the start of every BUILD/REFACTOR/DOCS step
+
+Layer 4: .claude/memory-vectors.db  (derived, gitignored, regenerable)
+    Local TF-IDF vector store over Layers 1+2 — see "Vector memory retrieval" below
 ```
 
 `operator` reads relevant `.claude/memory/` context as Step 0 of every BUILD/REFACTOR/DOCS run, and writes new findings back to it during SHIP mode — so each run benefits from prior runs without a dedicated memory agent or manual bookkeeping.
@@ -605,13 +615,89 @@ as `/evolve`. It archives (never deletes) session notes past the TTL, and only
 *flags* stale-looking codebase-memory entries for a human to confirm before
 anything is removed.
 
-We deliberately did not build automatic vector-search retrieval over `.claude/memory/`
-and `memory/` (raised as a possible improvement, considered, declined): at the
-current corpus size — a handful of markdown files — keyword `Grep` (already how
-`operator` Step 0 retrieves relevant context) gets equivalent results to
-top-k embedding search with zero added infrastructure, dependencies, or
-embedding-API cost. Revisit if the memory corpus grows large enough that
-keyword matches start missing semantically-related entries.
+### Vector memory retrieval
+
+This repo previously declined automatic vector-search retrieval over
+`.claude/memory/`/`memory/`, reasoning that at a corpus of a few dozen
+markdown files, keyword `Grep` gets equivalent results to embedding search —
+revisit only if the corpus grows large enough that keyword matches start
+missing semantically-related entries. That revisit happened: `lib/memory-store.mjs`
+now provides **TF-IDF vector retrieval** (`npm run memory:ingest` to build the
+store, `node scripts/query-memory.mjs "<query>" 3` to get the top-K relevant
+chunks) — but deliberately **not** neural-embedding-based search. TF-IDF is
+classical bag-of-words IR, computed in pure JS with zero external API calls
+and no model download; `better-sqlite3` is the only new dependency. This was
+a deliberate choice over `@xenova/transformers` (local neural embeddings,
+heavier dependency + slower first run) or a paid embedding API (Voyage/OpenAI
+— best quality, but a new secret + per-ingestion cost) given the corpus is
+still small.
+
+`operator`/`inspector` run `node scripts/query-memory.mjs` themselves via
+Bash (Step 0 / Context isolation section of each agent's `.md`) — **not**
+the JS orchestrator (`workflows/*.js`), which has no filesystem or Node.js
+API access and so cannot import `lib/memory-store.mjs` or run any script.
+The query script prints results wrapped in `<long_term_memory>`/`<memory_item>`
+XML tags (the explicit-tag format Anthropic's context-engineering guidance
+recommends for retrieved context), and each agent's Hard Rules instruct it to
+treat that block as authoritative — see "Hard Rules" in `operator.md`/`inspector.md`.
+
+`scripts/prune-memory.mjs` archives (never deletes) vectors unused for 30+
+days with fewer than 2 accesses — the same staleness posture as `/memory-prune`
+for the markdown layer, just applied to the derived vector index. Re-running
+`npm run memory:ingest` rebuilds the store from scratch from the markdown
+source of truth, which also undoes any archiving (the store is a cache, not
+a source of truth).
+
+**Not built — and why:** a dedicated `memory-manager` agent (raised as
+"optional but recommended"). This repo deliberately collapsed a 15-agent
+roster (including a `memory-manager`) down to "Lean 2" (`operator` +
+`inspector`) specifically to cut spawn-tax — reintroducing a third agent for
+memory curation directly reverses that consolidation. `operator`'s existing
+SHIP-mode memory-writing step plus the `new_memories` structured field (see
+"State-Passing" below) cover the same need without a third spawn.
+
+### State-passing, not transcript-passing
+
+Workflows never pass one agent's raw response text or conversation history
+to the next agent — they only ever passed a `task`/`bug`/`target` description
+plus already-extracted `{severity, file, line, message}` findings (this was
+already true before Priority 3; see "Prompt minimality" in
+[workflows/README.md](workflows/README.md)). What Priority 3 added: a
+`pipelineState` object (`task_id`, `current_mode`, `files_changed`,
+`test_status`, `last_error_message`, `inspector_findings`, `iteration_count`)
+that every workflow builds and merges after each agent call (`mergeState()`),
+then serializes into the next prompt as a `Pipeline state: {...}` JSON block —
+structured data only, never prose or a transcript. `lib/pipeline-state.mjs`
+documents the canonical shape; each workflow mirrors the same merge logic
+inline (same reason `TIER_MODELS` is mirrored, not imported — no fs/Node
+access in workflow scripts).
+
+`operator`/`inspector` both treat an incoming `pipeline_state` block as the
+source of truth for current task status (Hard Rule 14) and are told they're
+invoked with zero prior conversational context (Hard Rule 13) — there is no
+"ask for the previous chat" to fall back to, by design.
+
+**Deviation:** Priority 3 Phase 5's `new_memories` rule said *"do not write
+to memory files directly via bash; let the orchestrator handle ingestion."*
+That doesn't hold here — the orchestrator (`workflows/*.js`) has no
+filesystem access either, so it's no more able to write a memory file than
+the agent's own Bash tool is. `operator` keeps writing to `.claude/memory/`
+directly via Bash during SHIP mode (the only mechanism in this harness that
+actually persists memory); `new_memories` is additive — it surfaces the same
+lesson as structured JSON so it's machine-readable in the run's result and
+loggable, without replacing the one path that actually works.
+
+**Not built — and why:** mid-loop context compaction for a single agent call
+(`lib/compactor.js`, asked for in Priority 3 Phase 4). The proposed design
+needed the JS orchestrator to track a single agent's *cumulative input
+tokens during* its run and reset its message history mid-flight — but each
+`agent()` call is atomic from the orchestrator's side; it only sees the
+result once the call returns (see "Self-monitored tool-call budget" in
+`operator.md`). Claude Code already has a real mechanism for this — the
+`PreCompact` hook (`hooks/pre-compact.mjs`) snapshots state before an
+auto-compact and `operator.md`/`inspector.md`'s "Context recovery" sections
+tell the agent how to recover from it. Building a parallel custom compactor
+would duplicate a platform feature that already does this job.
 
 ---
 
@@ -624,6 +710,22 @@ keyword matches start missing semantically-related entries.
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
 | `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
 | `/memory-prune` | — | Archive stale `memory/sessions/` notes, flag stale `.claude/memory/` entries for review |
+
+---
+
+## Local Tooling (`npm`)
+
+This is the only part of the repo that needs `npm install` — `workflows/*.js`
+and the hooks are dependency-free by design (see "Token Telemetry" and
+"Vector memory retrieval" above for why). `package.json` exists solely to
+pull in `better-sqlite3` for the local memory vector store.
+
+| Script | What it does |
+|---|---|
+| `npm run memory:ingest` | Rebuilds `.claude/memory-vectors.db` from `.claude/memory/` + `memory/` markdown |
+| `npm run memory:query -- "<text>" [topK]` | CLI for the same query `operator`/`inspector` run via Bash |
+| `npm run memory:prune [maxAgeDays] [minAccessCount]` | Archives stale vectors (default: 30 days, <2 accesses) |
+| `npm run report` | Aggregates `telemetry/runs/*.jsonl` — see "Token Telemetry" |
 
 ---
 

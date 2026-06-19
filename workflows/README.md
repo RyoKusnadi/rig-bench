@@ -172,6 +172,14 @@ inspector (effort=maximum) ── ESCALATION / CRITICAL_CVE → stop
 | `notes` | string | No | Release highlights for CHANGELOG |
 | `tier` | string | No | `force_tier` override for the Release stage only — the Audit stage always uses `frontier` |
 
+Every workflow above also accepts an optional `task_id` (string) — seeds
+`pipelineState.task_id` (see "State-passing, not transcript-passing" in the
+root [README.md](../README.md)). Omitted from each table since it's not
+pipeline-specific: pass it if you want to correlate a run's
+`pipeline_state`/telemetry with an external tracker (ticket ID, issue
+number); there's no auto-generated ID, since workflow scripts can't call
+`Date.now()`/`Math.random()` to mint one themselves.
+
 ---
 
 ## Quality gates summary
@@ -230,6 +238,21 @@ const resolveModel = (state) => TIER_MODELS[forceTier || ESCALATION_POLICY[state
 
 const result = await agent('...', { agentType: 'operator', schema: GATE_SCHEMA, model: resolveModel(STATES.DO_THING) })
 const next = result ? (TRANSITIONS[STATES.DO_THING][result.pipeline_gate] || STATES.FAILED) : STATES.FAILED
+```
+
+State-passing (mirror `lib/pipeline-state.mjs`'s shape — can't `import` it, no fs/Node access in workflow scripts):
+
+```javascript
+let pipelineState = { task_id: null, current_mode: null, files_changed: [], test_status: null, last_error_message: null, inspector_findings: [], iteration_count: 0 }
+function mergeState(result, role) {
+  if (!result) return
+  if (result.mode) pipelineState.current_mode = result.mode
+  if (Array.isArray(result.files_changed)) pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
+  if (result.test_status) pipelineState.test_status = result.test_status
+  if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+}
+// After each agent() call: mergeState(result, 'operator' | 'inspector')
+// Before the next call: append `\n\nPipeline state: ${JSON.stringify(pipelineState)}` to its prompt
 ```
 
 After a run, `hooks/telemetry-writer.mjs` persists the returned
@@ -338,15 +361,39 @@ repo's two-agent design work — not because anyone hand-implemented them:
   shared transcript — there's no "session" to `/clear` between stages,
   because there was never a continuous one to begin with. A manual
   `/clear`-equivalent would add an op with nothing to clean up.
+- **State-passing instead of transcript-passing.** Every `agent()` call's
+  prompt was already a `task`/`bug`/`target` description plus extracted
+  `{severity, file, line, message}` findings — never raw response text or
+  history (see "Prompt minimality" below). What's new is formalizing the
+  carried-forward data as a `pipelineState` object (see "State-passing, not
+  transcript-passing" in the root [README.md](../README.md)) instead of
+  ad-hoc prose interpolation.
 
 ## Declined
 
-- **Vector search over `.claude/memory/`/`memory/`.** At the current corpus
-  size (a handful of markdown files), `Grep`-based keyword retrieval —
-  already how `operator` Step 0 works — gets equivalent results to top-k
-  embedding search, with no new dependency, index, or embedding-API cost.
-  Revisit if the memory corpus grows large enough that keyword matches start
-  missing semantically related entries.
+- **Vector search implemented via neural embeddings.** Vector retrieval
+  itself is no longer declined — `lib/memory-store.mjs` provides it — but
+  the *neural-embedding* version (local model or paid API) was declined in
+  favor of plain TF-IDF, which needs zero API calls and no model download
+  for the corpus size this repo actually has. See "Vector memory retrieval"
+  in the root [README.md](../README.md).
+- **Retrieval driven from `workflows/*.js` instead of from inside the
+  agent.** Priority 3's plan called for the JS orchestrator to query the
+  vector store and inject a `<long_term_memory>` block before each
+  `agent()` call — impossible here, since workflow scripts have no
+  filesystem/Node API access and can't import `lib/memory-store.mjs` or run
+  any script. `operator`/`inspector` query it themselves via Bash instead
+  (Step 0 / Context isolation section of each `.md`).
+- **A dedicated `memory-manager` agent.** Raised as "optional but
+  recommended" — declined because it directly reverses this repo's Lean-2
+  consolidation (15 agents → 2, specifically to cut spawn-tax). See "Vector
+  memory retrieval" in the root README for what covers the same need instead.
+- **Mid-loop context compaction for a single agent call (`lib/compactor.js`).**
+  Needed the orchestrator to see a single `agent()` call's token usage
+  *during* its run and reset its history mid-flight — not possible; each
+  call is atomic from the orchestrator's side (no visibility until it
+  returns). Claude Code's own `PreCompact` hook already covers this — see
+  "State-passing, not transcript-passing" in the root README.
 - **Dynamic MCP server enable/disable per workflow stage.** No such
   hook/API is exposed to project `settings.json` or workflow scripts. Tool
   (including MCP tool) access is already scoped per agent via the

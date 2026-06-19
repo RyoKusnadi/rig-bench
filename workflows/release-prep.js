@@ -51,6 +51,32 @@ async function trackedAgent(prompt, opts) {
 
 function tokenBudgetExceeded() { return budget.spent() > MAX_TOKEN_BUDGET }
 
+// ── Pipeline state — state-passing, not transcript-passing (see
+// lib/pipeline-state.mjs for the canonical documented shape; mirrored here
+// since workflow scripts can't import it). ─────────────────────────────────
+let pipelineState = {
+  task_id: args && args.task_id ? args.task_id : null,
+  current_mode: null,
+  files_changed: [],
+  test_status: null,
+  last_error_message: null,
+  inspector_findings: [],
+  iteration_count: 0,
+}
+function mergeState(result, role) {
+  if (!result) return
+  if (result.mode) pipelineState.current_mode = result.mode
+  if (Array.isArray(result.files_changed)) {
+    pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
+  }
+  if (result.test_status) pipelineState.test_status = result.test_status
+  if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
+  if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+}
+function stateContext() {
+  return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
+}
+
 // Boundary validation: every agent() call below passes `schema: GATE_SCHEMA`,
 // which forces validated structured output via the Workflow tool — malformed
 // output never reaches this script (agent() returns null instead). See
@@ -74,6 +100,18 @@ const GATE_SCHEMA = {
           message:  { type: 'string' },
         },
         required: ['severity', 'message'],
+      },
+    },
+    mode:               { type: 'string' },
+    files_changed:      { type: 'array', items: { type: 'string' } },
+    test_status:        { type: 'string' },
+    last_error_message: { type: 'string' },
+    new_memories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, content: { type: 'string' } },
+        required: ['title', 'content'],
       },
     },
   },
@@ -100,6 +138,7 @@ if (tokenBudgetExceeded()) {
   return { outcome: 'FAILED', stage: STATES.FAILED, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
 }
 
+mergeState(audit, 'inspector')
 currentState = audit ? (TRANSITIONS[STATES.AUDIT][audit.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (audit && audit.verdict === 'CRITICAL_CVE') currentState = STATES.FAILED
 
@@ -128,16 +167,19 @@ phase('Release')
 log(`operator: creating release PR for v${version}...`)
 
 const ship = await trackedAgent(
-  `Mode: SHIP\n\nCreate release PR for v${version} targeting ${branch}.\n\n1. Validate all commits since last tag follow Conventional Commits.\n2. Update CHANGELOG.md — rename [Unreleased] to [${version}] with today's date, add a fresh empty [Unreleased] above it.\n3. Push the branch and create a draft PR titled "Release v${version}".\n4. Include the dependency audit summary in the PR body, and save the release outcome to .claude/memory/.${notes}`,
+  `Mode: SHIP\n\nCreate release PR for v${version} targeting ${branch}.\n\n1. Validate all commits since last tag follow Conventional Commits.\n2. Update CHANGELOG.md — rename [Unreleased] to [${version}] with today's date, add a fresh empty [Unreleased] above it.\n3. Push the branch and create a draft PR titled "Release v${version}".\n4. Include the dependency audit summary in the PR body, and save the release outcome to .claude/memory/.${notes}${stateContext()}`,
   { label: 'operator:release', phase: 'Release', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.RELEASE) }
 )
+mergeState(ship, 'operator')
 
 currentState = ship ? (TRANSITIONS[STATES.RELEASE][ship.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (currentState === STATES.FAILED) {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:release', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog, escalations }
+  return { outcome: 'BLOCKED', stage: 'operator:release', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog, escalations, pipeline_state: pipelineState }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
+
+const newMemories = [...(audit.new_memories || []), ...(ship.new_memories || [])]
 
 return {
   outcome: 'COMPLETE',
@@ -148,4 +190,6 @@ return {
   summary: ship.summary || `Release PR for v${version} created as draft.`,
   token_telemetry: tokenLog,
   escalations,
+  pipeline_state: pipelineState,
+  new_memories: newMemories,
 }

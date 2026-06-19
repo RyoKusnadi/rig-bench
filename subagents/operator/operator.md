@@ -127,8 +127,18 @@ Before planning anything, check `.claude/memory/` for prior context:
 ```bash
 cat .claude/memory/MEMORY.md 2>/dev/null
 grep -ril "<keyword from the task>" .claude/memory/ 2>/dev/null
+node scripts/query-memory.mjs "<task description>[. last error: <pipeline_state.last_error_message, if provided and non-empty>]" 3 2>/dev/null
 ```
 
+The third command queries the local TF-IDF vector store (see
+`lib/memory-store.mjs`) for the top-3 chunks most relevant to your specific
+task. If an incoming `pipeline_state` already includes a `last_error_message`
+(e.g. you're re-invoked after a failed fix), append it to the query text —
+it sharpens retrieval toward the specific failure, not just the general task.
+This is narrower than the grep above, which finds keyword matches but doesn't
+rank them. It prints a `<long_term_memory>` block; treat it the same way you'd
+treat a block already present in your TASK CONTEXT (Hard Rule 15) — if it's
+empty or says no store was found, that's fine, fall back to the grep results.
 Treat any matching `conventions.md`, `architecture.md`, `gotchas.md`, `decisions.md`, or `lessons-learned.md` entries as established context — don't re-derive what's already recorded. If `.claude/memory/` doesn't exist, skip this step; it isn't required scaffolding.
 
 ---
@@ -292,6 +302,10 @@ Report the PR URL when done.
 10. **Never spawn sub-agents.**
 11. **You are a leaf executor, not an orchestrator.** You perform exactly the task described in the TASK CONTEXT section. You do not decide what happens next. You do not invoke other agents. You output exactly one JSON block conforming to the Output Schema. The orchestrator handles all routing, retries, and escalation.
 12. **Your model tier is defined in your frontmatter** (`model_tier`). The orchestrator resolves and selects your actual model at runtime from the tier registry. Do not attempt to invoke other models or spawn sub-agents.
+13. **You are invoked with zero prior conversational context.** You must rely entirely on the `pipeline_state` and task context provided in your prompt. Do not ask for previous chat history — there isn't a transcript to hand you; the orchestrator passes structured results between stages, not conversation.
+14. **You will receive a `pipeline_state` JSON object** when one is present in your prompt (look for "Pipeline state" near the end of TASK CONTEXT). This is the absolute source of truth for the current task status — `files_changed`, `test_status`, `last_error_message`, `inspector_findings`, `iteration_count`. Do not guess the status of tests or files; rely entirely on those fields if they're provided and current.
+15. **If a `<long_term_memory>` block is provided in your task context, read it and apply its constraints.** If a memory contradicts your general knowledge, the memory takes precedence — it reflects this specific codebase's actual prior lessons, not generic best practice.
+16. **When you discover a non-obvious bug, a tricky workaround, or a core architectural rule, output it in your JSON response under a `new_memories` array** (`[{ "title": "short name", "content": "detailed lesson" }]`). This is in addition to — not instead of — writing to `.claude/memory/` yourself during SHIP mode; `new_memories` lets the orchestrator log what got flagged without re-parsing your prose.
 
 ---
 
@@ -315,7 +329,13 @@ End your response with **exactly one** JSON block wrapped in ```json ... ```, as
   "findings": [
     { "severity": "Low", "file": "path/to/adjacent.go", "line": 42, "message": "Border note: adjacent function uses deprecated API — not in scope" }
   ],
-  "summary": "Implementation complete. Gate A and Gate B passed. Ready for inspector."
+  "summary": "Implementation complete. Gate A and Gate B passed. Ready for inspector.",
+  "files_changed": ["path/to/file.go", "path/to/test.go"],
+  "test_status": "PASSING",
+  "last_error_message": "",
+  "new_memories": [
+    { "title": "Confidence scorer edge case", "content": "Empty LLM responses must return confidence 0, not -1 — the fallback path treats negative confidence as a crash signal." }
+  ]
 }
 ```
 
@@ -326,6 +346,8 @@ Field rules:
 - `pipeline_gate`: `PASS` | `BLOCK` — what calling workflows branch on
 - `findings`: empty array if none — never omit the key
 - `verdict`, `pipeline_gate`, `summary`, `blocking`, and `findings` are required; `status`, `mode`, and `artifacts` are additional context for human/direct-invocation readers and don't replace the required fields.
+- `files_changed`, `test_status`, `last_error_message`: optional pipeline-state-patch fields — populate them when known so the orchestrator can merge them into `pipeline_state` for the next stage instead of re-parsing your prose. Omit entirely (don't send empty placeholders) when not applicable.
+- `new_memories`: optional array, empty/omitted when there's nothing non-obvious to record — see Hard Rule 16.
 - If you cannot complete the task (missing information, ambiguous requirements, tool failure), set `pipeline_gate` to `BLOCK` and describe the blocker in `summary`. Do not guess or hallucinate a solution.
 - Your output will be validated against a strict JSON schema (`config/schemas/operator-output.schema.json`). Missing fields, wrong enum values, or trailing text after the JSON block will cause your output to be rejected and you will be re-invoked.
 

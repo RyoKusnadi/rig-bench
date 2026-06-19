@@ -1,0 +1,15 @@
+{
+  "name": "rig-bench",
+  "private": true,
+  "description": "Local memory tooling for rig-bench (vector store, ingestion, pruning). Not a runtime dependency of workflows/*.js — those scripts have no filesystem or Node.js API access; see lib/memory-store.mjs.",
+  "type": "module",
+  "scripts": {
+    "memory:ingest": "node scripts/ingest-memory.mjs",
+    "memory:query": "node scripts/query-memory.mjs",
+    "memory:prune": "node scripts/prune-memory.mjs",
+    "report": "node scripts/report.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0"
+  }
+}

@@ -76,8 +76,35 @@ function tokenBudgetExceeded() {
   return budget.spent() > MAX_TOKEN_BUDGET
 }
 
+// ── Pipeline state — state-passing, not transcript-passing (see
+// lib/pipeline-state.mjs for the canonical documented shape; mirrored here
+// since workflow scripts can't import it). Agents get the *result* of prior
+// stages as structured JSON, never raw conversation history. ─────────────
+let pipelineState = {
+  task_id: args && args.task_id ? args.task_id : null,
+  current_mode: null,
+  files_changed: [],
+  test_status: null,
+  last_error_message: null,
+  inspector_findings: [],
+  iteration_count: 0,
+}
+function mergeState(result, role) {
+  if (!result) return
+  if (result.mode) pipelineState.current_mode = result.mode
+  if (Array.isArray(result.files_changed)) {
+    pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
+  }
+  if (result.test_status) pipelineState.test_status = result.test_status
+  if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
+  if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+}
+function stateContext() {
+  return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
+}
+
 function failResult(stage, reason, findings) {
-  return { outcome: 'BLOCKED', stage, reason, findings: findings || [], token_telemetry: tokenLog, escalations }
+  return { outcome: 'BLOCKED', stage, reason, findings: findings || [], token_telemetry: tokenLog, escalations, pipeline_state: pipelineState }
 }
 
 // Boundary validation note: every agent() call below passes `schema:
@@ -105,6 +132,22 @@ const GATE_SCHEMA = {
           message:  { type: 'string' },
         },
         required: ['severity', 'message'],
+      },
+    },
+    // Optional pipeline-state-patch fields (Priority 3 Phase 1/5) — merged
+    // into `pipelineState` via mergeState() rather than re-parsed prose.
+    mode:               { type: 'string' },
+    files_changed:      { type: 'array', items: { type: 'string' } },
+    test_status:        { type: 'string' },
+    last_error_message: { type: 'string' },
+    // Non-obvious lessons the agent surfaced this run — see
+    // "new_memories" handling note near the Ship stage below.
+    new_memories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, content: { type: 'string' } },
+        required: ['title', 'content'],
       },
     },
   },
@@ -139,6 +182,7 @@ if (tokenBudgetExceeded()) {
   return { outcome: 'FAILED', stage: currentState, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
 }
 
+mergeState(buildResult, 'operator')
 currentState = buildResult ? (TRANSITIONS[STATES.BUILD][buildResult.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (currentState === STATES.FAILED) {
   log(`operator: GATE_FAIL — ${buildResult ? buildResult.summary : 'no response'}`)
@@ -159,6 +203,8 @@ while (retries <= MAX_RETRIES) {
     `Task: ${task}\n\nReview the operator's local commit(s) with effort=${effort}. Run secrets detection (SEC-4), OWASP A01–A10, STRIDE (if applicable), dependency audit, and the two-pass quality review.`,
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
+
+  mergeState(inspectResult, 'inspector')
 
   if (tokenBudgetExceeded()) {
     currentState = STATES.FAILED
@@ -181,11 +227,13 @@ while (retries <= MAX_RETRIES) {
   if (retries >= MAX_RETRIES) { currentState = STATES.FAILED; break }
 
   currentState = STATES.CORRECT
+  pipelineState.iteration_count = retries + 1
   log(`inspector: Critical findings — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
-  await trackedAgent(
-    `Mode: BUILD\n\nTask: ${task}\n\nFix the following Critical findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(criticalFindings(inspectResult))}\n\nFix only the listed items. Do not change unflagged code. Re-run tests and commit.`,
+  const correction = await trackedAgent(
+    `Mode: BUILD\n\nTask: ${task}\n\nFix the following Critical findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(criticalFindings(inspectResult))}${stateContext()}\n\nFix only the listed items. Do not change unflagged code. Re-run tests and commit.`,
     { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.BUILD) }
   )
+  mergeState(correction, 'operator')
   retries++
   currentState = STATES.INSPECT
 }
@@ -201,11 +249,12 @@ phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
 const ship = await trackedAgent(
-  `Mode: SHIP\n\nTask: ${task}\n\nRun pre-flight checks, push the branch, create a draft PR with a structured body (What / How / Testing / Checklist), and save lessons learned to .claude/memory/.`,
+  `Mode: SHIP\n\nTask: ${task}\n\nRun pre-flight checks, push the branch, create a draft PR with a structured body (What / How / Testing / Checklist), and save lessons learned to .claude/memory/.${stateContext()}`,
   // SHIP is pre-flight checks + PR formatting, no design/security judgment —
   // the economy tier is plenty for it and costs a fraction of standard.
   { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.SHIP) }
 )
+mergeState(ship, 'operator')
 
 currentState = ship ? (TRANSITIONS[STATES.SHIP][ship.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (currentState === STATES.FAILED) {
@@ -213,6 +262,15 @@ if (currentState === STATES.FAILED) {
   return failResult('operator:ship', ship ? ship.summary : 'No response', ship ? ship.findings : [])
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
+
+// `new_memories` (Priority 3 Phase 5): the agent still writes to
+// .claude/memory/ itself via Bash in SHIP mode — todo.md's "let the
+// orchestrator handle ingestion" instruction doesn't hold here, since this
+// workflow script has no filesystem access either (same constraint as
+// everywhere else in this file). Surfacing new_memories in the structured
+// result is additive — it lets hooks/telemetry-writer.mjs log what got
+// flagged as a lesson without duplicating or replacing the agent's own write.
+const newMemories = [...(buildResult.new_memories || []), ...(inspectResult ? inspectResult.new_memories || [] : []), ...(ship.new_memories || [])]
 
 return {
   outcome: 'COMPLETE',
@@ -222,4 +280,6 @@ return {
   summary: ship.summary || 'Draft PR created. All gates passed.',
   token_telemetry: tokenLog,
   escalations,
+  pipeline_state: pipelineState,
+  new_memories: newMemories,
 }
