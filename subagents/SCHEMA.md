@@ -30,7 +30,7 @@ name: inspector
 
 - Lowercase kebab-case only
 - Must exactly match the directory name and the filename (e.g., agent at `subagents/inspector/inspector.md` → `name: inspector`)
-- Used in `<task-notification>` XML, HANDOFF YAML, and calling-workflow pipeline logs
+- Used in the trailing JSON completion block (`"agent"` field) and calling-workflow pipeline logs
 
 ---
 
@@ -213,6 +213,8 @@ See `inspector.md` for the canonical OPERATION CONSTRAINTS block format — it's
 
 ## Completion signal convention
 
-Every agent must emit a `<task-notification>` XML block as the **last element** of every response, followed by a `## HANDOFF` YAML block. These enable the calling workflow to parse structured completion data without reading free-form text.
+Every agent must emit exactly one JSON block (wrapped in ```json ... ```) as the **last element** of every response — no text after it. Required fields: `verdict`, `pipeline_gate`, `summary`, `blocking`, `findings` (empty array if none). `status` and `artifacts` are additional, agent-specific context.
 
-See any agent file for the canonical format for its verdict vocabulary.
+Workflow-driven calls (`workflows/*.js`) never parse this text directly — they pass a `schema` option to `agent()` and the harness forces a validated structured tool call instead. The trailing JSON block matters for direct/manual invocation, where the caller has to parse the response text itself.
+
+See any agent file's "Output — Strict JSON Schema" section for its canonical field values and verdict vocabulary.

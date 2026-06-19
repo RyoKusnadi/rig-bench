@@ -18,7 +18,7 @@ The **operator** plans (if the change is non-trivial), implements with TDD, writ
 
 ### 3. The inspector checks it independently
 
-The **inspector** runs read-only, adversarial, and never trusts the operator's self-report: secrets detection, OWASP/STRIDE, dependency/CVE audit, and a two-pass code-quality review all happen in one pass. It emits a `<task-notification>` the calling workflow reads to decide whether to advance, retry, or escalate.
+The **inspector** runs read-only, adversarial, and never trusts the operator's self-report: secrets detection, OWASP/STRIDE, dependency/CVE audit, and a two-pass code-quality review all happen in one pass. It emits a trailing JSON block the calling workflow reads to decide whether to advance, retry, or escalate.
 
 ### 4. Quality gates enforce correctness
 
@@ -149,34 +149,33 @@ flowchart LR
 
 ## Communication protocol
 
-Every agent ends its response with two structured blocks the calling workflow reads:
+Every agent ends its response with a single JSON block — the calling workflow reads `pipeline_gate` to decide: advance → retry → escalate.
 
-### `<task-notification>` — completion signal
-
-```xml
-<task-notification>
-  <agent>inspector</agent>
-  <status>done</status>
-  <verdict>CRITICAL_BLOCK</verdict>
-  <effort-mode>medium</effort-mode>
-  <finding-count total="2" critical="1" major="1" minor="0"/>
-  <blocking>true</blocking>
-  <artifacts>
-    <artifact>Pass A (spec compliance): PASS</artifact>
-    <artifact>Pass B (quality + security + deps): 2 findings</artifact>
-  </artifacts>
-  <summary>1 Critical finding blocks merge. SQL injection at handler.go:88.</summary>
-  <pipeline-gate>BLOCK</pipeline-gate>
-</task-notification>
+```json
+{
+  "agent": "inspector",
+  "status": "COMPLETE",
+  "verdict": "CRITICAL_BLOCK",
+  "pipeline_gate": "BLOCK",
+  "blocking": true,
+  "artifacts": [
+    "Pass A (spec compliance): PASS",
+    "Pass B (quality + security + deps): 2 findings",
+    "Effort mode: medium"
+  ],
+  "findings": [
+    { "severity": "Critical", "file": "handler.go", "line": 88, "message": "SQL injection" }
+  ],
+  "summary": "1 Critical finding blocks merge. SQL injection at handler.go:88."
+}
 ```
 
-```yaml
-## HANDOFF
-findings:
-  - file:line — description
-```
+Two invocation paths read this differently:
 
-Calling workflows parse `pipeline-gate` to decide: advance → retry → escalate. They never pipe raw text between agents — they extract findings and re-structure the next prompt before dispatching.
+- **Workflow-driven** (`workflows/*.js`): `agent()` is called with a `schema` option, so the harness forces a structured tool call and returns the validated object directly — the calling script never parses text.
+- **Direct/manual**: the caller parses the last ```json``` block in the response. Everything before it (the SEC-4 escalation report, narrative findings) is human-readable context, not part of the contract — only that trailing block is.
+
+Calling workflows never pipe raw text between agents — they extract findings and re-structure the next prompt before dispatching.
 
 ---
 
