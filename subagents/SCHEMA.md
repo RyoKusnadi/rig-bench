@@ -12,7 +12,7 @@ Every agent file begins with a YAML frontmatter block (between `---` delimiters)
 | `description` | string (multi-line) | **Mandatory** | Plain-text description with `<example>` blocks for auto-invocation routing. |
 | `tools` | list of strings | **Mandatory** | Tools this agent is explicitly allowed to call. Claude Code enforces this at runtime. |
 | `disallowedTools` | list of strings | **Optional** | Tools this agent is explicitly blocked from calling. Dual enforcement with the OPERATION CONSTRAINTS prose block. |
-| `model` | string | **Mandatory** | Model ID string. Use the most capable model appropriate for the agent's workload. |
+| `model_tier` | string | **Mandatory** | One of `frontier` \| `standard` \| `economy`. Resolved to an actual model ID at runtime — see [Model Tier Registry](#model-tier-registry) below. Replaces the old hardcoded `model:` field. |
 | `color` | string | **Optional** | Terminal display color. No functional effect — purely cosmetic for pipeline readability. |
 | `permission_mode` | string | **Mandatory** | Determines how tool calls are approved. See allowed values below. |
 | `whenToUse` | list of strings | **Mandatory** | Short phrases describing when to invoke this agent. Powers auto-routing. |
@@ -92,21 +92,27 @@ disallowedTools: [Write, Edit, MultiEdit, NotebookEdit]
 
 ---
 
-### `model`
+### `model_tier`
 
 ```yaml
-model: claude-sonnet-4-6
+model_tier: standard
 ```
 
-Allowed model IDs:
+Declares the agent's **default** tier — the tier used when a calling workflow doesn't override it for a specific stage/mode. The actual model ID is resolved at runtime by the JS orchestrator from `config/model-tiers.json`, not hardcoded in the agent file. Agents never see or choose a model ID directly; they only know their tier (for the self-description rule each agent's prompt includes — see `operator.md`/`inspector.md`).
 
-| Model | ID | When to use |
+| Tier | Model | When to use |
 |---|---|---|
-| Haiku 4.5 | `claude-haiku-4-5` | Fast, low-cost passes — simple grep-only agents |
-| Sonnet 4.6 | `claude-sonnet-4-6` | Default for both `operator` and `inspector` — good balance of speed and capability |
-| Opus 4.8 | `claude-opus-4-8` | Complex reasoning, architectural analysis, maximum effort reviews |
+| `economy` | Haiku 4.5 | Secret scanning, dependency auditing, formatting, changelog/docs generation, low-effort review, SHIP-mode pre-flight |
+| `standard` | Sonnet 4.6 | Standard feature implementation, bug fixes, refactors, TDD cycles, medium/high-effort review |
+| `frontier` | Opus 4.8 | Complex architectural planning, ambiguous bug diagnosis, multi-file refactors, maximum-effort review |
 
-Default to `claude-sonnet-4-6` unless there is a clear reason to use a different tier.
+A workflow may pass a per-call `model` override (resolved from a different tier than the agent's default) via `agent()`'s `opts.model` — see "Model Tier Registry" below and `workflows/README.md`'s "Model routing per call" section.
+
+---
+
+## Model Tier Registry
+
+`config/model-tiers.json` is the single source of truth mapping each tier name to a model ID, `max_tokens`, `temperature`, and a human-readable `use_cases` note. Because workflow scripts have no filesystem access, they cannot `require()` this file at runtime — each workflow embeds a small `TIER_MODELS` constant mirroring its values (see any `workflows/*.js` file). Treat `config/model-tiers.json` as the canonical reference; update both it and every workflow's `TIER_MODELS` constant together if a tier's model ID changes.
 
 ---
 
@@ -186,7 +192,7 @@ description: |
   </example>
 tools: Read, Bash, Grep, Glob
 disallowedTools: [Write, Edit, MultiEdit, NotebookEdit]
-model: claude-sonnet-4-6
+model_tier: standard
 color: yellow
 permission_mode: semi-auto
 whenToUse:

@@ -22,9 +22,17 @@ A production-grade multi-agent harness for AI-driven software engineering. Provi
 ```
 rig-bench/
 ├── subagents/       # 2 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster
-├── workflows/       # 6 deterministic pipelines (.js orchestration scripts)
+├── workflows/       # 6 deterministic state-machine pipelines (.js orchestration scripts)
+├── config/
+│   ├── model-tiers.json    # Tier registry: frontier/standard/economy → model ID, max_tokens, temperature
+│   └── schemas/             # Canonical JSON Schemas for operator/inspector output (direct-invocation path)
+├── lib/
+│   └── schema-validator.mjs # Zero-dependency validator for the direct/manual invocation path
+├── scripts/
+│   └── report.mjs           # Reads telemetry/runs/*.jsonl, prints cost/escalation/outcome stats
 ├── hooks/           # Git/Claude Code safety + lifecycle hooks (.mjs, Node.js — cross-platform)
 ├── memory/          # Portable cross-project context (personas, projects, knowledge)
+├── telemetry/runs/  # Gitignored — per-run JSONL written by hooks/telemetry-writer.mjs
 └── .claude/         # Project-level settings, commands, and codebase memory
     ├── settings.json         # Hook wiring (SessionStart / PreToolUse / PostToolUse / Stop / PreCompact)
     ├── settings.local.json   # Permissions allowlist
@@ -38,10 +46,12 @@ rig-bench/
 
 Each agent is a single `.md` file with YAML frontmatter declaring its model, tool permissions, and completion signal contract. See [subagents/README.md](subagents/README.md) for the full breakdown.
 
-| Agent | Role | Model | Permission |
+| Agent | Role | Default tier | Permission |
 |---|---|---|---|
-| `operator` | Plans, implements (TDD), tests, self-verifies, refactors, diagnoses bugs, writes docs/CHANGELOG, ships (commit + draft PR) — run in BUILD / REFACTOR / DOCS / SHIP mode | Sonnet | manual |
-| `inspector` | Read-only adversarial review in one pass: secrets (SEC-4), OWASP/STRIDE, dependency/CVE audit, two-pass code quality (low / medium / high / maximum effort) | Sonnet | semi-auto |
+| `operator` | Plans, implements (TDD), tests, self-verifies, refactors, diagnoses bugs, writes docs/CHANGELOG, ships (commit + draft PR) — run in BUILD / REFACTOR / DOCS / SHIP mode | `standard` (Sonnet) | manual |
+| `inspector` | Read-only adversarial review in one pass: secrets (SEC-4), OWASP/STRIDE, dependency/CVE audit, two-pass code quality (low / medium / high / maximum effort) | `standard` (Sonnet) | semi-auto |
+
+Each agent's frontmatter declares a `model_tier` (`frontier`/`standard`/`economy`), not a hardcoded model ID — see [Model Tier Registry & Routing](#model-tier-registry--routing) below for how the actual model gets resolved per call.
 
 Both agents are spawned with zero pre-loaded file context — they `Grep` for the
 modules/symbols the task names and `Read` only what that turns up, instead of
@@ -205,15 +215,39 @@ operator (SHIP, release mode)
 
 ---
 
-## Model Routing
+## Model Tier Registry & Routing
 
-Most `agent()` calls run on each agent's default model (Sonnet, from
-`operator.md`/`inspector.md` frontmatter). Two calls override it deliberately:
+`config/model-tiers.json` is the single source of truth mapping each tier to
+a model ID, `max_tokens`, `temperature`, and a `use_cases` note:
 
-| Call | Model | Why |
+| Tier | Model | Used for |
 |---|---|---|
-| `operator` SHIP-mode calls (all workflows) | Haiku | Pre-flight checks + PR/CHANGELOG formatting — no design or security judgment involved. |
-| `inspector:audit` in `release-prep` | Opus | The last gate before a release ships — the one spot worth paying for frontier reasoning. |
+| `economy` | Haiku 4.5 | SHIP-mode pre-flight/PR formatting, DOCS mode, low-effort review — no design or security judgment involved |
+| `standard` | Sonnet 4.6 | BUILD/REFACTOR implementation, medium/high-effort review — each agent's default tier |
+| `frontier` | Opus 4.8 | Pre-release audit (`release-prep`'s Audit stage, always), and the escalation target when a `standard`-tier call BLOCKs for a complexity-related reason |
+
+Workflow scripts can't `require()` this file at runtime (no filesystem
+access — see "Token Telemetry" below), so each `workflows/*.js` embeds a
+`TIER_MODELS` constant mirroring it. Keep both in sync if a tier's model ID
+changes.
+
+**Per-state escalation policy:** every state in a workflow's `ESCALATION_POLICY`
+declares a `default_tier` and `escalation_tier`. The first attempt always
+uses `default_tier`; if that call returns `pipeline_gate: BLOCK` for a
+complexity-related reason (matched against the result's `summary` — "too
+many files", "ambiguous", "complex", "architect…"), the workflow retries once
+at `escalation_tier` before treating it as a real block. A `PASS` or
+`ESCALATE` result never triggers escalation — only an ambiguous `BLOCK` does.
+Every escalation is recorded in the run's `escalations` array (see Token
+Telemetry below).
+
+**`force_tier` override:** pass `args.tier` (`frontier`/`standard`/`economy`)
+to any workflow to skip the escalation ladder entirely and pin every stage in
+that run to one tier — useful for a critical task where you want maximum
+quality on the first attempt, or for a trivial one where economy is enough
+end to end. `release-prep`'s Audit stage ignores `force_tier` (always
+`frontier`) since downgrading the pre-release secret/CVE gate defeats its
+purpose.
 
 `inspector`'s single-pass review (secrets + OWASP/STRIDE + deps + quality in
 one spawn) deliberately is **not** split across models per dimension — doing
@@ -227,29 +261,46 @@ call" in [workflows/README.md](workflows/README.md) for the full rationale.
 
 Every `agent()` call in all six workflows is wrapped to record a token delta
 via `budget.spent()` (the Workflow tool's real, documented token-accounting
-API) before and after the call, and every return path — success or
-`BLOCKED` — includes a `token_telemetry: [{label, tokens}, ...]` array in its
-result. This is the in-band alternative to a `telemetry/token-usage.json`
-file: **workflow scripts have no filesystem access**, so they can't write a
-log file directly — the only place this data can go is the return value
-itself.
+API) before and after the call, and every return path — success, `BLOCKED`,
+or `FAILED` — includes a `token_telemetry: [{label, tokens}, ...]` array and
+an `escalations: [{state, from, to, reason}, ...]` array in its result.
+**Workflow scripts have no filesystem access**, so they can't write a log
+file directly — the return value is the only place this data can go from
+inside the script.
 
-We did not build a separate "token cost per pipeline" dashboard script. That
-would mean reintroducing a `claude -p`-headless-CLI-driving script in the
-same shape as the `eval-harness/` infrastructure this repo's previous
-revision removed at explicit request — `token_telemetry` already gives the
-same per-pipeline cost breakdown in-band, without bringing that category of
-infrastructure back.
+`hooks/telemetry-writer.mjs` (PostToolUse, matcher `Workflow`) is what
+actually persists it: it has real fs access, reads the Workflow tool's
+`tool_response` after every run, and appends one JSON line per `token_telemetry`
+entry plus one per escalation plus a `run_summary` line to
+`telemetry/runs/{timestamp}-{workflow}.jsonl` (gitignored — session-local,
+same treatment as `.claude/bash.log`). `scripts/report.mjs` reads every file
+under `telemetry/runs/` and prints: average output-token cost per workflow
+type, the top stages by token consumption, escalation frequency per state,
+and an outcome breakdown — run it with `node scripts/report.mjs`.
 
-We also did not implement hard, JS-enforced token budgets that forcefully
+This is **not** a reintroduction of the `claude -p`-headless-CLI-driving
+`eval-harness/` infrastructure a previous revision of this repo removed at
+explicit request — there's no scripted CLI driving Claude Code here, just a
+hook reading the harness's own already-emitted tool results and a report
+script reading flat JSON files it wrote. The honesty caveat: `tokens` is an
+output-token delta from `budget.spent()` — the only signal the Workflow
+tool's API exposes to a script. There's no `input_tokens`/`cache_read_tokens`/
+`cache_creation_tokens` breakdown available at this layer, so
+`telemetry-writer.mjs` doesn't fabricate those fields.
+
+We still did not implement hard, JS-enforced token budgets that forcefully
 terminate an over-budget `agent()` call mid-execution — there's no such
 primitive in the Workflow tool's `agent()` API (no timeout/max-tokens
-parameter, no kill switch once a call is in flight). `inspector` already
-self-enforces a tool-call budget per effort mode (see Step 1 of
-`inspector.md`); `operator` now has an equivalent soft, self-monitored budget
-for BUILD/REFACTOR tasks (see "Self-monitored tool-call budget" in
-`operator.md`). Both are honor-system guardrails inside the agent's own
-instructions, not something the orchestrator can force from outside.
+parameter, no kill switch once a call is in flight). Each workflow's
+`MAX_TOKEN_BUDGET` constant is a **soft, checkpoint-based** guard instead: it's
+checked after each stage completes (via `budget.spent()`), and forces a
+`FAILED` outcome with "Token budget exceeded. Manual review required." if
+exceeded — it can't interrupt a call that's already in flight. `inspector`
+also self-enforces a tool-call budget per effort mode (see Step 1 of
+`inspector.md`); `operator` has an equivalent soft, self-monitored budget for
+BUILD/REFACTOR tasks (see "Self-monitored tool-call budget" in `operator.md`).
+All three are honor-system/checkpoint guardrails, not something that can
+forcibly cut off a call already running.
 
 ---
 
@@ -263,6 +314,7 @@ instructions, not something the orchestrator can force from outside.
 | `NO_TESTS` | operator (REFACTOR mode) | Procedural block — run BUILD mode to add tests first | N/A |
 | Any gate after 1 retry | any | Escalate to human with full attempt history | — |
 | Missing `<task-notification>` | any | Treated as BLOCK — malformed responses fail safe | — |
+| `MAX_TOKEN_BUDGET` exceeded (checked after each stage) | any | `FAILED` — "Token budget exceeded. Manual review required." | — |
 
 ---
 
@@ -403,6 +455,16 @@ verifier step (that's now part of `operator`'s self-verification gate), it just 
 fast, cheap pass/fail signal right after a file changes. Also persists the
 rolling last 3 results to `.claude/session-state/last-test-results.json`, so
 `pre-compact.mjs` can fold recent test history into its compaction snapshot.
+
+### `hooks/telemetry-writer.mjs` (PostToolUse, matcher: `Workflow`)
+
+Runs **after** every `Workflow` tool call. Reads the workflow's own
+`token_telemetry`/`escalations`/`outcome` fields off `tool_response` and
+appends them as JSONL to `telemetry/runs/{timestamp}-{workflow}.jsonl` —
+see "Token Telemetry" above for why this lives in a hook (real fs access)
+rather than the workflow script itself (none). No-ops if `tool_name` isn't
+`Workflow` or the result doesn't look like a workflow return value. Always
+exits 0 — this hook is purely observational.
 
 ### `hooks/read-budget.mjs` (PreToolUse, matcher: `Read`)
 

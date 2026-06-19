@@ -11,15 +11,46 @@ export const meta = {
 // args.task    — required: what to implement (string)
 // args.effort  — optional: inspector effort mode (low|medium|high|maximum), default: medium
 // args.branch  — optional: feature branch name hint
+// args.tier    — optional: force_tier override (frontier|standard|economy) — skips the
+//                escalation ladder below and uses this tier for every stage in this run
 
 const task = args && args.task ? args.task : 'implement the feature as described'
 const effort = args && args.effort ? args.effort : 'medium'
+
+// ── State machine (deterministic control flow — no agent decides what runs
+// next; only TRANSITIONS reads each agent's pipeline_gate) ─────────────────
+const STATES = { BUILD: 'BUILD', INSPECT: 'INSPECT', CORRECT: 'CORRECT', SHIP: 'SHIP', DONE: 'DONE', FAILED: 'FAILED' }
+const TRANSITIONS = {
+  [STATES.BUILD]:   { PASS: STATES.INSPECT, BLOCK: STATES.FAILED },
+  [STATES.INSPECT]: { PASS: STATES.SHIP, BLOCK: STATES.CORRECT, ESCALATE: STATES.FAILED },
+  [STATES.CORRECT]: { PASS: STATES.INSPECT, BLOCK: STATES.INSPECT },
+  [STATES.SHIP]:    { PASS: STATES.DONE, BLOCK: STATES.FAILED },
+}
 const MAX_RETRIES = 1
+const MAX_TOKEN_BUDGET = 400_000 // soft ceiling on cumulative output tokens for this pipeline run
+
+// Tier registry mirrored from config/model-tiers.json — workflow scripts have
+// no filesystem access, so this can't be require()'d at runtime. Keep both in
+// sync if a tier's model ID changes.
+const TIER_MODELS = { frontier: 'claude-opus-4-8', standard: 'claude-sonnet-4-6', economy: 'claude-haiku-4-5' }
+// Per-state escalation policy: try default_tier first; only escalate to
+// escalation_tier when the BLOCK reason looks complexity-related, never on
+// PASS/ESCALATE (a real PASS/ESCALATE result is conclusive either way).
+const ESCALATION_POLICY = {
+  [STATES.BUILD]:   { default_tier: 'standard', escalation_tier: 'frontier' },
+  [STATES.INSPECT]: { default_tier: 'standard', escalation_tier: 'frontier' },
+  [STATES.SHIP]:    { default_tier: 'economy', escalation_tier: 'standard' },
+}
+const forceTier = args && args.tier && TIER_MODELS[args.tier] ? args.tier : null
+const resolveModel = (state) => TIER_MODELS[forceTier || ESCALATION_POLICY[state].default_tier]
+const escalatedModel = (state) => TIER_MODELS[ESCALATION_POLICY[state].escalation_tier]
+const isComplexityBlock = (result) => /too many files|ambiguous|complex|architectur/i.test((result && result.summary) || '')
 
 // Per-stage token telemetry — budget.spent() is the only token signal a
 // workflow script can read (no fs access here, so this can't write
 // telemetry/token-usage.json; it rides along in the return value instead).
 const tokenLog = []
+const escalations = []
 async function trackedAgent(prompt, opts) {
   const before = budget.spent()
   const result = await agent(prompt, opts)
@@ -27,6 +58,35 @@ async function trackedAgent(prompt, opts) {
   return result
 }
 
+// Runs an agent at its state's default tier; if it BLOCKs for a
+// complexity-related reason (and the caller hasn't forced a tier), retries
+// once at the state's escalation tier before the workflow treats it as a
+// real BLOCK. Logged to `escalations` for observability regardless of outcome.
+async function runWithEscalation(state, prompt, opts) {
+  let result = await trackedAgent(prompt, { ...opts, model: resolveModel(state) })
+  if (result && result.pipeline_gate === 'BLOCK' && isComplexityBlock(result) && !forceTier) {
+    escalations.push({ state, from: ESCALATION_POLICY[state].default_tier, to: ESCALATION_POLICY[state].escalation_tier, reason: result.summary })
+    log(`${state}: complexity-related BLOCK — escalating to ${ESCALATION_POLICY[state].escalation_tier} tier and retrying...`)
+    result = await trackedAgent(prompt, { ...opts, label: `${opts.label}-escalated`, model: escalatedModel(state) })
+  }
+  return result
+}
+
+function tokenBudgetExceeded() {
+  return budget.spent() > MAX_TOKEN_BUDGET
+}
+
+function failResult(stage, reason, findings) {
+  return { outcome: 'BLOCKED', stage, reason, findings: findings || [], token_telemetry: tokenLog, escalations }
+}
+
+// Boundary validation note: every agent() call below passes `schema:
+// GATE_SCHEMA`, which forces the subagent through the Workflow tool's
+// StructuredOutput layer — malformed/incomplete output never reaches this
+// script as a result at all (agent() returns null instead). This satisfies
+// Phase 3's "no malformed output downstream" goal without re-implementing
+// it; see config/schemas/{operator,inspector}-output.schema.json for the
+// full canonical schemas (used by direct/manual invocation + lib/schema-validator.mjs).
 const GATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -61,22 +121,32 @@ function formatFindings(findings) {
   return findings.map(f => `  - [${f.severity}] ${f.file || '?'}:${f.line || 0} — ${f.message}`).join('\n')
 }
 
+let currentState = STATES.BUILD
+
 // ── Stage 1: Build ─────────────────────────────────────────────────────────
 phase('Build')
 log('operator: loading memory, planning, implementing with TDD, self-verifying...')
 
-let buildResult = await trackedAgent(
+let buildResult = await runWithEscalation(
+  STATES.BUILD,
   `Mode: BUILD\n\nTask: ${task}\n\nLoad relevant .claude/memory/ context, plan if the change touches 3+ files, implement with TDD (Red/Green/Refactor), write tests mapping every code path, run both self-verification gates, and commit locally. Do not push or open a PR yet.`,
   { label: 'operator:build', phase: 'Build', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
-if (!buildResult || buildResult.pipeline_gate === 'BLOCK') {
+if (tokenBudgetExceeded()) {
+  currentState = STATES.FAILED
+  log(`Token budget exceeded (${budget.spent()} > ${MAX_TOKEN_BUDGET}) — manual review required.`)
+  return { outcome: 'FAILED', stage: currentState, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
+}
+
+currentState = buildResult ? (TRANSITIONS[STATES.BUILD][buildResult.pipeline_gate] || STATES.FAILED) : STATES.FAILED
+if (currentState === STATES.FAILED) {
   log(`operator: GATE_FAIL — ${buildResult ? buildResult.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:build', reason: buildResult ? buildResult.summary : 'No response', findings: buildResult ? buildResult.findings : [], token_telemetry: tokenLog }
+  return failResult('operator:build', buildResult ? buildResult.summary : 'No response', buildResult ? buildResult.findings : [])
 }
 log(`operator: ${buildResult.verdict} — ${buildResult.summary}`)
 
-// ── Stage 2: Inspect (retry ≤ 1) ─────────────────────────────────────────────
+// ── Stage 2: Inspect (loop CORRECT ⇄ INSPECT, capped at MAX_RETRIES) ───────
 phase('Inspect')
 let inspectResult = null
 let retries = 0
@@ -84,31 +154,45 @@ let retries = 0
 while (retries <= MAX_RETRIES) {
   log(retries === 0 ? `inspector (${effort}): running adversarial review...` : `inspector: re-reviewing after fix ${retries}/${MAX_RETRIES}...`)
 
-  inspectResult = await trackedAgent(
+  inspectResult = await runWithEscalation(
+    STATES.INSPECT,
     `Task: ${task}\n\nReview the operator's local commit(s) with effort=${effort}. Run secrets detection (SEC-4), OWASP A01–A10, STRIDE (if applicable), dependency audit, and the two-pass quality review.`,
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
-  if (!inspectResult || inspectResult.pipeline_gate === 'ESCALATE') {
-    log('ESCALATION: secret or critical issue found — pipeline blocked, zero retries.')
-    return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', findings: inspectResult ? inspectResult.findings : [], token_telemetry: tokenLog }
+  if (tokenBudgetExceeded()) {
+    currentState = STATES.FAILED
+    log(`Token budget exceeded (${budget.spent()} > ${MAX_TOKEN_BUDGET}) — manual review required.`)
+    return { outcome: 'FAILED', stage: currentState, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
   }
 
-  if (inspectResult.pipeline_gate !== 'BLOCK') break
+  const gate = inspectResult ? inspectResult.pipeline_gate : 'ESCALATE'
+  const next = TRANSITIONS[STATES.INSPECT][gate] || STATES.FAILED
 
-  if (retries >= MAX_RETRIES) break
+  if (next === STATES.FAILED) {
+    currentState = STATES.FAILED
+    log('ESCALATION: secret or critical issue found — pipeline blocked, zero retries.')
+    return failResult('inspector', inspectResult ? inspectResult.summary : 'No response — treated as ESCALATE', inspectResult ? inspectResult.findings : [])
+  }
 
+  if (next === STATES.SHIP) { currentState = STATES.SHIP; break }
+
+  // next === STATES.CORRECT
+  if (retries >= MAX_RETRIES) { currentState = STATES.FAILED; break }
+
+  currentState = STATES.CORRECT
   log(`inspector: Critical findings — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
   await trackedAgent(
     `Mode: BUILD\n\nTask: ${task}\n\nFix the following Critical findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(criticalFindings(inspectResult))}\n\nFix only the listed items. Do not change unflagged code. Re-run tests and commit.`,
-    { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator' }
+    { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.BUILD) }
   )
   retries++
+  currentState = STATES.INSPECT
 }
 
-if (inspectResult && inspectResult.pipeline_gate === 'BLOCK') {
+if (currentState === STATES.FAILED) {
   log(`inspector: exceeded ${MAX_RETRIES} fix cycle(s) — escalating.`)
-  return { outcome: 'BLOCKED', stage: 'inspector', retries, findings: inspectResult.findings, token_telemetry: tokenLog }
+  return failResult('inspector', inspectResult ? inspectResult.summary : 'Exceeded retries', inspectResult ? inspectResult.findings : [])
 }
 log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'} — ${inspectResult ? inspectResult.summary : ''}`)
 
@@ -119,13 +203,14 @@ log('operator: pushing branch and creating draft PR...')
 const ship = await trackedAgent(
   `Mode: SHIP\n\nTask: ${task}\n\nRun pre-flight checks, push the branch, create a draft PR with a structured body (What / How / Testing / Checklist), and save lessons learned to .claude/memory/.`,
   // SHIP is pre-flight checks + PR formatting, no design/security judgment —
-  // Haiku is plenty for it and costs a fraction of Sonnet.
-  { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator', model: 'claude-haiku-4-5-20251001' }
+  // the economy tier is plenty for it and costs a fraction of standard.
+  { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.SHIP) }
 )
 
-if (!ship || ship.pipeline_gate === 'BLOCK') {
+currentState = ship ? (TRANSITIONS[STATES.SHIP][ship.pipeline_gate] || STATES.FAILED) : STATES.FAILED
+if (currentState === STATES.FAILED) {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', findings: ship ? ship.findings : [], token_telemetry: tokenLog }
+  return failResult('operator:ship', ship ? ship.summary : 'No response', ship ? ship.findings : [])
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
@@ -136,4 +221,5 @@ return {
   stages: ['operator:build', 'inspector', 'operator:ship'],
   summary: ship.summary || 'Draft PR created. All gates passed.',
   token_telemetry: tokenLog,
+  escalations,
 }

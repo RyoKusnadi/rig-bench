@@ -48,6 +48,15 @@
             "command": "node ${CLAUDE_PROJECT_DIR}/hooks/auto-run-tests.mjs"
           }
         ]
+      },
+      {
+        "matcher": "Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/telemetry-writer.mjs"
+          }
+        ]
       }
     ],
     "Stop": [

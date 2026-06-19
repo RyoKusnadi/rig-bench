@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "inspector-output",
+  "type": "object",
+  "required": ["agent", "pipeline_gate", "status", "effort", "verdict", "findings", "summary", "blocking"],
+  "properties": {
+    "agent": { "const": "inspector" },
+    "status": { "type": "string", "enum": ["COMPLETE", "BLOCKED", "ESCALATE"] },
+    "effort": { "type": "string", "enum": ["low", "medium", "high", "maximum"] },
+    "verdict": {
+      "type": "string",
+      "enum": ["CLEAN", "MAJOR_ONLY", "CRITICAL_BLOCK", "SECRET_FOUND", "HIGH_CVE", "CRITICAL_CVE"]
+    },
+    "pipeline_gate": { "type": "string", "enum": ["PASS", "BLOCK", "ESCALATE"] },
+    "blocking": { "type": "boolean" },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "file", "line", "description", "fix"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+          "category": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "number" },
+          "description": { "type": "string" },
+          "fix": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" }
+  }
+}
