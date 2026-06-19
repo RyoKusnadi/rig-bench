@@ -1,7 +1,8 @@
 export const meta = {
   name: 'pr-review',
-  description: 'PR quality review: single inspector pass covering secrets + security + dependencies + code quality, plus optional spec compliance',
+  description: 'PR quality review: scout(manifest) → scout(gate, fail-fast) → inspector(full adversarial pass), plus optional spec compliance',
   phases: [
+    { title: 'Scout', detail: 'scout gathers repo manifest and gate-checks the diff before inspector' },
     { title: 'Inspect', detail: 'inspector runs the full adversarial review in one pass' },
   ],
 }
@@ -97,15 +98,67 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
+// Scout's output is a different, mechanical-only shape — see
+// config/schemas/scout-output.schema.json.
+const SCOUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    mode:           { type: 'string', enum: ['MANIFEST', 'GATE'] },
+    pipeline_gate:  { type: 'string', enum: ['PASS', 'BLOCK'] },
+    repo_manifest: {
+      type: ['object', 'null'],
+      properties: {
+        changed_files: { type: 'array', items: { type: 'string' } },
+        dirs:          { type: 'array', items: { type: 'string' } },
+        toolchain:     { type: 'string' },
+      },
+    },
+    raw_output:     { type: 'string' },
+    checks_run:     { type: 'array', items: { type: 'string' } },
+    checks_skipped: { type: 'array', items: { type: 'string' } },
+    summary:        { type: 'string' },
+  },
+  required: ['mode', 'pipeline_gate', 'summary'],
+}
+
+// ── Stage 0: Scout (Phase 1 + 2 — DAG + repo manifest, Phase 3 — fail fast
+// before paying for inspector) ─────────────────────────────────────────────
+// Manifest gathering and the diff's gate check have no data dependency on
+// each other, so they run concurrently.
+phase('Scout')
+log(`scout: gathering repo manifest and gate-checking ${scope}, in parallel...`)
+
+const [manifestResult, gateResult] = await parallel([
+  () => trackedAgent('Mode: MANIFEST\n\nGather the current repo shape — changed files, relevant directories, detected toolchain.', { label: 'scout:manifest', phase: 'Scout', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }),
+  () => trackedAgent(`Mode: GATE\n\nRun the project's lint, typecheck/build, and test commands against ${scope} and report PASS/BLOCK with raw output.`, { label: 'scout:gate', phase: 'Scout', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }),
+])
+
+if (gateResult && gateResult.pipeline_gate === 'BLOCK') {
+  log(`scout: GATE BLOCK — ${scope} doesn't even compile/lint/test clean. Returning findings without spending an inspector call: ${gateResult.summary}`)
+  return {
+    outcome: 'REVIEW_FINDINGS',
+    pipeline: 'pr-review',
+    scope,
+    overall_gate: 'BLOCK',
+    blocking_findings: 1,
+    recommendation: 'Fix the deterministic build/lint/test failure below before requesting review — never spent an inspector call on code that does not compile.',
+    merged_findings: [{ severity: 'Critical', message: `scout GATE failed: ${gateResult.raw_output || gateResult.summary}` }],
+    token_telemetry: tokenLog,
+    escalations,
+  }
+}
+log(`scout: GATE PASS — manifest gathered (toolchain: ${manifestResult && manifestResult.repo_manifest ? manifestResult.repo_manifest.toolchain : 'unknown'}). Proceeding to inspector.`)
+
 // ── Stage 1: Inspect ──────────────────────────────────────────────────────
 phase('Inspect')
 log(`inspector (${effort}): running full adversarial review on ${scope}...`)
 
+const manifestContext = manifestResult && manifestResult.repo_manifest ? `\n\nRepo manifest (already gathered — skip your own discovery):\n${JSON.stringify(manifestResult.repo_manifest)}` : ''
 const specContext = spec ? `\n\nSpec / requirements to check for compliance:\n${spec}` : ''
 
 const result = await runWithEscalation(
   STATES.INSPECT,
-  `Review ${scope} with effort=${effort}. Run secrets detection (SEC-4) first, then OWASP A01–A10, STRIDE (if applicable), full dependency/CVE audit across all manifests, and the two-pass code-quality review.${specContext}`,
+  `Review ${scope} with effort=${effort}. Run secrets detection (SEC-4) first, then OWASP A01–A10, STRIDE (if applicable), full dependency/CVE audit across all manifests, and the two-pass code-quality review.${manifestContext}${specContext}`,
   { label: 'inspector', phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
 )
 

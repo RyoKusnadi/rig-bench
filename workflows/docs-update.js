@@ -1,7 +1,8 @@
 export const meta = {
   name: 'docs-update',
-  description: 'Docs update pipeline: operator(docs) → inspector(light review) → operator(ship)',
+  description: 'Docs update pipeline: scout(manifest) → operator(docs) → inspector(light review) → operator(ship)',
   phases: [
+    { title: 'Scout', detail: 'scout gathers repo manifest so operator/inspector skip re-discovery' },
     { title: 'Write', detail: 'operator updates README, CLAUDE.md, docstrings, CHANGELOG' },
     { title: 'Inspect', detail: 'inspector runs a light review (examples verified, no secrets)' },
     { title: 'Ship', detail: 'operator pushes the branch and opens the draft PR' },
@@ -73,16 +74,20 @@ let pipelineState = {
   last_error_message: null,
   inspector_findings: [],
   iteration_count: 0,
+  repo_manifest: null,
+  gate_status: null,
 }
 function mergeState(result, role) {
   if (!result) return
-  if (result.mode) pipelineState.current_mode = result.mode
+  if (result.mode && role !== 'scout') pipelineState.current_mode = result.mode
   if (Array.isArray(result.files_changed)) {
     pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
   }
   if (result.test_status) pipelineState.test_status = result.test_status
   if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
   if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+  if (role === 'scout' && result.repo_manifest) pipelineState.repo_manifest = result.repo_manifest
+  if (role === 'scout' && result.mode === 'GATE') pipelineState.gate_status = result.pipeline_gate
 }
 function stateContext() {
   return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
@@ -129,7 +134,44 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
+// Scout's output is a different, mechanical-only shape — see
+// config/schemas/scout-output.schema.json.
+const SCOUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    mode:           { type: 'string', enum: ['MANIFEST', 'GATE'] },
+    pipeline_gate:  { type: 'string', enum: ['PASS', 'BLOCK'] },
+    repo_manifest: {
+      type: ['object', 'null'],
+      properties: {
+        changed_files: { type: 'array', items: { type: 'string' } },
+        dirs:          { type: 'array', items: { type: 'string' } },
+        toolchain:     { type: 'string' },
+      },
+    },
+    raw_output:     { type: 'string' },
+    checks_run:     { type: 'array', items: { type: 'string' } },
+    checks_skipped: { type: 'array', items: { type: 'string' } },
+    summary:        { type: 'string' },
+  },
+  required: ['mode', 'pipeline_gate', 'summary'],
+}
+
 let currentState = STATES.DOCS
+
+// ── Stage 0: Scout (Phase 2 — repo manifest) ──────────────────────────────
+// DOCS mode doesn't compile source, so there's no baseline/post-write GATE
+// here (see release-prep.js for the same no-gate rationale) — just the
+// manifest, so operator/inspector skip re-discovering changed files.
+phase('Scout')
+log('scout: gathering repo manifest...')
+
+const manifestResult = await trackedAgent(
+  'Mode: MANIFEST\n\nGather the current repo shape — changed files, relevant directories, detected toolchain.',
+  { label: 'scout:manifest', phase: 'Scout', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }
+)
+mergeState(manifestResult, 'scout')
+log(`scout: manifest gathered (toolchain: ${manifestResult && manifestResult.repo_manifest ? manifestResult.repo_manifest.toolchain : 'unknown'}).`)
 
 // ── Stage 1: Write docs ───────────────────────────────────────────────────
 phase('Write')
@@ -137,7 +179,7 @@ log('operator: reading changes and updating documentation...')
 
 const docs = await runWithEscalation(
   STATES.DOCS,
-  `Mode: DOCS\n\nTrigger: ${trigger}${scope}\n\nRead what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings, and CHANGELOG.md if user-facing. Verify every code example actually runs, then commit locally.`,
+  `Mode: DOCS\n\nTrigger: ${trigger}${scope}\n\nRead what changed (git diff HEAD), then update all affected documentation: README sections, CLAUDE.md, inline docstrings, and CHANGELOG.md if user-facing. Verify every code example actually runs, then commit locally.${stateContext()}`,
   { label: 'operator:docs', phase: 'Write', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 

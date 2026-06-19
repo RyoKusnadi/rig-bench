@@ -102,7 +102,7 @@ Declares the agent's **default** tier — the tier used when a calling workflow 
 
 | Tier | Model | When to use |
 |---|---|---|
-| `economy` | Haiku 4.5 | Secret scanning, dependency auditing, formatting, changelog/docs generation, low-effort review, SHIP-mode pre-flight |
+| `economy` | Haiku 4.5 | Secret scanning, dependency auditing, formatting, changelog/docs generation, low-effort review, SHIP-mode pre-flight, `scout`'s manifest/gate checks (never escalated — no judgment work to escalate) |
 | `standard` | Sonnet 4.6 | Standard feature implementation, bug fixes, refactors, TDD cycles, medium/high-effort review |
 | `frontier` | Opus 4.8 | Complex architectural planning, ambiguous bug diagnosis, multi-file refactors, maximum-effort review |
 
@@ -128,6 +128,7 @@ Used for terminal display only. Suggested per-agent colors for visual differenti
 |---|---|
 | `operator` | `blue` |
 | `inspector` | `red` |
+| `scout` | `gray` |
 
 ---
 

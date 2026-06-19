@@ -1,8 +1,10 @@
 export const meta = {
   name: 'new-feature',
-  description: 'Full new feature pipeline: operator(build) → inspector(review, retry≤1) → operator(ship)',
+  description: 'Full new feature pipeline: scout(manifest+baseline, parallel) → operator(build) → scout(gate) → inspector(review, retry≤1) → operator(ship)',
   phases: [
+    { title: 'Scout', detail: 'scout gathers repo manifest and checks baseline health, concurrently' },
     { title: 'Build', detail: 'operator plans, implements with TDD, self-verifies, commits locally' },
+    { title: 'Gate', detail: 'scout runs lint/typecheck/test deterministically before paying for inspector' },
     { title: 'Inspect', detail: 'inspector runs adversarial review (secrets/security/deps/quality)' },
     { title: 'Ship', detail: 'operator pushes the branch and opens the draft PR' },
   ],
@@ -18,7 +20,9 @@ const task = args && args.task ? args.task : 'implement the feature as described
 const effort = args && args.effort ? args.effort : 'medium'
 
 // ── State machine (deterministic control flow — no agent decides what runs
-// next; only TRANSITIONS reads each agent's pipeline_gate) ─────────────────
+// next; only TRANSITIONS reads each agent's pipeline_gate). SCOUT/GATE are
+// handled by dedicated helpers below rather than this table — scout never
+// escalates and isn't part of the operator/inspector retry ladder. ────────
 const STATES = { BUILD: 'BUILD', INSPECT: 'INSPECT', CORRECT: 'CORRECT', SHIP: 'SHIP', DONE: 'DONE', FAILED: 'FAILED' }
 const TRANSITIONS = {
   [STATES.BUILD]:   { PASS: STATES.INSPECT, BLOCK: STATES.FAILED },
@@ -27,6 +31,7 @@ const TRANSITIONS = {
   [STATES.SHIP]:    { PASS: STATES.DONE, BLOCK: STATES.FAILED },
 }
 const MAX_RETRIES = 1
+const GATE_MAX_RETRIES = 2 // compiler/lint-fix retries are cheap (economy-tier scout + operator) — a separate, more generous budget from the inspector-driven MAX_RETRIES above
 const MAX_TOKEN_BUDGET = 400_000 // soft ceiling on cumulative output tokens for this pipeline run
 
 // Tier registry mirrored from config/model-tiers.json — workflow scripts have
@@ -88,16 +93,20 @@ let pipelineState = {
   last_error_message: null,
   inspector_findings: [],
   iteration_count: 0,
+  repo_manifest: null,
+  gate_status: null,
 }
 function mergeState(result, role) {
   if (!result) return
-  if (result.mode) pipelineState.current_mode = result.mode
+  if (result.mode && role !== 'scout') pipelineState.current_mode = result.mode
   if (Array.isArray(result.files_changed)) {
     pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
   }
   if (result.test_status) pipelineState.test_status = result.test_status
   if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
   if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+  if (role === 'scout' && result.repo_manifest) pipelineState.repo_manifest = result.repo_manifest
+  if (role === 'scout' && result.mode === 'GATE') pipelineState.gate_status = result.pipeline_gate
 }
 function stateContext() {
   return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
@@ -108,11 +117,10 @@ function failResult(stage, reason, findings) {
 }
 
 // Boundary validation note: every agent() call below passes `schema:
-// GATE_SCHEMA`, which forces the subagent through the Workflow tool's
-// StructuredOutput layer — malformed/incomplete output never reaches this
-// script as a result at all (agent() returns null instead). This satisfies
-// Phase 3's "no malformed output downstream" goal without re-implementing
-// it; see config/schemas/{operator,inspector}-output.schema.json for the
+// GATE_SCHEMA`/`SCOUT_SCHEMA`, which forces the subagent through the
+// Workflow tool's StructuredOutput layer — malformed/incomplete output never
+// reaches this script as a result at all (agent() returns null instead).
+// See config/schemas/{operator,inspector,scout}-output.schema.json for the
 // full canonical schemas (used by direct/manual invocation + lib/schema-validator.mjs).
 const GATE_SCHEMA = {
   type: 'object',
@@ -154,6 +162,30 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
+// Scout's output is deliberately a different shape from GATE_SCHEMA — it
+// never carries `findings`/`verdict`, just a mechanical pass/fail and raw
+// command output. See config/schemas/scout-output.schema.json.
+const SCOUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    mode:           { type: 'string', enum: ['MANIFEST', 'GATE'] },
+    pipeline_gate:  { type: 'string', enum: ['PASS', 'BLOCK'] },
+    repo_manifest: {
+      type: ['object', 'null'],
+      properties: {
+        changed_files: { type: 'array', items: { type: 'string' } },
+        dirs:          { type: 'array', items: { type: 'string' } },
+        toolchain:     { type: 'string' },
+      },
+    },
+    raw_output:     { type: 'string' },
+    checks_run:     { type: 'array', items: { type: 'string' } },
+    checks_skipped: { type: 'array', items: { type: 'string' } },
+    summary:        { type: 'string' },
+  },
+  required: ['mode', 'pipeline_gate', 'summary'],
+}
+
 function criticalFindings(result) {
   if (!result || !result.findings) return []
   return result.findings.filter(f => f.severity === 'Critical' || f.severity === 'High')
@@ -164,15 +196,69 @@ function formatFindings(findings) {
   return findings.map(f => `  - [${f.severity}] ${f.file || '?'}:${f.line || 0} — ${f.message}`).join('\n')
 }
 
+// Always economy tier — scout does mechanical command-running only, never
+// judgment work, so there's nothing for an escalation ladder to improve.
+async function runScoutGate(label) {
+  const result = await trackedAgent(
+    `Mode: GATE\n\nRun the project's lint, typecheck/build, and test commands against the current working tree and report PASS/BLOCK with raw output.${stateContext()}`,
+    { label, phase: 'Gate', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }
+  )
+  mergeState(result, 'scout')
+  return result
+}
+
+// Loops scout(GATE) ⇄ operator-fix, capped at GATE_MAX_RETRIES, so a
+// compiler/lint/test failure never reaches the (expensive) inspector call —
+// this is the Phase 3 "fail-fast deterministic gate" short-circuit.
+// `buildFixPrompt(gateResult, attempt)` builds the fix prompt for each retry.
+async function ensureGatePasses(labelPrefix, buildFixPrompt) {
+  let gateRetries = 0
+  let gateResult = await runScoutGate(`${labelPrefix}-gate`)
+  while (gateResult && gateResult.pipeline_gate === 'BLOCK' && gateRetries < GATE_MAX_RETRIES) {
+    log(`scout: GATE BLOCK — ${gateResult.summary} — sending back to operator (fix ${gateRetries + 1}/${GATE_MAX_RETRIES})...`)
+    const fix = await trackedAgent(
+      buildFixPrompt(gateResult, gateRetries + 1),
+      { label: `${labelPrefix}-fix-r${gateRetries + 1}`, phase: 'Gate', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.BUILD) }
+    )
+    mergeState(fix, 'operator')
+    gateRetries++
+    gateResult = await runScoutGate(`${labelPrefix}-gate-r${gateRetries}`)
+  }
+  return gateResult
+}
+
 let currentState = STATES.BUILD
+
+// ── Stage 0: Scout (Phase 1 + 2 — DAG + repo manifest) ─────────────────────
+// Manifest gathering and baseline health have no data dependency on each
+// other, so they run concurrently instead of as two sequential agent calls.
+phase('Scout')
+log('scout: gathering repo manifest and checking baseline health, in parallel...')
+
+const [manifestResult, baselineGate] = await parallel([
+  () => trackedAgent('Mode: MANIFEST\n\nGather the current repo shape — changed files, relevant directories, detected toolchain.', { label: 'scout:manifest', phase: 'Scout', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }),
+  () => trackedAgent('Mode: GATE\n\nRun the project\'s lint, typecheck/build, and test commands against the current baseline (before any change) and report PASS/BLOCK with raw output.', { label: 'scout:baseline-gate', phase: 'Scout', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }),
+])
+mergeState(manifestResult, 'scout')
+mergeState(baselineGate, 'scout')
+
+const baselineBroken = baselineGate && baselineGate.pipeline_gate === 'BLOCK'
+if (baselineBroken) {
+  log(`scout: baseline already BLOCK before any change — ${baselineGate.summary}. Operator will fix this first.`)
+}
+log(`scout: manifest gathered (toolchain: ${manifestResult && manifestResult.repo_manifest ? manifestResult.repo_manifest.toolchain : 'unknown'}).`)
 
 // ── Stage 1: Build ─────────────────────────────────────────────────────────
 phase('Build')
 log('operator: loading memory, planning, implementing with TDD, self-verifying...')
 
+const baselineNote = baselineBroken
+  ? `\n\nNote: the baseline (before your change) already fails scout's deterministic gate:\n${baselineGate.raw_output || baselineGate.summary}\nFix this pre-existing break as part of your work, don't build on top of it.`
+  : ''
+
 let buildResult = await runWithEscalation(
   STATES.BUILD,
-  `Mode: BUILD\n\nTask: ${task}\n\nLoad relevant .claude/memory/ context, plan if the change touches 3+ files, implement with TDD (Red/Green/Refactor), write tests mapping every code path, run both self-verification gates, and commit locally. Do not push or open a PR yet.`,
+  `Mode: BUILD\n\nTask: ${task}\n\nLoad relevant .claude/memory/ context, plan if the change touches 3+ files, implement with TDD (Red/Green/Refactor), write tests mapping every code path, run both self-verification gates, and commit locally. Do not push or open a PR yet.${baselineNote}${stateContext()}`,
   { label: 'operator:build', phase: 'Build', schema: GATE_SCHEMA, agentType: 'operator' }
 )
 
@@ -190,6 +276,26 @@ if (currentState === STATES.FAILED) {
 }
 log(`operator: ${buildResult.verdict} — ${buildResult.summary}`)
 
+// ── Stage 1.5: Gate (Phase 3 — fail fast, never pay for inspector on code
+// that doesn't compile) ─────────────────────────────────────────────────────
+phase('Gate')
+const postBuildGate = await ensureGatePasses(
+  'operator:build',
+  (gateResult, attempt) => `Mode: BUILD\n\nTask: ${task}\n\nscout's deterministic GATE check failed (fix attempt ${attempt}/${GATE_MAX_RETRIES}):\n${gateResult.raw_output || gateResult.summary}${stateContext()}\n\nFix only what's needed to make lint/typecheck/build/tests pass again. Do not change unrelated code or re-run the full TDD cycle.`
+)
+
+if (tokenBudgetExceeded()) {
+  currentState = STATES.FAILED
+  log(`Token budget exceeded (${budget.spent()} > ${MAX_TOKEN_BUDGET}) — manual review required.`)
+  return { outcome: 'FAILED', stage: currentState, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
+}
+
+if (!postBuildGate || postBuildGate.pipeline_gate !== 'PASS') {
+  log(`scout: GATE still BLOCK after ${GATE_MAX_RETRIES} fix attempt(s) — escalating without spending an inspector call.`)
+  return failResult('scout:gate', postBuildGate ? postBuildGate.summary : 'No response', [])
+}
+log('scout: GATE PASS — proceeding to inspector.')
+
 // ── Stage 2: Inspect (loop CORRECT ⇄ INSPECT, capped at MAX_RETRIES) ───────
 phase('Inspect')
 let inspectResult = null
@@ -200,7 +306,7 @@ while (retries <= MAX_RETRIES) {
 
   inspectResult = await runWithEscalation(
     STATES.INSPECT,
-    `Task: ${task}\n\nReview the operator's local commit(s) with effort=${effort}. Run secrets detection (SEC-4), OWASP A01–A10, STRIDE (if applicable), dependency audit, and the two-pass quality review.`,
+    `Task: ${task}\n\nReview the operator's local commit(s) with effort=${effort}. Run secrets detection (SEC-4), OWASP A01–A10, STRIDE (if applicable), dependency audit, and the two-pass quality review.${stateContext()}`,
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
@@ -234,6 +340,19 @@ while (retries <= MAX_RETRIES) {
     { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.BUILD) }
   )
   mergeState(correction, 'operator')
+
+  // Re-confirm the fix still compiles/lints/tests clean before spending
+  // another inspector call on it — same short-circuit as the post-build gate.
+  const recheckGate = await ensureGatePasses(
+    `operator-fix-r${retries + 1}`,
+    (gateResult, attempt) => `Mode: BUILD\n\nTask: ${task}\n\nscout's deterministic GATE check failed after applying inspector's fix (attempt ${attempt}/${GATE_MAX_RETRIES}):\n${gateResult.raw_output || gateResult.summary}${stateContext()}\n\nFix only what's needed to make lint/typecheck/build/tests pass again.`
+  )
+  if (!recheckGate || recheckGate.pipeline_gate !== 'PASS') {
+    currentState = STATES.FAILED
+    log(`scout: GATE still BLOCK after the correction — escalating without re-invoking inspector.`)
+    return failResult('scout:gate', recheckGate ? recheckGate.summary : 'No response', [])
+  }
+
   retries++
   currentState = STATES.INSPECT
 }
@@ -276,7 +395,7 @@ return {
   outcome: 'COMPLETE',
   pipeline: 'new-feature',
   task,
-  stages: ['operator:build', 'inspector', 'operator:ship'],
+  stages: ['scout:manifest+baseline', 'operator:build', 'scout:gate', 'inspector', 'operator:ship'],
   summary: ship.summary || 'Draft PR created. All gates passed.',
   token_telemetry: tokenLog,
   escalations,

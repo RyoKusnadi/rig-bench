@@ -6,7 +6,7 @@ A production-grade multi-agent harness for AI-driven software engineering. Provi
 
 ## What It Is
 
-**rig-bench** wires Claude Code into a structured engineering pipeline. Instead of one model doing everything, it routes work through two focused specialists — `operator` (build) and `inspector` (adversarial review) — in a fixed sequence. Control flow and retry logic live in JavaScript — not inside a model's judgment.
+**rig-bench** wires Claude Code into a structured engineering pipeline. Instead of one model doing everything, it routes work through two focused specialists — `operator` (build) and `inspector` (adversarial review) — in a fixed sequence, with a third, minimal `scout` agent running deterministic discovery/gate checks (never judgment) ahead of both. Control flow and retry logic live in JavaScript — not inside a model's judgment.
 
 **Core properties:**
 - Deterministic pipelines — same input, same agent sequence, every time
@@ -21,7 +21,7 @@ A production-grade multi-agent harness for AI-driven software engineering. Provi
 
 ```
 rig-bench/
-├── subagents/       # 2 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster
+├── subagents/       # 3 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster + scout (mechanical-only, no judgment work — see workflows/README.md "Declined")
 ├── workflows/       # 6 deterministic state-machine pipelines (.js orchestration scripts)
 ├── config/
 │   ├── model-tiers.json    # Tier registry: frontier/standard/economy → model ID, max_tokens, temperature
@@ -65,7 +65,7 @@ modules/symbols the task names and `Read` only what that turns up, instead of
 expecting the orchestrator to paste the codebase into the prompt. See the
 "Context isolation" section at the top of each agent's `.md` file.
 
-This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction).
+This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction). A third agent, `scout`, was added later — it's a deliberate, narrow exception (see the `memory-manager` "Not built" note further down): mechanical command-running only, zero judgment surface, so it doesn't reintroduce the reviewer-sprawl this consolidation guards against.
 
 ### Agent Communication Protocol
 
@@ -654,7 +654,12 @@ roster (including a `memory-manager`) down to "Lean 2" (`operator` +
 `inspector`) specifically to cut spawn-tax — reintroducing a third agent for
 memory curation directly reverses that consolidation. `operator`'s existing
 SHIP-mode memory-writing step plus the `new_memories` structured field (see
-"State-Passing" below) cover the same need without a third spawn.
+"State-Passing" below) cover the same need without a third spawn. (The one
+agent later added to the roster, `scout`, is not an exception to this
+reasoning by accident — it does no review/curation/judgment work at all,
+only mechanical command-running, so it doesn't compete with `inspector`'s
+role the way a `memory-manager` would have. See "Scout stage" in
+[workflows/README.md](workflows/README.md).)
 
 ### State-passing, not transcript-passing
 
@@ -671,6 +676,13 @@ structured data only, never prose or a transcript. `lib/pipeline-state.mjs`
 documents the canonical shape; each workflow mirrors the same merge logic
 inline (same reason `TIER_MODELS` is mirrored, not imported — no fs/Node
 access in workflow scripts).
+
+The Scout-stage work (see "Scout stage" in
+[workflows/README.md](workflows/README.md)) extended the same object with
+`repo_manifest` (the changed-files/dirs/toolchain `scout` MANIFEST mode
+gathers once, up front) and `gate_status` (the most recent `scout` GATE
+pass/fail) — both follow the identical pattern: a cheap agent's structured
+result, merged once, threaded into every later prompt instead of re-derived.
 
 `operator`/`inspector` both treat an incoming `pipeline_state` block as the
 source of truth for current task status (Hard Rule 14) and are told they're

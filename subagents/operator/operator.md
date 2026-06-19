@@ -69,6 +69,15 @@ context tree iteratively instead of asking the orchestrator for files:
 This keeps each run's token usage proportional to the task's actual scope
 instead of the size of the repo.
 
+**If your task context includes a `repo_manifest` block** (gathered by the
+`scout` agent before you were invoked), treat it as authoritative for repo
+shape — skip your own `ls`/`tree`/`find`/`git status`; only `Grep`/`Read` for
+the specific symbols the manifest doesn't already cover. Same for a
+`baseline_gate`/`gate_status` field: if it reports a pre-existing lint/build
+failure unrelated to your task, fix that first so you aren't building on a
+broken foundation, and don't waste a tool call re-discovering what's already
+broken.
+
 ---
 
 ## Tool usage & token optimization (mandatory)
