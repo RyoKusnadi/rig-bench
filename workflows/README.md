@@ -179,7 +179,7 @@ Every workflow enforces these gates:
 | `CRITICAL_CVE` (inspector) | Release pipeline blocked | 0 — fix CVE first |
 | `NO_TESTS` (operator REFACTOR mode) | Block — run BUILD mode to add tests first | N/A |
 | Any gate after 1 retry | Escalate to human with full attempt history | — |
-| Missing `<task-notification>` | Treated as `BLOCK` | — |
+| `agent()` returns `null` (schema validation failed / terminal error) | Treated as `BLOCK` / `ESCALATE` | — |
 
 ---
 
