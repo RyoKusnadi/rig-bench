@@ -62,6 +62,32 @@ async function runWithEscalation(state, prompt, opts) {
 
 function tokenBudgetExceeded() { return budget.spent() > MAX_TOKEN_BUDGET }
 
+// ── Pipeline state — state-passing, not transcript-passing (see
+// lib/pipeline-state.mjs for the canonical documented shape; mirrored here
+// since workflow scripts can't import it). ─────────────────────────────────
+let pipelineState = {
+  task_id: args && args.task_id ? args.task_id : null,
+  current_mode: null,
+  files_changed: [],
+  test_status: null,
+  last_error_message: null,
+  inspector_findings: [],
+  iteration_count: 0,
+}
+function mergeState(result, role) {
+  if (!result) return
+  if (result.mode) pipelineState.current_mode = result.mode
+  if (Array.isArray(result.files_changed)) {
+    pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
+  }
+  if (result.test_status) pipelineState.test_status = result.test_status
+  if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
+  if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+}
+function stateContext() {
+  return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
+}
+
 // Boundary validation: every agent() call below passes `schema: GATE_SCHEMA`,
 // which forces validated structured output via the Workflow tool — malformed
 // output never reaches this script (agent() returns null instead). See
@@ -87,6 +113,18 @@ const GATE_SCHEMA = {
         required: ['severity', 'message'],
       },
     },
+    mode:               { type: 'string' },
+    files_changed:      { type: 'array', items: { type: 'string' } },
+    test_status:        { type: 'string' },
+    last_error_message: { type: 'string' },
+    new_memories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, content: { type: 'string' } },
+        required: ['title', 'content'],
+      },
+    },
   },
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
@@ -108,11 +146,12 @@ if (tokenBudgetExceeded()) {
   return { outcome: 'FAILED', stage: STATES.FAILED, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
 }
 
+mergeState(docs, 'operator')
 currentState = docs ? (TRANSITIONS[STATES.DOCS][docs.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (docs && docs.verdict === 'EXAMPLE_FAIL') currentState = STATES.FAILED
 if (currentState === STATES.FAILED) {
   log(`operator: EXAMPLE_FAIL or BLOCK — ${docs ? docs.summary : 'no response'}. Fix broken examples before continuing.`)
-  return { outcome: 'BLOCKED', stage: 'operator:docs', reason: docs ? docs.summary : 'No response', findings: docs ? docs.findings : [], token_telemetry: tokenLog, escalations }
+  return { outcome: 'BLOCKED', stage: 'operator:docs', reason: docs ? docs.summary : 'No response', findings: docs ? docs.findings : [], token_telemetry: tokenLog, escalations, pipeline_state: pipelineState }
 }
 log(`operator: ${docs.verdict} — ${docs.summary}`)
 
@@ -121,9 +160,10 @@ phase('Inspect')
 log('inspector: light review of doc changes...')
 
 const inspectResult = await trackedAgent(
-  `Trigger: ${trigger}\n\nRun a light review (effort=low) of the documentation diff: secrets check, no accidental code changes mixed in, terminology matches the actual source.`,
+  `Trigger: ${trigger}\n\nRun a light review (effort=low) of the documentation diff: secrets check, no accidental code changes mixed in, terminology matches the actual source.${stateContext()}`,
   { label: 'inspector', phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector', model: resolveModel(STATES.INSPECT) }
 )
+mergeState(inspectResult, 'inspector')
 
 if (tokenBudgetExceeded()) {
   log(`Token budget exceeded (${budget.spent()} > ${MAX_TOKEN_BUDGET}) — manual review required.`)
@@ -133,7 +173,7 @@ if (tokenBudgetExceeded()) {
 currentState = inspectResult ? (TRANSITIONS[STATES.INSPECT][inspectResult.pipeline_gate] || STATES.FAILED) : STATES.SHIP
 if (currentState === STATES.FAILED) {
   log(inspectResult.pipeline_gate === 'ESCALATE' ? 'ESCALATION: secret found in doc diff — pipeline blocked, zero retries.' : `inspector: findings — ${inspectResult.summary}`)
-  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings, token_telemetry: tokenLog, escalations }
+  return { outcome: 'BLOCKED', stage: 'inspector', reason: inspectResult.summary, findings: inspectResult.findings, token_telemetry: tokenLog, escalations, pipeline_state: pipelineState }
 }
 log(`inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'}`)
 
@@ -142,23 +182,28 @@ phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
 const ship = await trackedAgent(
-  `Mode: SHIP\n\nDocs updated for: ${trigger}\n\nRun pre-flight checks, push the branch, and create a draft PR listing which files were updated and why.`,
+  `Mode: SHIP\n\nDocs updated for: ${trigger}\n\nRun pre-flight checks, push the branch, and create a draft PR listing which files were updated and why.${stateContext()}`,
   { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.SHIP) }
 )
+mergeState(ship, 'operator')
 
 currentState = ship ? (TRANSITIONS[STATES.SHIP][ship.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (currentState === STATES.FAILED) {
   log(`operator: PREFLIGHT_FAIL — ${ship ? ship.summary : 'no response'}`)
-  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog, escalations }
+  return { outcome: 'BLOCKED', stage: 'operator:ship', reason: ship ? ship.summary : 'No response', token_telemetry: tokenLog, escalations, pipeline_state: pipelineState }
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
+
+const newMemories = [...(docs.new_memories || []), ...(inspectResult ? inspectResult.new_memories || [] : []), ...(ship.new_memories || [])]
 
 return {
   outcome: 'COMPLETE',
   pipeline: 'docs-update',
   trigger,
-  files_updated: docs && docs.findings ? docs.findings.map(f => f.file).filter(Boolean) : [],
+  files_updated: pipelineState.files_changed.length ? pipelineState.files_changed : (docs && docs.findings ? docs.findings.map(f => f.file).filter(Boolean) : []),
   summary: ship.summary || 'Draft PR created. Docs updated.',
   token_telemetry: tokenLog,
   escalations,
+  pipeline_state: pipelineState,
+  new_memories: newMemories,
 }

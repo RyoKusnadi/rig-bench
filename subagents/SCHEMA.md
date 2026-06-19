@@ -221,6 +221,8 @@ See `inspector.md` for the canonical OPERATION CONSTRAINTS block format — it's
 
 Every agent must emit exactly one JSON block (wrapped in ```json ... ```) as the **last element** of every response — no text after it. Required fields: `verdict`, `pipeline_gate`, `summary`, `blocking`, `findings` (empty array if none). `status` and `artifacts` are additional, agent-specific context.
 
+Optional fields (Priority 3 — state-passing & memory): `files_changed` (string array), `test_status` (string), `last_error_message` (string) — pipeline-state-patch fields the orchestrator merges into `pipelineState` for the next stage; and `new_memories` (`[{title, content}]`) — non-obvious lessons surfaced this run, separate from `operator`'s own direct `.claude/memory/` writes during SHIP mode. Omit any of these when not applicable — don't send empty placeholders.
+
 Workflow-driven calls (`workflows/*.js`) never parse this text directly — they pass a `schema` option to `agent()` and the harness forces a validated structured tool call instead. The trailing JSON block matters for direct/manual invocation, where the caller has to parse the response text itself.
 
-See any agent file's "Output — Strict JSON Schema" section for its canonical field values and verdict vocabulary.
+See any agent file's "Output — Strict JSON Schema" section for its canonical field values and verdict vocabulary. Canonical schemas (used by `lib/schema-validator.mjs` for the direct/manual invocation path): `config/schemas/{operator,inspector}-output.schema.json`.

@@ -64,8 +64,35 @@ async function runWithEscalation(state, prompt, opts) {
 }
 
 function tokenBudgetExceeded() { return budget.spent() > MAX_TOKEN_BUDGET }
+
+// ── Pipeline state — state-passing, not transcript-passing (see
+// lib/pipeline-state.mjs for the canonical documented shape; mirrored here
+// since workflow scripts can't import it). ─────────────────────────────────
+let pipelineState = {
+  task_id: args && args.task_id ? args.task_id : null,
+  current_mode: null,
+  files_changed: [],
+  test_status: null,
+  last_error_message: null,
+  inspector_findings: [],
+  iteration_count: 0,
+}
+function mergeState(result, role) {
+  if (!result) return
+  if (result.mode) pipelineState.current_mode = result.mode
+  if (Array.isArray(result.files_changed)) {
+    pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
+  }
+  if (result.test_status) pipelineState.test_status = result.test_status
+  if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
+  if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+}
+function stateContext() {
+  return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
+}
+
 function failResult(stage, reason, findings) {
-  return { outcome: 'BLOCKED', stage, reason, findings: findings || [], token_telemetry: tokenLog, escalations }
+  return { outcome: 'BLOCKED', stage, reason, findings: findings || [], token_telemetry: tokenLog, escalations, pipeline_state: pipelineState }
 }
 
 // Boundary validation: every agent() call below passes `schema: GATE_SCHEMA`,
@@ -91,6 +118,18 @@ const GATE_SCHEMA = {
           message:  { type: 'string' },
         },
         required: ['severity', 'message'],
+      },
+    },
+    mode:               { type: 'string' },
+    files_changed:      { type: 'array', items: { type: 'string' } },
+    test_status:        { type: 'string' },
+    last_error_message: { type: 'string' },
+    new_memories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, content: { type: 'string' } },
+        required: ['title', 'content'],
       },
     },
   },
@@ -120,6 +159,7 @@ if (tokenBudgetExceeded()) {
   return { outcome: 'FAILED', stage: STATES.FAILED, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
 }
 
+mergeState(fix, 'operator')
 currentState = fix ? (TRANSITIONS[STATES.FIX][fix.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (currentState === STATES.FAILED) {
   log(`operator: GATE_FAIL — ${fix ? fix.summary : 'no response'}`)
@@ -141,6 +181,8 @@ while (retries <= MAX_RETRIES) {
     { label: `inspector${retries > 0 ? `-r${retries}` : ''}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'inspector' }
   )
 
+  mergeState(inspectResult, 'inspector')
+
   if (tokenBudgetExceeded()) {
     log(`Token budget exceeded (${budget.spent()} > ${MAX_TOKEN_BUDGET}) — manual review required.`)
     return { outcome: 'FAILED', stage: STATES.FAILED, reason: 'Token budget exceeded. Manual review required.', token_telemetry: tokenLog, escalations }
@@ -160,11 +202,13 @@ while (retries <= MAX_RETRIES) {
   if (retries >= MAX_RETRIES) { currentState = STATES.FAILED; break }
 
   currentState = STATES.CORRECT
+  pipelineState.iteration_count = retries + 1
   log(`inspector: issues found — sending back to operator... (fix ${retries + 1}/${MAX_RETRIES})`)
-  await trackedAgent(
-    `Mode: BUILD\n\nBug: ${bug}\n\nFix the following findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(inspectResult)}\n\nFix only the listed items. Re-run tests and commit.`,
+  const correction = await trackedAgent(
+    `Mode: BUILD\n\nBug: ${bug}\n\nFix the following findings from inspector (retry ${retries + 1}/${MAX_RETRIES}):\n${formatFindings(inspectResult)}${stateContext()}\n\nFix only the listed items. Re-run tests and commit.`,
     { label: `operator-fix-r${retries + 1}`, phase: 'Inspect', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.FIX) }
   )
+  mergeState(correction, 'operator')
   retries++
   currentState = STATES.INSPECT
 }
@@ -180,9 +224,10 @@ phase('Ship')
 log('operator: pushing branch and creating draft PR...')
 
 const ship = await trackedAgent(
-  `Mode: SHIP\n\nBug fixed: ${bug}\n\nRun pre-flight checks, push the branch, create a draft PR (include "Closes #<issue>" if an issue number is in the bug description), and save the root cause + fix approach to .claude/memory/gotchas.md and lessons-learned.md.`,
+  `Mode: SHIP\n\nBug fixed: ${bug}\n\nRun pre-flight checks, push the branch, create a draft PR (include "Closes #<issue>" if an issue number is in the bug description), and save the root cause + fix approach to .claude/memory/gotchas.md and lessons-learned.md.${stateContext()}`,
   { label: 'operator:ship', phase: 'Ship', schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.SHIP) }
 )
+mergeState(ship, 'operator')
 
 currentState = ship ? (TRANSITIONS[STATES.SHIP][ship.pipeline_gate] || STATES.FAILED) : STATES.FAILED
 if (currentState === STATES.FAILED) {
@@ -190,6 +235,8 @@ if (currentState === STATES.FAILED) {
   return failResult('operator:ship', ship ? ship.summary : 'No response', ship ? ship.findings : [])
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
+
+const newMemories = [...(fix.new_memories || []), ...(inspectResult ? inspectResult.new_memories || [] : []), ...(ship.new_memories || [])]
 
 return {
   outcome: 'COMPLETE',
@@ -199,4 +246,6 @@ return {
   summary: ship.summary || 'Draft PR created. Bug resolved.',
   token_telemetry: tokenLog,
   escalations,
+  pipeline_state: pipelineState,
+  new_memories: newMemories,
 }

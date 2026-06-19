@@ -27,6 +27,20 @@
         }
       }
     },
-    "summary": { "type": "string" }
+    "summary": { "type": "string" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "test_status": { "type": "string" },
+    "last_error_message": { "type": "string" },
+    "new_memories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "content"],
+        "properties": {
+          "title": { "type": "string" },
+          "content": { "type": "string" }
+        }
+      }
+    }
   }
 }

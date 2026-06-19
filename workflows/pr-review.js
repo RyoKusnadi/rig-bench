@@ -17,6 +17,11 @@ const effort = args && args.effort ? args.effort : 'medium'
 const spec = args && args.spec ? args.spec : ''
 const scope = pr ? `PR #${pr}` : 'current HEAD diff'
 
+// No `pipelineState`/`mergeState` here, unlike the other five workflows —
+// this is a single read-only inspector pass with no second stage to hand
+// state forward to, so there's nothing for state-passing to carry. `findings`
+// already flows straight into the return value below.
+
 // ── State machine (deterministic control flow) ────────────────────────────
 const STATES = { INSPECT: 'INSPECT', DONE: 'DONE', FAILED: 'FAILED' }
 const TRANSITIONS = {
@@ -80,6 +85,14 @@ const GATE_SCHEMA = {
         required: ['severity', 'message'],
       },
     },
+    new_memories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, content: { type: 'string' } },
+        required: ['title', 'content'],
+      },
+    },
   },
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
@@ -128,4 +141,5 @@ return {
   merged_findings: result.findings,
   token_telemetry: tokenLog,
   escalations,
+  new_memories: result.new_memories || [],
 }
