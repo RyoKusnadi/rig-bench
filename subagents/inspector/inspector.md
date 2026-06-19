@@ -69,6 +69,15 @@ files; build your own context tree:
    the general task. It prints a `<long_term_memory>` block; treat it per Hard Rule 15. Empty
    result or "no store found" just means fall back to grep.
 
+**If your task context includes a `repo_manifest` block** (gathered by the
+`scout` agent before you were invoked), treat it as authoritative for repo
+shape — skip your own discovery of changed files/dirs/toolchain; only
+`Grep`/`Read` for the specific symbols the manifest doesn't already cover.
+If a `gate_status` field is present and reports `PASS`, you can skip
+re-running the same lint/typecheck/build commands as a discovery step (still
+run your own Step 3 static analysis for the dimensions scout doesn't cover —
+this only saves the redundant "does it even compile" pass, not your review).
+
 CONTEXT RECOVERY — if a `maximum`-effort run feels long enough that you
 suspect a mid-session auto-compact occurred (you've lost track of the scope,
 the diff, or which findings you'd already logged), `Read`

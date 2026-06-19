@@ -1,7 +1,8 @@
 export const meta = {
   name: 'release-prep',
-  description: 'Release prep pipeline: inspector(audit) → operator(release PR with CHANGELOG)',
+  description: 'Release prep pipeline: scout(manifest) → inspector(audit) → operator(release PR with CHANGELOG)',
   phases: [
+    { title: 'Scout', detail: 'scout gathers repo manifest so inspector skips re-discovery' },
     { title: 'Audit', detail: 'inspector runs secrets + CVE audit on the release branch' },
     { title: 'Release', detail: 'operator validates commits, updates CHANGELOG, creates release PR' },
   ],
@@ -62,16 +63,20 @@ let pipelineState = {
   last_error_message: null,
   inspector_findings: [],
   iteration_count: 0,
+  repo_manifest: null,
+  gate_status: null,
 }
 function mergeState(result, role) {
   if (!result) return
-  if (result.mode) pipelineState.current_mode = result.mode
+  if (result.mode && role !== 'scout') pipelineState.current_mode = result.mode
   if (Array.isArray(result.files_changed)) {
     pipelineState.files_changed = Array.from(new Set([...pipelineState.files_changed, ...result.files_changed]))
   }
   if (result.test_status) pipelineState.test_status = result.test_status
   if (result.last_error_message !== undefined) pipelineState.last_error_message = result.last_error_message
   if (role === 'inspector' && result.findings) pipelineState.inspector_findings = result.findings
+  if (role === 'scout' && result.repo_manifest) pipelineState.repo_manifest = result.repo_manifest
+  if (role === 'scout' && result.mode === 'GATE') pipelineState.gate_status = result.pipeline_gate
 }
 function stateContext() {
   return `\n\nPipeline state (structured source of truth for current task status — rely on this, do not guess):\n${JSON.stringify(pipelineState)}`
@@ -118,14 +123,52 @@ const GATE_SCHEMA = {
   required: ['verdict', 'pipeline_gate', 'summary', 'blocking', 'findings'],
 }
 
+// Scout's output is a different, mechanical-only shape — see
+// config/schemas/scout-output.schema.json.
+const SCOUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    mode:           { type: 'string', enum: ['MANIFEST', 'GATE'] },
+    pipeline_gate:  { type: 'string', enum: ['PASS', 'BLOCK'] },
+    repo_manifest: {
+      type: ['object', 'null'],
+      properties: {
+        changed_files: { type: 'array', items: { type: 'string' } },
+        dirs:          { type: 'array', items: { type: 'string' } },
+        toolchain:     { type: 'string' },
+      },
+    },
+    raw_output:     { type: 'string' },
+    checks_run:     { type: 'array', items: { type: 'string' } },
+    checks_skipped: { type: 'array', items: { type: 'string' } },
+    summary:        { type: 'string' },
+  },
+  required: ['mode', 'pipeline_gate', 'summary'],
+}
+
 let currentState = STATES.AUDIT
+
+// ── Stage 0: Scout (Phase 2 — repo manifest) ──────────────────────────────
+// No GATE stage here — release-prep doesn't generate new code to gate;
+// AUDIT itself is the highest-stakes deterministic+judgment check already.
+phase('Scout')
+log('scout: gathering repo manifest...')
+
+const manifestResult = await trackedAgent(
+  'Mode: MANIFEST\n\nGather the current repo shape — changed files, relevant directories, detected toolchain.',
+  { label: 'scout:manifest', phase: 'Scout', schema: SCOUT_SCHEMA, agentType: 'scout', model: TIER_MODELS.economy }
+)
+mergeState(manifestResult, 'scout')
+log(`scout: manifest gathered (toolchain: ${manifestResult && manifestResult.repo_manifest ? manifestResult.repo_manifest.toolchain : 'unknown'}).`)
 
 // ── Stage 1: Audit ─────────────────────────────────────────────────────────
 phase('Audit')
 log(`inspector (maximum): running pre-release secrets + CVE audit for v${version}...`)
 
+const manifestContext = manifestResult && manifestResult.repo_manifest ? `\n\nRepo manifest (already gathered — skip your own discovery):\n${JSON.stringify(manifestResult.repo_manifest)}` : ''
+
 const audit = await trackedAgent(
-  `Pre-release audit for v${version}. Run effort=maximum: full SEC-4 secret scan against the entire diff from the release branch, then a full dependency/CVE audit across every manifest (npm, Go, Python, Rust, .NET, Ruby, Maven). Any secret or Critical CVE is a release blocker.`,
+  `Pre-release audit for v${version}. Run effort=maximum: full SEC-4 secret scan against the entire diff from the release branch, then a full dependency/CVE audit across every manifest (npm, Go, Python, Rust, .NET, Ruby, Maven). Any secret or Critical CVE is a release blocker.${manifestContext}`,
   // This is the highest-stakes gate in the harness — the last check before
   // a release ships — so it's the one place worth paying for frontier
   // reasoning. Every other inspector call stays on the default model;
