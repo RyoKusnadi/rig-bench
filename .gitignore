@@ -4,4 +4,5 @@
 .claude/agent-telemetry.json
 .claude/instincts/
 .claude/session-state/
+telemetry/runs/
 todo.md
