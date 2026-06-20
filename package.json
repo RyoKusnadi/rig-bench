@@ -7,6 +7,7 @@
     "memory:ingest": "node scripts/ingest-memory.mjs",
     "memory:query": "node scripts/query-memory.mjs",
     "memory:prune": "node scripts/prune-memory.mjs",
+    "code:map": "node scripts/code-map.mjs",
     "report": "node scripts/report.mjs",
     "test": "node --test"
   },

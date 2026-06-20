@@ -4,6 +4,12 @@
 // compacts context, so a long operator/inspector session doesn't lose track
 // of its original request across a compaction.
 //
+// Also writes Tier 2 of the Code Checkpoint Architecture (todo.md "The
+// Working-Set Checkpoint"): the actual content of files under active
+// modification, so the next session can resume editing without re-Reading
+// them from disk. Tier 1 (the structural map of the whole repo) is a
+// separate, on-demand script — see scripts/code-map.mjs.
+//
 // Respects RIGBENCH_DISABLED_HOOKS=pre-compact. Note: the *trigger* for
 // compaction (the context-usage threshold Claude Code fires this at) is an
 // internal platform behavior, not something this hook script controls or
@@ -22,6 +28,49 @@ import { readStdinJson, repoRoot, complete, runHook } from './lib/hook-utils.mjs
 const HOOK_NAME = 'pre-compact';
 const input = readStdinJson();
 const root = repoRoot(import.meta.url);
+
+// Cap how many active files get a working-set entry, and how big each entry
+// can be — this snapshot rides inside additionalContext at the next
+// SessionStart, so it must stay bounded, not mirror the entire diff.
+const MAX_WORKING_SET_FILES = 10;
+const MAX_FULL_CONTENT_LINES = 200;
+const MAX_DIFF_LINES = 60;
+
+const EXPORT_DECL_RE = /^export\s+(?:async\s+)?(?:function\*?|class|const|let)\s+\w+/gm;
+
+function buildWorkingSetCheckpoint(activeFiles) {
+  const files = [];
+  for (const relPath of activeFiles.slice(0, MAX_WORKING_SET_FILES)) {
+    const fullPath = join(root, relPath);
+    if (!existsSync(fullPath)) continue; // deleted in this diff — nothing to snapshot
+
+    let content;
+    try {
+      content = readFileSync(fullPath, 'utf8');
+    } catch {
+      continue;
+    }
+    const lines = content.split('\n');
+
+    let diff = '';
+    try {
+      diff = execSync(`git diff HEAD -- ${JSON.stringify(relPath)}`, { cwd: root, encoding: 'utf8' })
+        .split('\n')
+        .slice(-MAX_DIFF_LINES)
+        .join('\n');
+    } catch {
+      diff = '';
+    }
+
+    if (lines.length <= MAX_FULL_CONTENT_LINES) {
+      files.push({ path: relPath, mode: 'full', content, diff });
+    } else {
+      const signatures = content.match(EXPORT_DECL_RE) || [];
+      files.push({ path: relPath, mode: 'signatures', signatures, diff });
+    }
+  }
+  return files;
+}
 
 runHook(HOOK_NAME, 'PreCompact', root, null, () => {
   const stateDir = join(root, '.claude', 'session-state');
@@ -103,6 +152,12 @@ runHook(HOOK_NAME, 'PreCompact', root, null, () => {
   };
 
   writeFileSync(join(stateDir, 'compact.json'), `${JSON.stringify(snapshot, null, 2)}\n`);
+
+  const workingSet = {
+    timestamp: ts,
+    files: buildWorkingSetCheckpoint(activeFiles),
+  };
+  writeFileSync(join(stateDir, 'working-set-checkpoint.json'), `${JSON.stringify(workingSet, null, 2)}\n`);
 
   complete();
 });
