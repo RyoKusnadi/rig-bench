@@ -58,23 +58,33 @@ runHook(HOOK_NAME, 'SessionStart', root, null, () => {
   }
 
   // 2. Load the pre-compact snapshot, if resuming a session that compacted
-  // mid-task — the closest available proxy for "what was I doing".
+  // mid-task — the closest available proxy for "what was I doing". Mirrors
+  // pre-tool-gatekeeper.mjs's agent-role.json TTL handling: a snapshot from a
+  // long-finished session is stale context, not a resume signal, so skip it
+  // past COMPACT_STATE_TTL_MS rather than injecting day-old "what was I
+  // doing" text into an unrelated new session.
+  const COMPACT_STATE_TTL_MS = Number(process.env.RIGBENCH_COMPACT_STATE_TTL_MS) || 4 * 60 * 60 * 1000;
   const compactState = join(root, '.claude', 'session-state', 'compact.json');
   if (existsSync(compactState)) {
     try {
       const state = JSON.parse(readFileSync(compactState, 'utf8'));
-      const lastMessage = (state.recent_user_messages || []).slice(-1)[0] || '(none captured)';
-      const lastTest = (state.last_test_results || []).slice(-1)[0];
-      sections.push(
-        '## Resumed Context (from last PreCompact snapshot)\n' +
-          `Branch: ${state.branch || '(unknown)'}\n` +
-          `Last user request before compaction: ${lastMessage}\n` +
-          `Active files: ${(state.active_files || []).join(', ') || '(none)'}\n` +
-          `Last test result: ${lastTest ? `${lastTest.status} (${lastTest.tool})` : '(none captured)'}\n` +
-          `Diff in flight:\n${state.git_diff_stat || '(none)'}`
-      );
-    } catch {
-      // malformed snapshot — skip rather than inject garbage
+      const age = state.timestamp ? Date.now() - new Date(state.timestamp).getTime() : 0;
+      if (age > COMPACT_STATE_TTL_MS) {
+        console.error(`[session-start] compact.json is stale (age ${Math.round(age / 60000)}m > TTL), skipping`);
+      } else {
+        const lastMessage = (state.recent_user_messages || []).slice(-1)[0] || '(none captured)';
+        const lastTest = (state.last_test_results || []).slice(-1)[0];
+        sections.push(
+          '## Resumed Context (from last PreCompact snapshot)\n' +
+            `Branch: ${state.branch || '(unknown)'}\n` +
+            `Last user request before compaction: ${lastMessage}\n` +
+            `Active files: ${(state.active_files || []).join(', ') || '(none)'}\n` +
+            `Last test result: ${lastTest ? `${lastTest.status} (${lastTest.tool})` : '(none captured)'}\n` +
+            `Diff in flight:\n${state.git_diff_stat || '(none)'}`
+        );
+      }
+    } catch (err) {
+      console.error(`[session-start] malformed compact.json, skipping: ${err.message}`);
     }
   }
 

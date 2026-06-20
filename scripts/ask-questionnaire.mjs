@@ -143,4 +143,8 @@ async function main() {
   console.log(`Wrote ${outPath}`);
 }
 
-main();
+// Guard so this file can be imported (e.g. to unit-test parseTemplateYaml())
+// without running main()'s file I/O / interactive prompting as a side effect.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

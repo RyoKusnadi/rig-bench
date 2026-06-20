@@ -51,6 +51,11 @@ cp ../subagents/rules/*.md your-project/.claude/agents/rules/
 /workflow new-feature --args '{"task": "add per-tenant rate limiting to the Gin API"}'
 /workflow bug-fix --args '{"bug": "confidence scorer returns -1 on empty LLM response"}'
 /workflow pr-review --args '{"pr": 42, "effort": "high"}'
+/workflow refactor --args '{"target": "internal/llm/client.go", "goal": "readability"}'
+/workflow docs-update --args '{"trigger": "renamed cache.Get() to cache.Fetch()"}'
+/workflow release-prep --args '{"version": "1.2.0", "notes": "Adds per-tenant rate limiting"}'
+/workflow research --args '{"intake": {"topic": "..."}}'
+/workflow autotune --args '{"target": "subagents/scout/scout.md", "objective": "fewer false-positive GATE BLOCKs"}'
 ```
 
 ### Programmatically (via the Workflow tool)
@@ -59,6 +64,11 @@ cp ../subagents/rules/*.md your-project/.claude/agents/rules/
 Workflow({ name: 'new-feature', args: { task: 'add JWT refresh token support', effort: 'high' } })
 Workflow({ name: 'bug-fix', args: { bug: 'nil pointer in cache.Get()', known_cause: true } })
 Workflow({ name: 'pr-review', args: { pr: 15, spec: 'Rate limit must return 429 with Retry-After header' } })
+Workflow({ name: 'refactor', args: { target: 'internal/cache/lru.go', goal: 'performance' } })
+Workflow({ name: 'docs-update', args: { trigger: 'new /v2/support endpoint', scope: 'README.md, openapi.yaml' } })
+Workflow({ name: 'release-prep', args: { version: '1.2.0', branch: 'main' } })
+Workflow({ name: 'research', args: { intake: parsedIntakeJson } })
+Workflow({ name: 'autotune', args: { target: 'subagents/researcher/researcher.md', objective: 'higher fact-verification rate', max_iterations: 6 } })
 ```
 
 ### Resume a failed run
@@ -146,6 +156,8 @@ scout (MANIFEST ∥ baseline GATE) ──┐
 | `branch` | string | No | Feature branch name hint |
 | `tier` | string | No | `force_tier` override (`frontier`/`standard`/`economy`) — pins every operator/inspector stage, skips escalation (`scout` always stays `economy`) |
 
+**Returns** `{ outcome: 'COMPLETE'|'BLOCKED'|'FAILED', stage, reason?, findings?, token_telemetry, escalations, pipeline_state, new_memories }` — `COMPLETE` includes the rest of `operator`'s SHIP-mode result (PR URL etc); `BLOCKED` means a gate/inspector retry cap was hit; `FAILED` means the token budget was exceeded mid-run.
+
 ---
 
 ### `bug-fix.js`
@@ -168,6 +180,8 @@ scout (MANIFEST ∥ baseline GATE) → operator (BUILD: diagnose + fix)
 | `known_cause` | boolean | No | Set `true` to skip diagnosis (default: `false`) |
 | `stack_trace` | string | No | Paste the stack trace for better diagnosis context |
 | `tier` | string | No | `force_tier` override (`frontier`/`standard`/`economy`) — pins every operator/inspector stage, skips escalation |
+
+**Returns** `{ outcome: 'COMPLETE'|'BLOCKED'|'FAILED', stage, reason?, findings?, token_telemetry, escalations, pipeline_state, new_memories }` — same shape as `new-feature.js`.
 
 ---
 
@@ -193,6 +207,8 @@ scout (MANIFEST ∥ baseline GATE) → operator (REFACTOR)
 | `goal` | string | No | `readability` / `performance` / `extensibility` (default: `readability`) |
 | `tier` | string | No | `force_tier` override (`frontier`/`standard`/`economy`) — pins every operator/inspector stage, skips escalation |
 
+**Returns** `{ outcome: 'COMPLETE'|'BLOCKED'|'FAILED', stage, reason?, findings?, token_telemetry, escalations, pipeline_state, new_memories }` — `BLOCKED` also covers the `NO_TESTS` baseline-check case (`stage: 'operator:refactor'`).
+
 ---
 
 ### `pr-review.js`
@@ -215,6 +231,8 @@ inspector ── secrets (SEC-4) → OWASP/STRIDE → dependency/CVE audit → q
 | `spec` | string | No | Requirements text — when present, inspector also checks spec compliance |
 | `tier` | string | No | `force_tier` override (`frontier`/`standard`/`economy`) — skips the effort-based default tier for the inspect stage |
 
+**Returns** `{ outcome: 'COMPLETE'|'REVIEW_FINDINGS'|'BLOCKED'|'FAILED', merged_findings, token_telemetry, escalations, new_memories }` — `COMPLETE` means inspector's `pipeline_gate` was `PASS` with no findings; `REVIEW_FINDINGS` means it passed gate but has non-blocking findings to report; `BLOCKED` is the scout GATE short-circuit (build doesn't compile — `inspector` never ran).
+
 ---
 
 ### `docs-update.js`
@@ -230,6 +248,8 @@ scout (MANIFEST) → operator (DOCS) → inspector (light review) → operator (
 | `trigger` | string | Yes | What changed that needs docs updating |
 | `scope` | string | No | Specific files or sections to update |
 | `tier` | string | No | `force_tier` override (`frontier`/`standard`/`economy`) — pins every operator/inspector stage, skips escalation |
+
+**Returns** `{ outcome: 'COMPLETE'|'BLOCKED'|'FAILED', stage, reason?, findings?, token_telemetry, escalations, pipeline_state, new_memories }` — `BLOCKED` covers an `EXAMPLE_FAIL` verdict (a documented example no longer runs), inspector findings, or a preflight failure at SHIP.
 
 ---
 
@@ -249,6 +269,10 @@ scout (MANIFEST) → inspector (effort=maximum) ── ESCALATION / CRITICAL_CVE
 | `branch` | string | No | Target branch (default: `main`) |
 | `notes` | string | No | Release highlights for CHANGELOG |
 | `tier` | string | No | `force_tier` override for the Release stage only — the Audit stage always uses `frontier` |
+
+**Returns** `{ outcome: 'COMPLETE'|'BLOCKED'|'FAILED', stage?, reason?, token_telemetry, escalations, pipeline_state?, new_memories? }` — `BLOCKED` covers an audit `ESCALATE`/`CRITICAL_CVE` verdict (release stage never runs) or a SHIP-stage preflight failure.
+
+---
 
 ### `research.js`
 

@@ -4,7 +4,7 @@
 // structured logging, fail-open error handling, and the RIGBENCH_* env vars
 // so every hook gets them uniformly instead of reimplementing them.
 
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -148,6 +148,50 @@ export function permissionDeny(event, reason) {
 export function noDecision() {
   logEvent('no_decision');
   process.exit(0);
+}
+
+// ── Cross-process lock for read-modify-write state files ─────────────────
+// Hooks are short-lived single-shot processes, not long-running servers, so
+// a full lockfile library is overkill — an exclusive-create lockfile next to
+// the target file (atomic on every OS Node supports) is enough to serialize
+// concurrent sessions' increments to the same JSON file (e.g. read-budget's
+// per-session counters). Spin-waits synchronously since hooks have no other
+// event-loop work to yield to; gives up and proceeds unlocked after
+// `timeoutMs` rather than hang a hook indefinitely (same fail-open posture
+// as runHook's catch-all — a stale/abandoned lock must never permanently
+// block a tool call).
+export function withFileLock(filePath, fn, { timeoutMs = 2000, retryMs = 25 } = {}) {
+  const lockPath = `${filePath}.lock`;
+  mkdirSync(dirname(filePath), { recursive: true });
+
+  let fd;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      fd = openSync(lockPath, 'wx');
+      break;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      if (Date.now() > deadline) break; // fail open — proceed without the lock
+      const until = Date.now() + retryMs;
+      while (Date.now() < until) {
+        /* busy-wait: short-lived hook process, nothing else to do */
+      }
+    }
+  }
+
+  try {
+    return fn();
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+        unlinkSync(lockPath);
+      } catch {
+        // another process may have already cleaned up — not fatal
+      }
+    }
+  }
 }
 
 // ── Small TTL cache for slow/external lookups ─────────────────────────────
