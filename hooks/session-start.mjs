@@ -6,6 +6,14 @@
 // first prompt, so a new session starts with the same context the last one
 // ended with.
 //
+// Also injects both tiers of the Code Checkpoint Architecture (todo.md "The
+// 'Zero-Context' Dogma"), wrapped in <structural_checkpoint> and
+// <working_set_checkpoint> tags so operator.md/inspector.md's "Checkpoint
+// Primacy" hard rule can recognize them: the structural map from
+// scripts/code-map.mjs (module boundaries, no Grep needed) and the
+// working-set snapshot pre-compact.mjs wrote for files under active edit (no
+// Read needed for those specific files).
+//
 // Deliberately NOT task-type-aware (e.g. "load gotchas.md for bug-fix,
 // conventions.md for new-feature"): SessionStart fires before the user's
 // first prompt, so there's no workflow/task signal yet to filter on. That
@@ -57,13 +65,68 @@ runHook(HOOK_NAME, 'SessionStart', root, null, () => {
     }
   }
 
-  // 2. Load the pre-compact snapshot, if resuming a session that compacted
+  // 2. Working-set checkpoint (Tier 2 of the Code Checkpoint Architecture) —
+  // the exact content of files that were under active edit when the last
+  // session compacted. This is the direct fix for the Cold-Start Tax: ranked
+  // above the narrative "Resumed Context" section below since it's what
+  // actually lets the agent skip re-Reading those files, not just a summary
+  // of what was happening.
+  const COMPACT_STATE_TTL_MS = Number(process.env.RIGBENCH_COMPACT_STATE_TTL_MS) || 4 * 60 * 60 * 1000;
+  const workingSetState = join(root, '.claude', 'session-state', 'working-set-checkpoint.json');
+  if (existsSync(workingSetState)) {
+    try {
+      const ws = JSON.parse(readFileSync(workingSetState, 'utf8'));
+      const age = ws.timestamp ? Date.now() - new Date(ws.timestamp).getTime() : 0;
+      if (age > COMPACT_STATE_TTL_MS) {
+        console.error(`[session-start] working-set-checkpoint.json is stale (age ${Math.round(age / 60000)}m > TTL), skipping`);
+      } else if (Array.isArray(ws.files) && ws.files.length) {
+        const rendered = ws.files
+          .map((f) => {
+            const body =
+              f.mode === 'full'
+                ? `\`\`\`\n${f.content}\n\`\`\``
+                : `Signatures:\n${(f.signatures || []).join('\n') || '(none detected)'}`;
+            return `### ${f.path} (${f.mode})\n${body}\n\nDiff vs HEAD:\n${f.diff || '(none)'}`;
+          })
+          .join('\n\n');
+        sections.push(`<working_set_checkpoint>\n${rendered}\n</working_set_checkpoint>`);
+      }
+    } catch (err) {
+      console.error(`[session-start] malformed working-set-checkpoint.json, skipping: ${err.message}`);
+    }
+  }
+
+  // 3. Structural checkpoint (Tier 1) — the repo-wide module/import/export
+  // map from scripts/code-map.mjs. Not session-bound like the snapshots
+  // above (it's regenerated on demand, not per-compaction), so no TTL drop —
+  // just inject whatever is on disk.
+  const structuralState = join(root, '.claude', 'session-state', 'structural-checkpoint.json');
+  if (existsSync(structuralState)) {
+    try {
+      const map = JSON.parse(readFileSync(structuralState, 'utf8'));
+      const moduleLines = (map.modules || [])
+        .map((m) => `- ${m.path}: exports [${m.exports.join(', ') || 'none'}]`)
+        .join('\n');
+      const workflowLines = (map.workflows || []).map((w) => `- ${w.path}: ${w.name || '(unparsed)'}`).join('\n');
+      const agentLines = (map.agents || []).map((a) => `- ${a.path}: ${a.name} (${a.model_tier || 'unknown tier'})`).join('\n');
+      sections.push(
+        `<structural_checkpoint>\n` +
+          `Generated: ${map.generated_at || 'unknown'}\n\n` +
+          `Modules:\n${moduleLines || '(none)'}\n\nWorkflows:\n${workflowLines || '(none)'}\n\nAgents:\n${agentLines || '(none)'}\n\n` +
+          'Run `npm run code:map` to refresh this if it looks out of date.\n' +
+          `</structural_checkpoint>`
+      );
+    } catch (err) {
+      console.error(`[session-start] malformed structural-checkpoint.json, skipping: ${err.message}`);
+    }
+  }
+
+  // 4. Load the pre-compact snapshot, if resuming a session that compacted
   // mid-task — the closest available proxy for "what was I doing". Mirrors
   // pre-tool-gatekeeper.mjs's agent-role.json TTL handling: a snapshot from a
   // long-finished session is stale context, not a resume signal, so skip it
   // past COMPACT_STATE_TTL_MS rather than injecting day-old "what was I
   // doing" text into an unrelated new session.
-  const COMPACT_STATE_TTL_MS = Number(process.env.RIGBENCH_COMPACT_STATE_TTL_MS) || 4 * 60 * 60 * 1000;
   const compactState = join(root, '.claude', 'session-state', 'compact.json');
   if (existsSync(compactState)) {
     try {
@@ -88,7 +151,7 @@ runHook(HOOK_NAME, 'SessionStart', root, null, () => {
     }
   }
 
-  // 3. Point at the project memory index — operator already reads this at
+  // 5. Point at the project memory index — operator already reads this at
   // Step 0 of BUILD/REFACTOR/DOCS, but surfacing it at SessionStart means a
   // plain conversational turn (no agent dispatch) still sees it.
   const memoryIndex = join(root, '.claude', 'memory', 'MEMORY.md');
@@ -100,7 +163,8 @@ runHook(HOOK_NAME, 'SessionStart', root, null, () => {
   let truncated = false;
   if (contextInjection.length > MAX_CHARS) {
     // Truncate least-important-first: drop trailing sections (memory index,
-    // then resumed context) before cutting the highest-priority instincts.
+    // resumed context, structural checkpoint, ...) before cutting the
+    // highest-priority instincts and working-set checkpoint.
     while (sections.length > 1 && sections.join('\n\n---\n\n').length > MAX_CHARS) {
       sections.pop();
       truncated = true;
