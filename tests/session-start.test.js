@@ -137,6 +137,97 @@ test('malformed compact.json is skipped with a logged warning, not silently', ()
   }
 });
 
+test('injects the working-set checkpoint wrapped in <working_set_checkpoint> tags', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'rigbench-session-start-'));
+  try {
+    const stateDir = join(tmp, '.claude', 'session-state');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, 'working-set-checkpoint.json'),
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        files: [{ path: 'hooks/sample.mjs', mode: 'full', content: "export const x = 1;\n", diff: '+export const x = 1;' }],
+      })
+    );
+
+    const result = runHook({ session_id: 'ws1', source: 'compact' }, tmp);
+    assert.equal(result.status, 0);
+    const ctx = parseContext(result);
+    assert.match(ctx, /<working_set_checkpoint>/);
+    assert.match(ctx, /hooks\/sample\.mjs \(full\)/);
+    assert.match(ctx, /export const x = 1;/);
+    assert.match(ctx, /<\/working_set_checkpoint>/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('skips a stale working-set checkpoint past the TTL', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'rigbench-session-start-'));
+  try {
+    const stateDir = join(tmp, '.claude', 'session-state');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, 'working-set-checkpoint.json'),
+      JSON.stringify({
+        timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        files: [{ path: 'old.js', mode: 'full', content: 'stale' }],
+      })
+    );
+
+    const result = runHook({ session_id: 'ws2', source: 'startup' }, tmp);
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(result.stdout, /working_set_checkpoint/);
+    assert.match(result.stderr, /working-set-checkpoint\.json is stale/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('injects the structural checkpoint wrapped in <structural_checkpoint> tags', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'rigbench-session-start-'));
+  try {
+    const stateDir = join(tmp, '.claude', 'session-state');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, 'structural-checkpoint.json'),
+      JSON.stringify({
+        generated_at: '2026-01-01T00:00:00.000Z',
+        modules: [{ path: 'hooks/sample.mjs', imports: ['node:fs'], exports: ['doThing'] }],
+        workflows: [{ path: 'workflows/sample.js', name: 'sample', description: 'does a thing' }],
+        agents: [{ path: 'subagents/sample/sample.md', name: 'sample', model_tier: 'standard' }],
+      })
+    );
+
+    const result = runHook({ session_id: 'sc1', source: 'startup' }, tmp);
+    assert.equal(result.status, 0);
+    const ctx = parseContext(result);
+    assert.match(ctx, /<structural_checkpoint>/);
+    assert.match(ctx, /hooks\/sample\.mjs: exports \[doThing\]/);
+    assert.match(ctx, /workflows\/sample\.js: sample/);
+    assert.match(ctx, /subagents\/sample\/sample\.md: sample \(standard\)/);
+    assert.match(ctx, /<\/structural_checkpoint>/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('malformed structural-checkpoint.json is skipped with a logged warning', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'rigbench-session-start-'));
+  try {
+    const stateDir = join(tmp, '.claude', 'session-state');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, 'structural-checkpoint.json'), '{ not valid json');
+
+    const result = runHook({ session_id: 'sc2', source: 'startup' }, tmp);
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(result.stdout, /structural_checkpoint/);
+    assert.match(result.stderr, /malformed structural-checkpoint\.json/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('injects the project memory index when present', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'rigbench-session-start-'));
   try {

@@ -64,9 +64,28 @@ Each agent is a single `.md` file with YAML frontmatter declaring its model, too
 
 Each agent's frontmatter declares a `model_tier` (`frontier`/`standard`/`economy`), not a hardcoded model ID — see [Model Tier Registry & Routing](#model-tier-registry--routing) below for how the actual model gets resolved per call.
 
-Both agents are spawned with zero pre-loaded file context — they `Grep` for the
-modules/symbols the task names and `Read` only what that turns up, instead of
-expecting the orchestrator to paste the codebase into the prompt. See the
+Both agents are spawned with zero *stale* file context, not zero context —
+the **Code Checkpoint Architecture** (`todo.md` "The 'Zero-Context' Dogma")
+gives each agent two checkpoints up front so it doesn't pay a cold-start tax
+re-discovering the same architecture every session:
+
+- **Tier 1, structural checkpoint** — `scripts/code-map.mjs` regex-walks
+  `hooks/`, `lib/`, `scripts/`, `workflows/`, and `subagents/` and writes a
+  module-boundary map (imports/exports, workflow `meta`, agent frontmatter) to
+  `.claude/session-state/structural-checkpoint.json`. Run it on demand
+  (`npm run code:map`) to refresh.
+- **Tier 2, working-set checkpoint** — `hooks/pre-compact.mjs` snapshots the
+  actual content (or, past 200 lines, just signatures + diff) of files under
+  active edit into `.claude/session-state/working-set-checkpoint.json`.
+
+`hooks/session-start.mjs` injects both, wrapped in `<structural_checkpoint>`
+and `<working_set_checkpoint>` tags, into `additionalContext` at the start of
+the next session — see operator.md/inspector.md Hard Rule 17 ("Checkpoint
+Primacy"): if a file is present in `<working_set_checkpoint>`, the agent must
+not `Read` it; `<structural_checkpoint>` replaces `Grep` for "where is X
+defined" questions. Agents still `Grep`/`Read` for anything neither
+checkpoint covers — checkpoints bound the rediscovery cost, they don't
+eliminate the need for ground-truth lookups on uncovered code. See the
 "Context isolation" section at the top of each agent's `.md` file.
 
 This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction). A third agent, `scout`, was added later — it's a deliberate, narrow exception (see the `memory-manager` "Not built" note further down): mechanical command-running only, zero judgment surface, so it doesn't reintroduce the reviewer-sprawl this consolidation guards against. A fourth, `researcher` (`todo.md` "Ralph Loop"), is a second deliberate exception, on different grounds: it's not a reviewer competing with `inspector`'s role, it's a genuinely distinct job (iterative web research, not build/review) that neither `operator` nor `inspector` is scoped for. Per-call loop control, confidence scoring, and state merging stay in JavaScript (`lib/research-state.mjs`) — `researcher` only does the search-and-verify step itself, the same separation of judgment-vs-control already used for `operator`/`inspector`.
