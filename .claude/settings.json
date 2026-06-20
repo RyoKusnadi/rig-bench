@@ -28,6 +28,15 @@
             "command": "node ${CLAUDE_PROJECT_DIR}/hooks/read-budget.mjs"
           }
         ]
+      },
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-webfetch-security.mjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [

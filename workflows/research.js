@@ -35,10 +35,23 @@ const researcherModel = TIER_MODELS[forceTier || 'standard']
 const MAX_TOKEN_BUDGET = 200_000 // soft ceiling — same checkpoint-based posture as every other workflow, see root README "Token Telemetry"
 
 const tokenLog = []
-async function trackedAgent(prompt, opts) {
+// Mirrors lib/agent-wrapper.mjs's safeAgent — can't import it, no fs/Node
+// access in workflow scripts, same reason pipelineState/TIER_MODELS are
+// mirrored everywhere else. agent() returns null on a schema-validation
+// failure (malformed JSON from the subagent); rather than treat that as an
+// immediate terminal BLOCK and discard every token already spent on this
+// run, retry up to AGENT_MAX_RETRIES times with a correction prompt before
+// giving up and returning null (same contract as a bare agent() call).
+const AGENT_MAX_RETRIES = 2
+async function trackedAgent(prompt, opts, attempt = 0) {
   const before = budget.spent()
-  const result = await agent(prompt, opts)
+  const result = await agent(prompt, attempt === 0 ? opts : { ...opts, label: `${opts.label}-retry${attempt}` })
   tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  if (result === null && attempt < AGENT_MAX_RETRIES) {
+    log(`${opts.label}: schema validation failed — retrying with correction (${attempt + 1}/${AGENT_MAX_RETRIES})...`)
+    const correctionPrompt = `${prompt}\n\n[SYSTEM CORRECTION]: Your previous output failed schema validation. You must output a valid JSON object matching this exact schema:\n${JSON.stringify(opts.schema)}\nDo not include any markdown formatting outside the JSON.`
+    return trackedAgent(correctionPrompt, opts, attempt + 1)
+  }
   return result
 }
 
@@ -159,8 +172,70 @@ function calculateConfidence() {
   return covered.length / focusAreas.length
 }
 
+// ── State projection (mirrors lib/state-projector.mjs's projectStateForPrompt
+// — can't import it, no fs/Node access in workflow scripts, same reason
+// pipelineState/TIER_MODELS are mirrored everywhere else). The orchestrator
+// keeps the *full* `state` in memory and returns it in full at the end; only
+// the prompt sent to `researcher` each iteration is projected down to what
+// it actually needs, so loop_log/validated_facts growing across iterations
+// doesn't balloon every RESEARCH-mode prompt toward the context limit. ────
+const LOOP_LOG_TAIL = 2
+
+function sharesKeyword(fact, query) {
+  const queryWords = (query || '').toLowerCase().split(/\W+/).filter((w) => w.length > 2)
+  const factText = fact.extracted_fact.toLowerCase()
+  return queryWords.some((w) => factText.includes(w))
+}
+
+function projectStateForPrompt(currentQuery) {
+  const relevantFacts = state.validated_facts.filter(
+    (f) => f.validation_status === 'pending' || sharesKeyword(f, currentQuery)
+  )
+  const recentLog = state.loop_log.slice(-LOOP_LOG_TAIL)
+
+  const factsSection = relevantFacts.length
+    ? relevantFacts.map((f) => `- [${f.validation_status}] (${f.source_url}): ${f.extracted_fact}`).join('\n')
+    : '(none relevant to the current query)'
+  const logSection = recentLog.length ? recentLog.map((entry) => `- ${entry}`).join('\n') : '(none yet)'
+
+  return (
+    `### Current Hypothesis\n${state.current_hypothesis || '(none yet)'}\n\n` +
+    `### Relevant Facts (${relevantFacts.length}/${state.validated_facts.length} total)\n${factsSection}\n\n` +
+    `### Recent Loop Log (last ${recentLog.length})\n${logSection}\n\n` +
+    `### Progress\nconfidence_score: ${state.confidence_score}, iteration: ${state.iteration_count}, next_search_query: ${state.next_search_query}`
+  )
+}
+
 function researchPrompt() {
-  return `Mode: RESEARCH\n\nresearchState: ${JSON.stringify(state)}`
+  return `Mode: RESEARCH\n\n${projectStateForPrompt(state.next_search_query)}`
+}
+
+// ── Stagnation detection + query mutation (todo.md P1 "Stagnation and
+// Infinite Loops in the Research Agent"). Without this, a researcher that
+// keeps re-extracting the same facts or re-issuing the same search burns
+// through max_iterations/token budget without making progress. Two
+// independent guards: (1) if confidence improves by less than
+// STAGNATION_THRESHOLD for STAGNATION_STREAK_LIMIT consecutive iterations,
+// stop early and move to Synthesize with a "stagnated" stop_reason instead
+// of exhausting every remaining iteration; (2) if the agent's
+// next_search_query comes back identical to the query it was just given
+// (the agent stuck re-issuing the same search), force a mutation before the
+// next iteration rather than repeating it verbatim. Mirrored in
+// lib/research-state.mjs as the documented reference (can't import it, no
+// fs/Node access in workflow scripts — same reason pipelineState/
+// TIER_MODELS are mirrored everywhere else). ───────────────────────────────
+const STAGNATION_THRESHOLD = 0.05
+const STAGNATION_STREAK_LIMIT = 2
+const QUERY_MUTATION_SUFFIXES = [' site:reddit.com', ' alternative to']
+
+let previousConfidence = 0
+let stagnantStreak = 0
+let mutationIndex = 0
+
+function mutateQuery(query) {
+  const suffix = QUERY_MUTATION_SUFFIXES[mutationIndex % QUERY_MUTATION_SUFFIXES.length]
+  mutationIndex++
+  return `${query}${suffix}`
 }
 
 phase('Research')
@@ -168,7 +243,8 @@ log(`researcher: starting loop for "${intake.topic}" — threshold ${validationT
 
 while (state.confidence_score < validationThreshold && state.iteration_count < maxIterations) {
   const iterationLabel = `researcher-i${state.iteration_count + 1}`
-  log(`researcher: iteration ${state.iteration_count + 1}/${maxIterations} — query: "${state.next_search_query}"`)
+  const queryUsed = state.next_search_query
+  log(`researcher: iteration ${state.iteration_count + 1}/${maxIterations} — query: "${queryUsed}"`)
 
   const result = await trackedAgent(researchPrompt(), {
     label: iterationLabel,
@@ -191,13 +267,44 @@ while (state.confidence_score < validationThreshold && state.iteration_count < m
   }
 
   mergeResearcherOutput(result)
+
+  // Query deduplication: the agent re-issued the exact same search — force
+  // a mutation so the next iteration doesn't just repeat it verbatim.
+  if (state.next_search_query === queryUsed) {
+    const mutated = mutateQuery(queryUsed)
+    log(`researcher: next_search_query unchanged ("${queryUsed}") — mutating to "${mutated}" to break out of a repeated-search loop.`)
+    state = { ...state, next_search_query: mutated }
+  }
+
   state.confidence_score = calculateConfidence()
   log(`researcher: confidence ${state.confidence_score.toFixed(2)} after iteration ${state.iteration_count}/${maxIterations} — ${result.summary}`)
+
+  // Stagnation detection: confidence barely moved for two iterations in a
+  // row — stop early rather than exhaust the remaining budget chasing it.
+  if (state.confidence_score - previousConfidence < STAGNATION_THRESHOLD) {
+    stagnantStreak++
+  } else {
+    stagnantStreak = 0
+  }
+  previousConfidence = state.confidence_score
+
+  if (stagnantStreak >= STAGNATION_STREAK_LIMIT) {
+    state.stagnated = true
+    log(`researcher: confidence improved by < ${STAGNATION_THRESHOLD} for ${STAGNATION_STREAK_LIMIT} consecutive iterations — stopping early, moving to Synthesize with a partial result.`)
+    break
+  }
 }
 
 state.completed = state.confidence_score >= validationThreshold
 if (!state.completed) {
-  log(`researcher: stopped at max_iterations (${maxIterations}) without reaching threshold (${validationThreshold}) — confidence ${state.confidence_score.toFixed(2)}.`)
+  state.stop_reason = state.stagnated ? 'stagnated' : 'max_iterations'
+  log(
+    state.stagnated
+      ? `researcher: stopped early due to stagnation — confidence ${state.confidence_score.toFixed(2)}, below threshold (${validationThreshold}).`
+      : `researcher: stopped at max_iterations (${maxIterations}) without reaching threshold (${validationThreshold}) — confidence ${state.confidence_score.toFixed(2)}.`
+  )
+} else {
+  state.stop_reason = 'threshold_met'
 }
 
 // ── Synthesize (Phase 5) — one final call, always at frontier tier (downgrade
@@ -209,6 +316,9 @@ if (!state.completed) {
 phase('Synthesize')
 log('researcher (frontier): synthesizing report from verified facts only...')
 
+// SYNTHESIZE is one final call, not an iterating loop — it needs every
+// validated_fact to write the report, so it gets the full state, unlike
+// the per-iteration RESEARCH prompt above.
 const synthResult = await trackedAgent(`Mode: SYNTHESIZE\n\nresearchState: ${JSON.stringify(state)}`, {
   label: 'researcher-synthesize',
   phase: 'Synthesize',
@@ -251,7 +361,7 @@ return {
   topic: intake.topic,
   summary: state.completed
     ? `Confidence ${state.confidence_score.toFixed(2)} cleared threshold ${validationThreshold} after ${state.iteration_count} iteration(s).`
-    : `Stopped after ${state.iteration_count} iteration(s) at confidence ${state.confidence_score.toFixed(2)}, below threshold ${validationThreshold}.`,
+    : `Stopped (${state.stop_reason}) after ${state.iteration_count} iteration(s) at confidence ${state.confidence_score.toFixed(2)}, below threshold ${validationThreshold}.`,
   token_telemetry: tokenLog,
   research_state: state,
   report,

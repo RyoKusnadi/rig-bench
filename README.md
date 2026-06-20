@@ -29,6 +29,9 @@ rig-bench/
 ├── lib/
 │   ├── schema-validator.mjs # Zero-dependency validator for the direct/manual invocation path
 │   ├── pipeline-state.mjs   # Canonical pipeline_state shape/merge logic (documented reference — see below)
+│   ├── research-state.mjs  # Canonical researchState shape/merge/confidence logic (documented reference — see below)
+│   ├── agent-wrapper.mjs   # Canonical schema-correction retry logic for agent() calls (documented reference — see below)
+│   ├── state-projector.mjs # Canonical research-loop prompt projection (truncate loop_log, filter facts — documented reference — see below)
 │   └── memory-store.mjs     # Local TF-IDF vector store (better-sqlite3) for .claude/memory/ + memory/
 ├── scripts/
 │   ├── report.mjs           # Reads telemetry/runs/*.jsonl, prints cost/escalation/outcome stats
@@ -382,7 +385,7 @@ forcibly cut off a call already running.
 
 ## Hook System
 
-Seven hooks intercept tool calls and session lifecycle events Claude Code makes.
+Eight hooks intercept tool calls and session lifecycle events Claude Code makes.
 All hooks are plain Node.js (`.mjs`, no dependencies) rather than Bash — Bash
 hooks throw pathing/quoting errors on native Windows (PowerShell has no `bash`
 on PATH by default), while Node ships wherever Claude Code itself runs. (This
@@ -479,6 +482,26 @@ pre-bash-safety.mjs reads stdin JSON
     └── push to main / force push / destructive pattern ──► exit 2 (BLOCKED, message shown)
 ```
 
+**Optional allowlist mode (`RIGBENCH_ALLOWED_COMMANDS`).** All of the above
+is blocklist-based — fundamentally bypassable by an LLM via variable
+expansion (`CMD="rm -rf /"; $CMD`) or piping a decoded payload into a shell
+(`echo <base64> | base64 -d | bash`), since neither command string contains
+a pattern any blocklist regex would recognize as destructive. Setting
+`RIGBENCH_ALLOWED_COMMANDS` (comma-separated command names, e.g.
+`git,npm,node,cargo,go,test`) switches the hook to default-deny: it splits
+the command on `&&`/`||`/`;`/`|`/newline, and for every resulting segment
+extracts the actual command token (skipping leading `VAR=value` assignments
+and any path prefix) and requires it to be in the allowlist. This is what
+actually closes the bypasses above — `$CMD` and `bash` (the bypass payload's
+*executed* token) simply aren't literal names on the allowlist, so they fail
+closed without needing a smarter regex to detect the obfuscation technique
+itself. Still not full shell AST parsing (quoting edge cases can mis-attribute
+which token gets blamed — see the comment above the implementation), but a
+misattributed block still blocks, so the security property holds. Unset (the
+default) leaves today's blocklist-only behavior unchanged — this is opt-in
+for projects/sessions where bounding Bash to a known command set is
+acceptable.
+
 ### `hooks/post-bash-processor.mjs` (PostToolUse)
 
 Runs **after** every Bash tool use (merges what used to be two separate hooks,
@@ -550,6 +573,34 @@ out subagents inherit the parent's `session_id`, this budget is shared across
 an entire workflow run (operator + inspector combined) rather than per-agent;
 if each spawn gets its own `session_id`, it's naturally per-agent. Tune
 `RIGBENCH_MAX_READS` per project if the default doesn't fit.
+
+### `hooks/pre-webfetch-security.mjs` (PreToolUse, matcher: `WebFetch`)
+
+Runs **before** every `WebFetch` tool call — SSRF protection for the
+`researcher` agent's web access (`todo.md` P0 "Trivially Bypassable Regex-
+Based Bash Security" item, the WebFetch half). Parses the requested URL,
+resolves its hostname via DNS (or reads the literal IP directly if the URL
+already has one), and blocks the call if any resolved address falls in a
+private/reserved range: `10.x`, `172.16-31.x`, `192.168.x`, `127.x`,
+`169.254.x` (covers the AWS/GCP/Azure instance-metadata address
+`169.254.169.254`), plus IPv6 loopback/unique-local/link-local equivalents.
+
+```
+Claude issues WebFetch("http://169.254.169.254/latest/meta-data/")
+    │
+    ▼
+pre-webfetch-security.mjs reads stdin JSON, parses the URL, resolves the hostname
+    │
+    ├── not WebFetch, or resolves to a public address? ──► exit 0 (allow)
+    └── resolves to a private/reserved/metadata address ──► exit 2 (BLOCKED, message shown)
+```
+
+**Caveat — defense in depth, not a full proxy.** This only inspects the URL
+string handed to the tool call; it can't see where a redirect chain ends up
+after the fact, and there's a narrow DNS-rebinding window between this
+check and the actual fetch. Treat it as raising the bar, not eliminating the
+risk entirely. Like every other hook here, it fails open (`runHook`'s
+catch-all) rather than blocking on its own bug.
 
 ### `hooks/evaluate-session.mjs` (Stop)
 
@@ -750,6 +801,39 @@ The Scout-stage work (see "Scout stage" in
 gathers once, up front) and `gate_status` (the most recent `scout` GATE
 pass/fail) — both follow the identical pattern: a cheap agent's structured
 result, merged once, threaded into every later prompt instead of re-derived.
+
+### Schema-correction retry (`lib/agent-wrapper.mjs`)
+
+`agent()` returns `null` when a subagent's output fails the Workflow tool's
+StructuredOutput schema validation — LLMs occasionally emit malformed JSON,
+and treating that as an immediate terminal `BLOCK` discards every token
+already spent on the run over what's often a single bad response. Every
+workflow's `trackedAgent()` helper now retries up to `AGENT_MAX_RETRIES` (2)
+times with a `[SYSTEM CORRECTION]` prompt appended (re-stating the exact
+schema) before giving up and returning `null` — same contract as a bare
+`agent()` call, so existing `if (!result)` handling elsewhere needed no
+changes. `lib/agent-wrapper.mjs` documents the canonical retry logic
+(`safeAgent`); each workflow mirrors it inline inside `trackedAgent()` for
+the same reason `TIER_MODELS`/`pipelineState` are mirrored rather than
+imported — no fs/Node access in workflow scripts.
+
+### Research-loop prompt projection (`lib/state-projector.mjs`)
+
+`workflows/research.js`'s "Ralph Loop" used to inject the *entire*
+`researchState` into every iteration's prompt via `JSON.stringify(state)` —
+`validated_facts` and `loop_log` both grow monotonically across iterations,
+so by iteration 4–5 the prompt is dominated by stale facts the current
+`next_search_query` doesn't need. The per-iteration `researchPrompt()` now
+sends a *projected* Markdown view instead: the current hypothesis, only
+facts that are still `pending` or share a keyword with the current query,
+the last 2 `loop_log` entries, and the scalar progress fields — never the
+full fact/log history. The orchestrator still keeps the *full* `state` in
+memory throughout and returns it in full at the end (nothing is lost, only
+what's sent to the model per call is trimmed); the one-shot `SYNTHESIZE`
+call at the end of the loop still gets the full state, since it genuinely
+needs every validated fact to write the report. `lib/state-projector.mjs`
+documents the canonical `projectStateForPrompt()`; `research.js` mirrors it
+inline for the same no-fs-access reason as everything else in this section.
 
 `operator`/`inspector` both treat an incoming `pipeline_state` block as the
 source of truth for current task status (Hard Rule 14) and are told they're

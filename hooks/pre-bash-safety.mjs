@@ -11,6 +11,24 @@
 //   standard — + generic destructive-command blocking (default)
 //   strict   — + blocks `git add .`/`git add -A` and `--no-verify`
 //
+// Optional allowlist mode (todo.md P0 "Trivially Bypassable Regex-Based Bash
+// Security"): set RIGBENCH_ALLOWED_COMMANDS to a comma-separated list of
+// command names (e.g. "git,npm,node,cargo,go,test") to switch from
+// blocklisting to default-deny. When set, every `&&`/`||`/`;`/`|`/newline-
+// separated segment of the command must resolve to an allowlisted binary
+// (after skipping leading `VAR=value` assignments and any path prefix) or
+// the whole command is blocked — this is what actually defeats variable-
+// expansion (`CMD="rm -rf /"; $CMD`) and base64/pipe-to-shell tricks
+// (`echo ... | base64 -d | bash`): the bypass payload's final executed
+// token (`$CMD`, `bash`) just isn't a literal name on the allowlist, so it
+// fails closed instead of needing a smarter regex to detect the *encoding*.
+// This is still not full AST parsing — a regex-split on shell metacharacters
+// can't perfectly tokenize every quoting edge case — but it closes the
+// specific bypasses regex-blocklisting can't: false negatives now fail
+// *closed* (blocked) instead of *open* (allowed), since nothing reaches the
+// allowlist check by default. Unset (the default) preserves today's
+// blocklist-only behavior unchanged.
+//
 // Stdin: JSON with tool_name and tool_input.command
 // Exit 0 = allow  |  Exit 2 = block (stdout shown to Claude as error)
 
@@ -119,6 +137,40 @@ runHook(HOOK_NAME, 'PreToolUse', root, input.tool_name, () => {
     }
     if (/--no-verify\b/.test(cmd)) {
       fail("'--no-verify' is not allowed under the strict profile — fix the failing hook instead of skipping it.");
+    }
+  }
+
+  // ── Optional allowlist mode (RIGBENCH_ALLOWED_COMMANDS) ────────────────
+  const allowedCommandsRaw = process.env.RIGBENCH_ALLOWED_COMMANDS;
+  if (allowedCommandsRaw) {
+    const allowed = new Set(
+      allowedCommandsRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+
+    // Split on shell command separators. Order matters: `\|\|` must be
+    // tried before the single-`|` alternative, or `||` would be cut in half.
+    const segments = cmd.split(/&&|\|\||;|\n|\|/).map((s) => s.trim()).filter(Boolean);
+
+    for (const segment of segments) {
+      // Skip leading `VAR=value` assignments (e.g. `CMD="rm -rf /"`) to find
+      // the actual command token — an assignment-only segment has no real
+      // command token and falls through to the "not allowlisted" block
+      // below, same as `$CMD` itself does in a later segment.
+      const match = segment.match(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(\S+)/);
+      const token = match ? match[1] : segment;
+      // Strip a path prefix (e.g. `/usr/bin/git` -> `git`) so allowlisting
+      // by name still works regardless of how the binary was invoked.
+      const command = token.split('/').pop();
+
+      if (!allowed.has(command)) {
+        fail(
+          `command '${command}' is not in RIGBENCH_ALLOWED_COMMANDS (${[...allowed].join(', ')}).\n` +
+            `Full segment blocked: ${segment}`
+        );
+      }
     }
   }
 

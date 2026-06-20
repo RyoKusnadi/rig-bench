@@ -257,10 +257,10 @@ Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 4–5). No
 search-verify loop followed by a single synthesis call.
 
 ```
-researcher (RESEARCH) ── confidence < threshold && iterations < max ──┐
-        │                                                              │
-        └──────────────────────────── loop ───────────────────────────┘
-        │ confidence >= threshold, or max_iterations reached
+researcher (RESEARCH) ── confidence < threshold && iterations < max && not stagnated ──┐
+        │                                                                                │
+        └────────────────────────────────── loop ───────────────────────────────────────┘
+        │ confidence >= threshold, max_iterations reached, or stagnated (2 flat iterations)
         ▼
 researcher (SYNTHESIZE, frontier tier) ── report from verified facts only
         ▼
@@ -275,16 +275,30 @@ return research_state + report (frontmatter fields + body_markdown, or null if s
 Confidence is computed deterministically in the workflow script after every
 iteration (fraction of `focus_areas` covered by a `verified` fact) — `researcher`
 never self-reports it or decides the loop is done. The loop stops at
-`completed: true` once confidence clears `validation_threshold`, or
-`completed: false` once `max_iterations` is hit — either way, a single
-`SYNTHESIZE` call still runs afterward (a below-threshold report just says so
-up front, see `researcher.md` SYNTHESIZE mode step 7). The returned `report`
-(`{frontmatter, body_markdown}`) deliberately omits `generated_at` — this
-script can't call `Date.now()`/`new Date()` (Workflow tool constraint), so
-the caller stamps it and writes `research/{topic}/TITLE.MD` itself (see the
-`/research` command). `report` is `null` if the synthesis call BLOCKed
-(e.g. zero verified facts) or returned no valid response — `research_state`
-is still returned in that case so nothing is lost.
+`completed: true` once confidence clears `validation_threshold`; otherwise
+`completed: false` and `research_state.stop_reason` is one of
+`max_iterations` (the iteration cap was hit) or `stagnated` (confidence
+improved by less than `0.05` for 2 consecutive iterations — `todo.md`
+"Stagnation and Infinite Loops in the Research Agent": stops the loop early
+instead of burning the remaining iteration/token budget chasing a confidence
+score that's stopped moving). Independently, if `researcher`'s
+`next_search_query` comes back identical to the query it was just given (the
+agent stuck re-issuing the same search), the workflow force-mutates it
+(appending `" site:reddit.com"` or `" alternative to"`, alternating) before
+the next iteration rather than repeating the dead-end search verbatim. Both
+behaviors are mirrored from `lib/research-state.mjs` (`nextStagnantStreak`,
+`mutateQuery` — documented reference, not importable into the workflow
+script itself).
+
+Either way the loop stops, a single `SYNTHESIZE` call still runs afterward (a
+below-threshold/partial report just says so up front, see `researcher.md`
+SYNTHESIZE mode step 7). The returned `report` (`{frontmatter, body_markdown}`)
+deliberately omits `generated_at` — this script can't call
+`Date.now()`/`new Date()` (Workflow tool constraint), so the caller stamps it
+and writes `research/{topic}/TITLE.MD` itself (see the `/research` command).
+`report` is `null` if the synthesis call BLOCKed (e.g. zero verified facts)
+or returned no valid response — `research_state` is still returned in that
+case so nothing is lost.
 
 ---
 

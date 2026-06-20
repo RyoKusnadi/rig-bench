@@ -47,10 +47,23 @@ const isComplexityBlock = (result) => /too many files|ambiguous|complex|architec
 // telemetry/token-usage.json; it rides along in the return value instead).
 const tokenLog = []
 const escalations = []
-async function trackedAgent(prompt, opts) {
+// Mirrors lib/agent-wrapper.mjs's safeAgent — can't import it, no fs/Node
+// access in workflow scripts, same reason pipelineState/TIER_MODELS are
+// mirrored everywhere else. agent() returns null on a schema-validation
+// failure (malformed JSON from the subagent); rather than treat that as an
+// immediate terminal BLOCK and discard every token already spent on this
+// run, retry up to AGENT_MAX_RETRIES times with a correction prompt before
+// giving up and returning null (same contract as a bare agent() call).
+const AGENT_MAX_RETRIES = 2
+async function trackedAgent(prompt, opts, attempt = 0) {
   const before = budget.spent()
-  const result = await agent(prompt, opts)
+  const result = await agent(prompt, attempt === 0 ? opts : { ...opts, label: `${opts.label}-retry${attempt}` })
   tokenLog.push({ label: opts.label, tokens: budget.spent() - before })
+  if (result === null && attempt < AGENT_MAX_RETRIES) {
+    log(`${opts.label}: schema validation failed — retrying with correction (${attempt + 1}/${AGENT_MAX_RETRIES})...`)
+    const correctionPrompt = `${prompt}\n\n[SYSTEM CORRECTION]: Your previous output failed schema validation. You must output a valid JSON object matching this exact schema:\n${JSON.stringify(opts.schema)}\nDo not include any markdown formatting outside the JSON.`
+    return trackedAgent(correctionPrompt, opts, attempt + 1)
+  }
   return result
 }
 
