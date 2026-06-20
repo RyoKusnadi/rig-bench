@@ -19,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, basename, relative, extname, join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { readStdinJson, repoRoot, complete, runHook } from './lib/hook-utils.mjs';
+import { readStdinJson, repoRoot, complete, runHook, withFileLock } from './lib/hook-utils.mjs';
 
 const HOOK_NAME = 'auto-run-tests';
 const input = readStdinJson();
@@ -35,6 +35,14 @@ function findAncestor(startDir, marker) {
   }
 }
 
+// Single-quote a value for safe interpolation into a shell command string —
+// closes the quote, escapes any embedded `'`, reopens it. Needed because
+// `base`/`dir` come from a file path on disk, which (unlike a literal in the
+// hook's own code) isn't guaranteed to be free of shell metacharacters.
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function runWithTimeout(command, cwd) {
   try {
     const out = execSync(command, { cwd, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -48,15 +56,20 @@ function runWithTimeout(command, cwd) {
 function recordResult(result) {
   const stateDir = join(root, '.claude', 'session-state');
   const path = join(stateDir, 'last-test-results.json');
-  let history = [];
-  try {
-    if (existsSync(path)) history = JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    history = [];
-  }
-  history.push({ ...result, timestamp: new Date().toISOString() });
-  mkdirSync(stateDir, { recursive: true });
-  writeFileSync(path, JSON.stringify(history.slice(-3), null, 2));
+  // Lock around the read-modify-write — concurrent Write/Edit calls in
+  // parallel subagents can otherwise race and drop a result (same hazard as
+  // read-budget's telemetry counters; see todo.md High — architecture).
+  withFileLock(path, () => {
+    let history = [];
+    try {
+      if (existsSync(path)) history = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      history = [];
+    }
+    history.push({ ...result, timestamp: new Date().toISOString() });
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(path, JSON.stringify(history.slice(-3), null, 2));
+  });
 }
 
 runHook(HOOK_NAME, 'PostToolUse', root, input.tool_name, () => {
@@ -88,7 +101,7 @@ runHook(HOOK_NAME, 'PostToolUse', root, input.tool_name, () => {
       result = { status: 'skip', tool: 'npm test', exit_code: 0, summary: 'no test script found in package.json', first_error: '' };
     } else {
       const base = basename(file);
-      const { out, code } = runWithTimeout(`npm test -- --testPathPattern='${base}'`, pkgRoot);
+      const { out, code } = runWithTimeout(`npm test -- --testPathPattern=${shellQuote(base)}`, pkgRoot);
       const summary = (out.match(/^.*?(tests:|passed|failed).*$/gim) || []).slice(-3).join(' ').slice(0, 200);
       const firstError = (out.match(/^.*(✕|FAIL ).*$/m) || [''])[0].slice(0, 200);
       result = { status: code === 0 ? 'pass' : 'fail', tool: 'npm test', exit_code: code, summary: summary || 'no output', first_error: firstError };
@@ -96,7 +109,7 @@ runHook(HOOK_NAME, 'PostToolUse', root, input.tool_name, () => {
   } else if (ext === 'py') {
     const pkgRoot = findAncestor(dir, 'pyproject.toml') || findAncestor(dir, 'setup.py');
     if (!pkgRoot) complete();
-    const { out, code } = runWithTimeout(`pytest '${dir}' -q`, pkgRoot);
+    const { out, code } = runWithTimeout(`pytest ${shellQuote(dir)} -q`, pkgRoot);
     const summary = out.split('\n').slice(-3).join(' ').slice(0, 200);
     const firstError = (out.match(/^FAILED.*$|^E .*$/m) || [''])[0].slice(0, 200);
     result = { status: code === 0 ? 'pass' : 'fail', tool: 'pytest', exit_code: code, summary: summary || 'no output', first_error: firstError };

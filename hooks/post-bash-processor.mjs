@@ -61,7 +61,19 @@ runHook(HOOK_NAME, 'PostToolUse', root, input.tool_name, () => {
 
   const count = (re) => (out.match(re) || []).length;
   const firstMatch = (re) => (out.match(re) || [])[0];
+  // Caps a single already-complete line (every regex below is anchored with
+  // `$` under the `m` flag, so a match never spans multiple lines) at 200
+  // chars, marking it with "..." when cut short rather than silently
+  // dropping the tail — a guarantee a bare `.slice(0, 200)` didn't make.
+  const capLine = (line, max = 200) => (line.length > max ? `${line.slice(0, max)}...` : line);
 
+  // Heuristic, best-effort matching against each tool's current stdout
+  // format. If a tool changes its output (e.g. `go test` adds a new summary
+  // line, `npm audit` reformats its JSON), the regex below just stops
+  // matching — count()/firstMatch() degrade to 0/undefined rather than
+  // throwing, so a format change shows up as a suspicious "0 ok, 0 FAIL"
+  // line, not a hook crash. Verify against the installed tool's actual
+  // output if these numbers ever look wrong.
   if (/\bnpm audit\b/.test(cmd)) {
     const crit = firstMatch(/\d+ critical/) || '0 critical';
     const high = firstMatch(/\d+ high/) || '0 high';
@@ -69,13 +81,13 @@ runHook(HOOK_NAME, 'PostToolUse', root, input.tool_name, () => {
   } else if (/\bgo test\b/.test(cmd)) {
     const pass = count(/^ok/gm);
     const fail = count(/^FAIL/gm);
-    const firstFail = (firstMatch(/^\s*--- FAIL.*$|panic:.*$/m) || '').slice(0, 200);
+    const firstFail = capLine(firstMatch(/^\s*--- FAIL.*$|panic:.*$/m) || '');
     emit('go test', `${pass} ok, ${fail} FAIL${firstFail ? `; first: ${firstFail}` : ''}`);
   } else if (/\bgolangci-lint\b/.test(cmd)) {
     emit('golangci-lint', `${count(/^\S+\.go:\d+/gm)} findings`);
   } else if (/\bpytest\b/.test(cmd)) {
     const summary = (out.match(/^\d+ (passed|failed|error).*$/gm) || []).pop();
-    emit('pytest', (summary || 'no summary line found').slice(0, 200));
+    emit('pytest', capLine(summary || 'no summary line found'));
   } else if (/\bcargo audit\b/.test(cmd)) {
     emit('cargo audit', `${count(/Vulnerability/g)} vulnerabilities`);
   } else if (/\bpip-audit\b/.test(cmd)) {

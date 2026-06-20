@@ -20,7 +20,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { readStdinJson, repoRoot, block, allow, runHook } from './lib/hook-utils.mjs';
+import { readStdinJson, repoRoot, block, allow, runHook, withFileLock } from './lib/hook-utils.mjs';
 
 const HOOK_NAME = 'read-budget';
 const input = readStdinJson();
@@ -34,28 +34,36 @@ runHook(HOOK_NAME, 'PreToolUse', root, input.tool_name, () => {
   const file = input.tool_input?.file_path || '';
 
   const telemetryPath = join(root, '.claude', 'agent-telemetry.json');
-  let telemetry = { sessions: {} };
-  try {
-    if (existsSync(telemetryPath)) telemetry = JSON.parse(readFileSync(telemetryPath, 'utf8'));
-  } catch {
-    telemetry = { sessions: {} };
-  }
-  if (!telemetry.sessions) telemetry.sessions = {};
 
-  const entry = telemetry.sessions[sessionId] || { count: 0, files: [] };
-  entry.count += 1;
-  if (file) {
-    entry.files.push(file);
-    entry.files = entry.files.slice(-50); // diagnostics only — count above is the source of truth
-  }
-  telemetry.sessions[sessionId] = entry;
+  // Concurrent sessions can call this hook at the same instant — lock around
+  // the read-modify-write so two increments to the same session never race
+  // and silently drop a count (see todo.md High — architecture/consistency).
+  const entry = withFileLock(telemetryPath, () => {
+    let telemetry = { sessions: {} };
+    try {
+      if (existsSync(telemetryPath)) telemetry = JSON.parse(readFileSync(telemetryPath, 'utf8'));
+    } catch {
+      telemetry = { sessions: {} };
+    }
+    if (!telemetry.sessions) telemetry.sessions = {};
 
-  try {
-    mkdirSync(dirname(telemetryPath), { recursive: true });
-    writeFileSync(telemetryPath, JSON.stringify(telemetry, null, 2));
-  } catch {
-    // telemetry write failure shouldn't block the read itself
-  }
+    const e = telemetry.sessions[sessionId] || { count: 0, files: [] };
+    e.count += 1;
+    if (file) {
+      e.files.push(file);
+      e.files = e.files.slice(-50); // diagnostics only — count above is the source of truth
+    }
+    telemetry.sessions[sessionId] = e;
+
+    try {
+      mkdirSync(dirname(telemetryPath), { recursive: true });
+      writeFileSync(telemetryPath, JSON.stringify(telemetry, null, 2));
+    } catch {
+      // telemetry write failure shouldn't block the read itself
+    }
+
+    return e;
+  });
 
   if (entry.count > MAX_READS) {
     block(

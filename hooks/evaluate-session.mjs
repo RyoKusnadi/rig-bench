@@ -28,6 +28,13 @@ runHook(HOOK_NAME, 'Stop', root, null, () => {
 
   if (!transcriptPath || !existsSync(transcriptPath)) complete();
 
+  // This exact set is every `pipeline_gate`/finding-severity literal a
+  // workflows/*.js STATES/TRANSITIONS table or an agent's structured output
+  // schema can produce on a non-PASS path (see config/schemas/
+  // {operator,inspector,scout}-output.schema.json and the STATES enums in
+  // workflows/*.js) — i.e. our own failure vocabulary, not generic English
+  // words like "fail" or "error" that would over-match prose. Add a keyword
+  // here only when a new schema/workflow introduces a new gate literal.
   const KEYWORDS = /\b(GATE_FAIL|NO_TESTS|REGRESSION|EXAMPLE_FAIL|PREFLIGHT_FAIL|CRITICAL_BLOCK|SECRET_FOUND|BLOCKED|ESCALATE)\b/;
   const findings = []; // [keyword, snippet]
 
