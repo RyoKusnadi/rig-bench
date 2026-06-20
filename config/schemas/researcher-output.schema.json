@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "researcher-output",
+  "type": "object",
+  "required": ["agent", "mode", "pipeline_gate", "blocking", "findings", "summary"],
+  "properties": {
+    "agent": { "const": "researcher" },
+    "mode": { "type": "string", "enum": ["RESEARCH", "SYNTHESIZE"] },
+    "pipeline_gate": { "type": "string", "enum": ["PASS", "BLOCK"] },
+    "blocking": { "type": "boolean" },
+    "current_hypothesis": { "type": "string" },
+    "validated_facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_url", "extracted_fact", "validation_status"],
+        "properties": {
+          "source_url": { "type": "string" },
+          "extracted_fact": { "type": "string" },
+          "validation_status": { "type": "string", "enum": ["verified", "pending", "debunked"] },
+          "validation_method": { "type": "string" }
+        }
+      }
+    },
+    "next_search_query": { "type": "string" },
+    "latest_implementation": { "type": "string" },
+    "latest_version": { "type": "string" },
+    "focus_areas_covered": { "type": "array", "items": { "type": "string" } },
+    "validated_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "fact"],
+        "properties": {
+          "url": { "type": "string" },
+          "fact": { "type": "string" }
+        }
+      }
+    },
+    "debunked_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "reason"],
+        "properties": {
+          "claim": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "body_markdown": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" }
+  }
+}

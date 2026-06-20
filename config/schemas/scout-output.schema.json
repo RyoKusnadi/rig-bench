@@ -5,7 +5,7 @@
   "required": ["agent", "mode", "pipeline_gate", "summary"],
   "properties": {
     "agent": { "const": "scout" },
-    "mode": { "type": "string", "enum": ["MANIFEST", "GATE"] },
+    "mode": { "type": "string", "enum": ["MANIFEST", "GATE", "VALIDATE_AGENT_FILE"] },
     "pipeline_gate": { "type": "string", "enum": ["PASS", "BLOCK"] },
     "repo_manifest": {
       "type": ["object", "null"],

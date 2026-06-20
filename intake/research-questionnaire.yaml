@@ -1,0 +1,30 @@
+# Canonical research intake template. `scripts/ask-questionnaire.mjs` reads
+# this file, prompts for any field still at its placeholder value, and
+# writes the filled-in result to `research/{topic}/intake.json` validated
+# against `config/schemas/research-intake.schema.json`.
+#
+# You can also hand-fill this file yourself (skip the interactive prompt)
+# and point ask-questionnaire.mjs at it with --file.
+
+topic: ""                    # e.g. "React Redux state management"
+
+focus_areas: []               # e.g. ["async middleware", "tooling setup"]
+
+current_baseline: ""          # what the user already uses/knows — avoids re-explaining basics
+
+target_outcome: "implementation_guide"
+# one of: implementation_guide | architectural_comparison | migration_steps | deep_dive_reference
+
+constraints:
+  tech_stack: []              # e.g. ["React 19", "TypeScript 5.x", "Node 20+"]
+  version_policy: "latest_stable"
+  # one of: latest_stable | lts_only | bleeding_edge
+  must_include: []            # e.g. ["official docs", "GitHub examples"]
+  must_exclude: []            # e.g. ["deprecated APIs", "enterprise-only features"]
+
+depth: "moderate_detail"
+# one of: high_level_overview | moderate_detail | code_heavy_deep_dive
+
+validation_threshold: 0.85    # 0.0-1.0 — confidence required before the loop exits
+
+max_iterations: 5             # hard cap on Ralph-loop iterations

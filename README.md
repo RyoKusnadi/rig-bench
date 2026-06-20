@@ -21,8 +21,8 @@ A production-grade multi-agent harness for AI-driven software engineering. Provi
 
 ```
 rig-bench/
-├── subagents/       # 3 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster + scout (mechanical-only, no judgment work — see workflows/README.md "Declined")
-├── workflows/       # 6 deterministic state-machine pipelines (.js orchestration scripts)
+├── subagents/       # 4 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster + scout (mechanical-only, no judgment work — see workflows/README.md "Declined") + researcher (questionnaire-driven research loop, todo.md "Ralph Loop" Phase 1)
+├── workflows/       # 8 deterministic state-machine pipelines (.js orchestration scripts)
 ├── config/
 │   ├── model-tiers.json    # Tier registry: frontier/standard/economy → model ID, max_tokens, temperature
 │   └── schemas/             # Canonical JSON Schemas for operator/inspector output (direct-invocation path)
@@ -55,8 +55,9 @@ Each agent is a single `.md` file with YAML frontmatter declaring its model, too
 
 | Agent | Role | Default tier | Permission |
 |---|---|---|---|
-| `operator` | Plans, implements (TDD), tests, self-verifies, refactors, diagnoses bugs, writes docs/CHANGELOG, ships (commit + draft PR) — run in BUILD / REFACTOR / DOCS / SHIP mode | `standard` (Sonnet) | manual |
-| `inspector` | Read-only adversarial review in one pass: secrets (SEC-4), OWASP/STRIDE, dependency/CVE audit, two-pass code quality (low / medium / high / maximum effort) | `standard` (Sonnet) | semi-auto |
+| `operator` | Plans, implements (TDD), tests, self-verifies, refactors, diagnoses bugs, writes docs/CHANGELOG, ships (commit + draft PR), and (TUNE mode) mutates/commits/reverts one mutation in the `autotune` loop | `standard` (Sonnet) | manual |
+| `inspector` | Read-only adversarial review in one pass: secrets (SEC-4), OWASP/STRIDE, dependency/CVE audit, two-pass code quality (low / medium / high / maximum effort); also (EVALUATE mode) defines/scores binary criteria for the `autotune` loop, blind to the mutation rationale | `standard` (Sonnet) | semi-auto |
+| `researcher` | One step of a questionnaire-seeded research loop: search, extract candidate facts, verify each against a primary source — never decides confidence or loop exit (`lib/research-state.mjs` does); also synthesizes the final report from verified facts only, run at `frontier` tier | `standard` (Sonnet) for the loop, `frontier` (Opus) for synthesis | semi-auto |
 
 Each agent's frontmatter declares a `model_tier` (`frontier`/`standard`/`economy`), not a hardcoded model ID — see [Model Tier Registry & Routing](#model-tier-registry--routing) below for how the actual model gets resolved per call.
 
@@ -65,7 +66,7 @@ modules/symbols the task names and `Read` only what that turns up, instead of
 expecting the orchestrator to paste the codebase into the prompt. See the
 "Context isolation" section at the top of each agent's `.md` file.
 
-This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction). A third agent, `scout`, was added later — it's a deliberate, narrow exception (see the `memory-manager` "Not built" note further down): mechanical command-running only, zero judgment surface, so it doesn't reintroduce the reviewer-sprawl this consolidation guards against.
+This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction). A third agent, `scout`, was added later — it's a deliberate, narrow exception (see the `memory-manager` "Not built" note further down): mechanical command-running only, zero judgment surface, so it doesn't reintroduce the reviewer-sprawl this consolidation guards against. A fourth, `researcher` (`todo.md` "Ralph Loop"), is a second deliberate exception, on different grounds: it's not a reviewer competing with `inspector`'s role, it's a genuinely distinct job (iterative web research, not build/review) that neither `operator` nor `inspector` is scoped for. Per-call loop control, confidence scoring, and state merging stay in JavaScript (`lib/research-state.mjs`) — `researcher` only does the search-and-verify step itself, the same separation of judgment-vs-control already used for `operator`/`inspector`.
 
 ### Agent Communication Protocol
 
@@ -95,7 +96,7 @@ The calling workflow parses `pipeline-gate` to decide: advance → retry → esc
 
 ## Workflows
 
-Six deterministic pipelines. Arguments are passed as structured objects; all gate logic is in JavaScript.
+Eight deterministic pipelines. Arguments are passed as structured objects; all gate logic is in JavaScript.
 
 ### 1. `new-feature` — Full Feature Delivery
 
@@ -219,6 +220,60 @@ operator (SHIP, release mode)
 ```
 
 **Args:** `version` (e.g. `v1.2.0`)
+
+---
+
+### 7. `research` — Questionnaire-Driven Research Loop
+
+```
+researcher (RESEARCH) ──► search, extract, self-verify one round
+              │
+   confidence_score < validation_threshold
+   && iteration_count < max_iterations? ──► loop
+              │ no (threshold cleared, or max_iterations hit)
+              ▼
+researcher (SYNTHESIZE, frontier) ──► report from verified facts only
+              ▼
+Return: research_state + report ({frontmatter, body_markdown}, or null if synthesis BLOCKed)
+```
+
+No `scout` stage (no code/build/lint to gate). `confidence_score` is computed
+deterministically by the workflow script after every iteration, never
+self-reported by `researcher` — see
+[workflows/README.md](workflows/README.md#researchjs). The caller (e.g. the
+`/research` command) is responsible for stamping `generated_at` and writing
+`report` to `research/{topic}/TITLE.MD`, since workflow scripts have no
+filesystem access or real clock.
+
+**Args:** `intake` (object — parsed `research/{topic}/intake.json`, produced by `node scripts/ask-questionnaire.mjs`)
+
+---
+
+### 8. `autotune` — Self-Improvement Loop
+
+```
+inspector (EVALUATE/DEFINE_CRITERIA) ──► binary criteria + test cases
+              ▼
+inspector (EVALUATE/SCORE) ──► baseline
+              ▼
+operator (TUNE/MUTATE) ──► scout (VALIDATE_AGENT_FILE) ─ BLOCK ──► operator (REVERT)
+              │ PASS
+              ▼
+inspector (EVALUATE/SCORE, blind to rationale) ─ regressed ──► operator (REVERT)
+              │ improved/equal
+              ▼
+operator (TUNE/COMMIT, local only) ──► loop until 3 perfect scores or max_iterations
+```
+
+A Karpathy-[autoresearch](https://github.com/karpathy/autoresearch)-style
+mutate→measure→keep/discard loop, applied to this repo's own agent prompts
+instead of adding a 5th/6th agent for it — see
+[workflows/README.md](workflows/README.md#autotunejs) for why `operator`/
+`inspector`/`scout` each got a new mode instead. v1 only allows mutating
+`scout.md`/`researcher.md` — `operator.md`/`inspector.md` are excluded since
+they ARE the mutator/evaluator here.
+
+**Args:** `target` (`subagents/scout/scout.md` or `subagents/researcher/researcher.md`), `objective` (string)
 
 ---
 
@@ -641,6 +696,18 @@ XML tags (the explicit-tag format Anthropic's context-engineering guidance
 recommends for retrieved context), and each agent's Hard Rules instruct it to
 treat that block as authoritative — see "Hard Rules" in `operator.md`/`inspector.md`.
 
+`npm run memory:ingest` also walks `research/{topic}/TITLE.MD` (every report
+the `research` workflow's `/research` command writes — see "research"
+workflow above) into the same store (`todo.md` Phase 6). There's no separate
+`type: research`/`topic`/`version` tag column — `lib/memory-store.mjs`'s
+schema has no metadata filter, only cosine-similarity ranking — so "tagging"
+is just `TITLE.MD`'s own YAML frontmatter sitting in plain text as that
+file's first chunk; querying for a topic or version surfaces it through the
+same retrieval path as everything else, no parallel mechanism added.
+`operator`/`inspector` querying `scripts/query-memory.mjs` for a task that
+overlaps a prior research topic gets that report's chunks back alongside
+`.claude/memory/`/`memory/` results, with no extra wiring needed on their side.
+
 `scripts/prune-memory.mjs` archives (never deletes) vectors unused for 30+
 days with fewer than 2 accesses — the same staleness posture as `/memory-prune`
 for the markdown layer, just applied to the derived vector index. Re-running
@@ -722,6 +789,8 @@ would duplicate a platform feature that already does this job.
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
 | `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
 | `/memory-prune` | — | Archive stale `memory/sessions/` notes, flag stale `.claude/memory/` entries for review |
+| `/research <topic>` | `research` | Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 0/1/2/4) |
+| `/autotune <target> <objective>` | `autotune` | Karpathy-autoresearch-style self-improvement loop for one agent `.md` file |
 
 ---
 
@@ -734,7 +803,7 @@ pull in `better-sqlite3` for the local memory vector store.
 
 | Script | What it does |
 |---|---|
-| `npm run memory:ingest` | Rebuilds `.claude/memory-vectors.db` from `.claude/memory/` + `memory/` markdown |
+| `npm run memory:ingest` | Rebuilds `.claude/memory-vectors.db` from `.claude/memory/` + `memory/` + `research/*/TITLE.MD` markdown |
 | `npm run memory:query -- "<text>" [topK]` | CLI for the same query `operator`/`inspector` run via Bash |
 | `npm run memory:prune [maxAgeDays] [minAccessCount]` | Archives stale vectors (default: 30 days, <2 accesses) |
 | `npm run report` | Aggregates `telemetry/runs/*.jsonl` — see "Token Telemetry" |

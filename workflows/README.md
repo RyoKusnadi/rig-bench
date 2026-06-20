@@ -36,6 +36,7 @@ mkdir -p your-project/.claude/agents
 cp ../subagents/operator/operator.md your-project/.claude/agents/operator.md
 cp ../subagents/inspector/inspector.md your-project/.claude/agents/inspector.md
 cp ../subagents/scout/scout.md your-project/.claude/agents/scout.md
+cp ../subagents/researcher/researcher.md your-project/.claude/agents/researcher.md
 mkdir -p your-project/.claude/agents/rules
 cp ../subagents/rules/*.md your-project/.claude/agents/rules/
 ```
@@ -248,6 +249,89 @@ scout (MANIFEST) → inspector (effort=maximum) ── ESCALATION / CRITICAL_CVE
 | `branch` | string | No | Target branch (default: `main`) |
 | `notes` | string | No | Release highlights for CHANGELOG |
 | `tier` | string | No | `force_tier` override for the Release stage only — the Audit stage always uses `frontier` |
+
+### `research.js`
+
+Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 4–5). No
+`scout` stage — there's no code/build/lint to gate, just an iterative
+search-verify loop followed by a single synthesis call.
+
+```
+researcher (RESEARCH) ── confidence < threshold && iterations < max ──┐
+        │                                                              │
+        └──────────────────────────── loop ───────────────────────────┘
+        │ confidence >= threshold, or max_iterations reached
+        ▼
+researcher (SYNTHESIZE, frontier tier) ── report from verified facts only
+        ▼
+return research_state + report (frontmatter fields + body_markdown, or null if synthesis BLOCKed)
+```
+
+| Arg | Type | Required | Description |
+|---|---|---|---|
+| `intake` | object | Yes | Parsed `research/{topic}/intake.json` contents (see `config/schemas/research-intake.schema.json`) — pass the object itself, never a path; this script has no filesystem access |
+| `tier` | string | No | `force_tier` override (`frontier`/`standard`/`economy`) — pins every `researcher` call, loop **and** synthesis (default: `standard` for the loop, `frontier` for synthesis) |
+
+Confidence is computed deterministically in the workflow script after every
+iteration (fraction of `focus_areas` covered by a `verified` fact) — `researcher`
+never self-reports it or decides the loop is done. The loop stops at
+`completed: true` once confidence clears `validation_threshold`, or
+`completed: false` once `max_iterations` is hit — either way, a single
+`SYNTHESIZE` call still runs afterward (a below-threshold report just says so
+up front, see `researcher.md` SYNTHESIZE mode step 7). The returned `report`
+(`{frontmatter, body_markdown}`) deliberately omits `generated_at` — this
+script can't call `Date.now()`/`new Date()` (Workflow tool constraint), so
+the caller stamps it and writes `research/{topic}/TITLE.MD` itself (see the
+`/research` command). `report` is `null` if the synthesis call BLOCKed
+(e.g. zero verified facts) or returned no valid response — `research_state`
+is still returned in that case so nothing is lost.
+
+---
+
+### `autotune.js`
+
+Karpathy-autoresearch-style self-improvement loop for one agent `.md` file —
+mutate one thing, measure with binary criteria, keep or discard, repeat.
+Reuses existing agents via new modes instead of adding a 5th/6th agent:
+`operator` gets `TUNE` (mutate/commit/revert), `inspector` gets `EVALUATE`
+(define criteria / score, blind to the mutation rationale — avoids the
+"evaluator grades charitably when it knows the intent" bias), `scout` gets
+`VALIDATE_AGENT_FILE` (a cheap, economy-tier structural sanity check that
+catches a corrupted mutation before it can sabotage its own evaluation).
+
+```
+inspector (EVALUATE/DEFINE_CRITERIA) ──► 4-6 binary criteria + test cases
+              ▼
+inspector (EVALUATE/SCORE) ──► baseline score
+              ▼
+┌─ operator (TUNE/MUTATE, one operator at a time) ──────────────┐
+│         ▼                                                      │
+│  scout (VALIDATE_AGENT_FILE) ── BLOCK ──► operator (REVERT) ───┤
+│         │ PASS                                                 │
+│         ▼                                                      │
+│  inspector (EVALUATE/SCORE, blind to rationale)                │
+│         ▼                                                      │
+│  score regressed? ──► operator (REVERT)                        │
+│  score improved/equal? ──► operator (COMMIT, local only)       │
+└─ loop until 3 consecutive perfect scores, or max_iterations ──┘
+              ▼
+Return: baseline_score, final_score, tuning_log, kept/discarded counts, stop_reason
+```
+
+| Arg | Type | Required | Description |
+|---|---|---|---|
+| `target` | string | Yes | One of `subagents/scout/scout.md`, `subagents/researcher/researcher.md` — hardcoded v1 allowlist, enforced both in this script and as a model-layer refusal in `operator.md`'s TUNE mode. `operator.md`/`inspector.md` are deliberately excluded: they ARE this loop's mutator/evaluator, so mutating either risks a corrupted agent judging itself with no independent check left |
+| `objective` | string | Yes | What "better" means for this target, in plain language |
+| `max_iterations` | number | No | Default 8 |
+| `stop_streak` | number | No | Consecutive perfect scores before stopping early — default 3 |
+| `tier` | string | No | `force_tier` override for `operator`/`inspector` calls — `scout` always stays `economy` |
+
+Each kept mutation is a **local commit only** — same posture as every other
+workflow's `operator` calls (push/PR is always a separate, explicit step).
+A discarded mutation is `git checkout`'d before the next iteration, so an
+uncommitted bad mutation never lingers in the working tree across iterations.
+
+---
 
 Every workflow above also accepts an optional `task_id` (string) — seeds
 `pipelineState.task_id` (see "State-passing, not transcript-passing" in the
