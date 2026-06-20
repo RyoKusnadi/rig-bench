@@ -74,10 +74,21 @@ const RESEARCH_ALLOWED_BASH = new Set(['cat', 'grep', 'rg', 'find', 'curl']);
 // `git add`/etc.
 const RESEARCH_ALLOWED_GIT_SUBCOMMANDS = new Set(['status', 'log', 'diff', 'show', 'branch']);
 
+// Self-clear carve-out: the research role blocks `node` outright, which
+// means a crashed/interrupted Ralph loop had no in-session way to lift its
+// own lock before the 30-min TTL in set-agent-role.mjs. This regex allows
+// only that exact invocation (with or without a leading `cd ... &&`,
+// matched per-segment below) — never `node` generally.
+const RESEARCH_SELF_CLEAR_RE = /^node\s+(?:\.\/)?scripts\/set-agent-role\.mjs\s+clear$/;
+
 function researchBashDecision(cmd) {
   const segments = cmd.split(/&&|\|\||;|\n|\|/).map((s) => s.trim()).filter(Boolean);
   if (segments.length === 0) {
     return { allow: false, reason: `BLOCKED: 'research' agent role: empty/unparseable command '${cmd}'.` };
+  }
+
+  if (segments.every((s) => RESEARCH_SELF_CLEAR_RE.test(s) || /^cd\s+\S+$/.test(s))) {
+    return { allow: true, reason: "research role: self-clear carve-out for 'node scripts/set-agent-role.mjs clear'." };
   }
 
   for (const segment of segments) {
