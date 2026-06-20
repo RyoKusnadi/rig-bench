@@ -6,10 +6,10 @@
   "properties": {
     "agent": { "const": "operator" },
     "status": { "type": "string", "enum": ["COMPLETE", "BLOCKED"] },
-    "mode": { "type": "string", "enum": ["BUILD", "REFACTOR", "DOCS", "SHIP"] },
+    "mode": { "type": "string", "enum": ["BUILD", "REFACTOR", "DOCS", "SHIP", "TUNE"] },
     "verdict": {
       "type": "string",
-      "enum": ["IMPLEMENTED", "GATE_FAIL", "NO_TESTS", "REGRESSION", "DOCS_UPDATED", "EXAMPLE_FAIL", "PR_CREATED", "PREFLIGHT_FAIL"]
+      "enum": ["IMPLEMENTED", "GATE_FAIL", "NO_TESTS", "REGRESSION", "DOCS_UPDATED", "EXAMPLE_FAIL", "PR_CREATED", "PREFLIGHT_FAIL", "MUTATED", "COMMITTED", "REVERTED", "TUNE_BLOCKED"]
     },
     "pipeline_gate": { "type": "string", "enum": ["PASS", "BLOCK"] },
     "blocking": { "type": "boolean" },
