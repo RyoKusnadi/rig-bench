@@ -1,0 +1,19 @@
+topic: "spec-driven task splitting for todo.md improvements"
+
+focus_areas: ["spec-driven development workflows", "task decomposition strategies", "single-task-per-spec patterns", "specs folder conventions", "Claude Code single-task-at-a-time limitation"]
+
+current_baseline: "Currently uses a single todo.md backlog and asks Claude Code to read it and pick an improvement; Claude Code can only carry one big task at a time, which makes large multi-part todo items unwieldy. Repo already has workflows/*.js pipelines, subagents, and a research/ output convention."
+
+target_outcome: "implementation_guide"
+
+constraints:
+  tech_stack: ["Node.js ESM scripts", "Markdown/YAML specs", "no build step, no TypeScript"]
+  version_policy: "latest_stable"
+  must_include: ["spec-driven development (SDD) methodology", "how to break a backlog item into one-spec-per-small-task", "specs folder structure/naming conventions", "how this fits with this repo's existing workflow/agent architecture"]
+  must_exclude: ["enterprise project management tools", "paid SaaS planning tools"]
+
+depth: "moderate_detail"
+
+validation_threshold: 0.85
+
+max_iterations: 5

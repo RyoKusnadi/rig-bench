@@ -82,6 +82,48 @@ test('research role: Bash rm -rf is denied', () => {
   assert.equal(decision.permissionDecision, 'deny');
 });
 
+test('research role: node scripts/set-agent-role.mjs clear is allowed (self-clear carve-out)', () => {
+  const { decision } = runHook(
+    { tool_name: 'Bash', tool_input: { command: 'node scripts/set-agent-role.mjs clear' } },
+    { RIGBENCH_AGENT_ROLE: 'research' }
+  );
+  assert.ok(decision, 'expected a permission decision');
+  assert.equal(decision.permissionDecision, 'allow');
+});
+
+test('research role: node scripts/set-agent-role.mjs clear is allowed after a cd prefix', () => {
+  const { decision } = runHook(
+    {
+      tool_name: 'Bash',
+      tool_input: { command: 'cd /some/path && node scripts/set-agent-role.mjs clear' },
+    },
+    { RIGBENCH_AGENT_ROLE: 'research' }
+  );
+  assert.ok(decision, 'expected a permission decision');
+  assert.equal(decision.permissionDecision, 'allow');
+});
+
+test('research role: node scripts/set-agent-role.mjs research (not clear) is still denied', () => {
+  const { decision } = runHook(
+    { tool_name: 'Bash', tool_input: { command: 'node scripts/set-agent-role.mjs research' } },
+    { RIGBENCH_AGENT_ROLE: 'research' }
+  );
+  assert.ok(decision, 'expected a permission decision');
+  assert.equal(decision.permissionDecision, 'deny');
+});
+
+test('research role: node scripts/set-agent-role.mjs clear chained with another command is denied', () => {
+  const { decision } = runHook(
+    {
+      tool_name: 'Bash',
+      tool_input: { command: 'node scripts/set-agent-role.mjs clear && rm -rf dist' },
+    },
+    { RIGBENCH_AGENT_ROLE: 'research' }
+  );
+  assert.ok(decision, 'expected a permission decision');
+  assert.equal(decision.permissionDecision, 'deny');
+});
+
 test('research role via .claude/hook-state/agent-role.json: Write to src/app.js is denied even with no env var', () => {
   clearRoleFile();
   writeRoleFile();
