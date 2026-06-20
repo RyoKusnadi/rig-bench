@@ -117,6 +117,39 @@ export function complete(extra) {
   process.exit(0);
 }
 
+// ── JSON-based permission decisions (PreToolUse `hookSpecificOutput`) ──────
+// Distinct from block()/allow() above: those use the exit-code protocol
+// (exit 2 = block, exit 0 = allow), which suppresses a tool call but can't
+// skip the permission prompt for a tool that would otherwise ask. These
+// three emit the structured `permissionDecision` JSON instead, letting a
+// hook actively grant ("allow") or refuse ("deny") without a prompt, or
+// abstain ("ask"/no output) and fall back to normal prompting/settings.
+
+export function permissionAllow(event, reason) {
+  logEvent('allow', { reason });
+  console.log(
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: event, permissionDecision: 'allow', permissionDecisionReason: reason },
+    })
+  );
+  process.exit(0);
+}
+
+export function permissionDeny(event, reason) {
+  logEvent('deny', { reason });
+  console.log(
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: event, permissionDecision: 'deny', permissionDecisionReason: reason },
+    })
+  );
+  process.exit(0);
+}
+
+export function noDecision() {
+  logEvent('no_decision');
+  process.exit(0);
+}
+
 // ── Small TTL cache for slow/external lookups ─────────────────────────────
 // Only used for things that genuinely don't change often (e.g. the repo's
 // default branch name) — not a general-purpose cache.

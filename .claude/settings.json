@@ -12,6 +12,15 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-tool-gatekeeper.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {

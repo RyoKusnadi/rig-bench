@@ -6,7 +6,9 @@ Run the `research` workflow for: $ARGUMENTS
 
 1. Check whether `research/<slug of $ARGUMENTS>/intake.json` already exists. If not, run `node scripts/ask-questionnaire.mjs` (it will prompt interactively for topic/focus_areas/etc., defaulting `topic` to $ARGUMENTS if asked) to produce it.
 2. Read the resulting `intake.json` with the `Read` tool.
-3. Invoke the `research` workflow with `args.intake` set to that file's parsed JSON contents — never a file path; the workflow script has no filesystem access of its own.
+3. Run `node scripts/set-agent-role.mjs research` — this locks the session into the `research` RBAC profile (hooks/pre-tool-gatekeeper.mjs): read-only tools only, edits restricted to `TITLE.MD`/`research_output/`, Bash restricted to read-only/search commands. Do this immediately before invoking the workflow, not earlier.
+4. Invoke the `research` workflow with `args.intake` set to that file's parsed JSON contents — never a file path; the workflow script has no filesystem access of its own.
+5. As soon as the workflow returns (success, BLOCK, or error — always), run `node scripts/set-agent-role.mjs clear` before doing anything else, so the rest of this session isn't left in read-only mode.
 
 Start by saying: "Starting research loop for: $ARGUMENTS" then invoke the workflow.
 

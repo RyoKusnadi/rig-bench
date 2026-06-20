@@ -1,6 +1,7 @@
 .claude/bash.log
 .claude/hooks.log
 .claude/hook-cache/
+.claude/hook-state/
 .claude/agent-telemetry.json
 .claude/instincts/
 .claude/session-state/
