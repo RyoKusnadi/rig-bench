@@ -64,6 +64,7 @@ const RESEARCH_READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebFetch', 'WebSea
 const RESEARCH_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
 const RESEARCH_EDIT_PATH_RE = /(^|[\\/])TITLE\.MD$/i;
 const RESEARCH_OUTPUT_DIR_RE = /research_output[\\/]/;
+const RESEARCH_TMP_DIR_RE = /^\/tmp[\\/]/;
 
 // Read-only/search commands the research role's Ralph loop needs — anything
 // whose base command isn't on this list is denied by default (deny-by-
@@ -129,8 +130,8 @@ function decideForResearch(toolName, toolInput) {
 
   if (RESEARCH_EDIT_TOOLS.has(toolName)) {
     const path = researchEditPath(toolInput);
-    if (RESEARCH_EDIT_PATH_RE.test(path) || RESEARCH_OUTPUT_DIR_RE.test(path)) {
-      return { allow: true, reason: `research role: '${toolName}' on '${path}' is within the allowed TITLE.MD/research_output/ output path.` };
+    if (RESEARCH_EDIT_PATH_RE.test(path) || RESEARCH_OUTPUT_DIR_RE.test(path) || RESEARCH_TMP_DIR_RE.test(path)) {
+      return { allow: true, reason: `research role: '${toolName}' on '${path}' is within the allowed TITLE.MD/research_output//tmp output path.` };
     }
     return {
       allow: false,

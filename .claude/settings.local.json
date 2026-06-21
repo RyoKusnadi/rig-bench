@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "WebFetch",
       "WebSearch",
@@ -8,16 +7,13 @@
       "mcp__plugin_playwright_playwright__*",
       "mcp__chrome-devtools__*",
       "mcp__github__*",
-      
       "Bash(rm:*)",
       "Bash(mv:*)",
       "Bash(cp:*)",
       "Bash(chmod:*)",
       "Bash(chown:*)",
-      
       "Bash(git:*)",
       "Bash(gh:*)",
-      
       "Bash(node:*)",
       "Bash(npm:*)",
       "Bash(npx:*)",
@@ -26,12 +22,12 @@
       "Bash(pip:*)",
       "Bash(bun:*)",
       "Bash(bunx:*)",
-      
       "Bash(docker:*)",
       "Bash(docker-compose:*)",
-      
       "Bash(curl:*)",
-      "Bash(wget:*)"
-    ]
+      "Bash(wget:*)",
+      "Workflow(deep-research)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }

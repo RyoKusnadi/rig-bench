@@ -73,6 +73,15 @@ test('research role: Write to TITLE.MD is allowed', () => {
   assert.equal(decision.permissionDecision, 'allow');
 });
 
+test('research role: Write to /tmp is allowed', () => {
+  const { decision } = runHook(
+    { tool_name: 'Write', tool_input: { file_path: '/tmp/research-scratch/foo.js', content: 'x' } },
+    { RIGBENCH_AGENT_ROLE: 'research' }
+  );
+  assert.ok(decision, 'expected a permission decision');
+  assert.equal(decision.permissionDecision, 'allow');
+});
+
 test('research role: Bash rm -rf is denied', () => {
   const { decision } = runHook(
     { tool_name: 'Bash', tool_input: { command: 'rm -rf dist' } },
