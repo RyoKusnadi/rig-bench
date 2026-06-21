@@ -35,6 +35,5 @@ npm run code:map        # regenerate .claude/session-state/structural-checkpoint
 
 ## Where to look first
 
-- `todo.md` — improvement backlog, grouped by priority; check it before assuming something is unhandled.
 - `workflows/README.md` — per-workflow args/return reference, model routing, and the full "Declined" list of options considered and rejected.
 - `subagents/README.md` and `subagents/SCHEMA.md` — agent roster and the frontmatter/output contract every agent follows.
