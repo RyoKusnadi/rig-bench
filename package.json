@@ -9,6 +9,7 @@
     "memory:prune": "node scripts/prune-memory.mjs",
     "code:map": "node scripts/code-map.mjs",
     "report": "node scripts/report.mjs",
+    "token-dashboard": "node scripts/token-dashboard.mjs",
     "test": "node --test"
   },
   "dependencies": {
