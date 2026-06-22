@@ -16,6 +16,9 @@ npm run memory:ingest   # chunk .claude/memory/ + memory/ into the TF-IDF vector
 npm run memory:query    # CLI: top-K relevant memory chunks for a query
 npm run report          # aggregate stats from telemetry/runs/*.jsonl
 npm run code:map        # regenerate .claude/session-state/structural-checkpoint.json (Tier 1 code checkpoint)
+npm run wiki:sync       # mirror a /research run into RIGBENCH_OBSIDIAN_VAULT_PATH (specs/done/0002)
+npm run wiki:query      # CLI: top-K relevant chunks from the vault's wiki/*.md pages (specs/done/0003)
+npm run wiki:lint       # broken-wikilink/orphan/stale-page report for the vault (specs/done/0004)
 ```
 
 ## Conventions
@@ -31,6 +34,7 @@ npm run code:map        # regenerate .claude/session-state/structural-checkpoint
 
 - `.claude/agent-telemetry.json`, `.claude/bash.log`, `.claude/hooks.log`, `telemetry/runs/`, `.claude/memory-vectors.db`, and `.claude/session-state/` (including `structural-checkpoint.json` and `working-set-checkpoint.json`) are gitignored and regenerable — never hand-edit or commit them.
 - `lib/memory-store.mjs` uses TF-IDF, not neural embeddings — deliberate (see workflows/README.md "Declined"); don't add an embedding dependency without re-reading that rationale first.
+- The Obsidian vault scripts (`scripts/{sync,query,lint}-obsidian.mjs`) are all no-ops/errors when `RIGBENCH_OBSIDIAN_VAULT_PATH` is unset — never hardcode a vault path; the vault lives outside this repo.
 - See `.claude/memory/gotchas.md` and `.claude/memory/decisions.md` for accumulated, harness-specific gotchas and architectural decisions beyond what's listed here.
 
 ## Where to look first
