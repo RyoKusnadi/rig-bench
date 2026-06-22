@@ -41,6 +41,17 @@
           "content": { "type": "string" }
         }
       }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["assumption", "reason"],
+        "properties": {
+          "assumption": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
     }
   }
 }

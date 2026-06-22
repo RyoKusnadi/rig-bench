@@ -187,6 +187,10 @@ not already on a feature branch.
 - For non-trivial scope (3+ files or an architectural decision): write a short plan first — files to touch, files NOT to touch, steps, risks — and ask at most 2–3 targeted clarifying questions if something material is ambiguous. For obvious 1–2 file changes, skip the formal plan and go straight to TDD.
 - If the task is a **bug fix with unknown root cause**: reproduce the failure, form 2–3 ranked hypotheses, test the cheapest first (see Debug diagnosis below), and only then plan the fix.
 
+#### Assumption surfacing (mandatory fallback when you don't ask a clarifying question)
+
+Most invocations are `Workflow`-driven with zero prior conversational context (Hard Rule 13) — there is no one to ask, even when the ambiguity would otherwise warrant the 2–3 clarifying questions above. The same gap applies to obvious 1–2 file changes that skip the formal plan step entirely. In either case, if you resolve a material ambiguity by picking one reasonable interpretation over another — rather than by asking a human — record it: append `{ "assumption": "<what you assumed>", "reason": "<why this interpretation over the alternative>" }` to the `assumptions` array in your final output. This is not a duplicate of the clarifying-questions rule — it's the fallback for exactly the cases that rule doesn't cover (headless runs, small-scope tasks). If you proceeded without needing to resolve any material ambiguity, omit the `assumptions` field entirely rather than sending an empty array.
+
 #### Debug diagnosis (bug fixes with unknown cause)
 
 1. Reproduce: run the failing test or the smallest repro command, capture exact output.
@@ -359,6 +363,9 @@ End your response with **exactly one** JSON block wrapped in ```json ... ```, as
   "last_error_message": "",
   "new_memories": [
     { "title": "Confidence scorer edge case", "content": "Empty LLM responses must return confidence 0, not -1 — the fallback path treats negative confidence as a crash signal." }
+  ],
+  "assumptions": [
+    { "assumption": "Used Bearer token format for the new auth header", "reason": "Task didn't specify a format; existing middleware in internal/auth already standardizes on Bearer, so matching it avoids introducing a second convention." }
   ]
 }
 ```
@@ -372,6 +379,7 @@ Field rules:
 - `verdict`, `pipeline_gate`, `summary`, `blocking`, and `findings` are required; `status`, `mode`, and `artifacts` are additional context for human/direct-invocation readers and don't replace the required fields.
 - `files_changed`, `test_status`, `last_error_message`: optional pipeline-state-patch fields — populate them when known so the orchestrator can merge them into `pipeline_state` for the next stage instead of re-parsing your prose. Omit entirely (don't send empty placeholders) when not applicable.
 - `new_memories`: optional array, empty/omitted when there's nothing non-obvious to record — see Hard Rule 16.
+- `assumptions`: optional array of `{ "assumption": string, "reason": string }` objects, omitted entirely (not sent as `[]`) when you made no assumptions — see "Assumption surfacing" under BUILD mode §1. Populate this whenever you resolved a material ambiguity without asking a clarifying question, whether because the call is workflow-driven with no one to ask or because the change is 1–2 files and skipped the formal plan.
 - If you cannot complete the task (missing information, ambiguous requirements, tool failure), set `pipeline_gate` to `BLOCK` and describe the blocker in `summary`. Do not guess or hallucinate a solution.
 - Your output will be validated against a strict JSON schema (`config/schemas/operator-output.schema.json`). Missing fields, wrong enum values, or trailing text after the JSON block will cause your output to be rejected and you will be re-invoked.
 
