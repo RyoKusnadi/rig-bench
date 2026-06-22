@@ -883,6 +883,47 @@ would duplicate a platform feature that already does this job.
 
 ---
 
+## Obsidian Vault Integration
+
+`/research` can mirror its output into an external Obsidian vault instead
+of (or alongside) the flat `research/{topic}/TITLE.MD` file, following
+Andrej Karpathy's ["LLM wiki"](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+pattern — raw sources stay immutable, compiled knowledge lives in a
+structured, cross-linked markdown wiki that compounds across runs instead
+of each research run being a throwaway file — as concretely shaped by
+[ar9av/obsidian-wiki](https://github.com/ar9av/obsidian-wiki) (`wiki/`
+pages, `index.md` catalog, `log.md` append-only history). Specced and
+implemented as three deliverables in `specs/done/0002-0004` mirroring the
+pattern's three loop operations:
+
+```
+Ingest (specs/0002)  research.js report ──► scripts/sync-obsidian.mjs ──► vault wiki/{slug}.md
+                                                                            + index.md + log.md + raw/{slug}-intake.json
+
+Query  (specs/0003)  question ──► scripts/query-obsidian.mjs (vault-scoped TF-IDF) ──► top-K wiki chunks
+                                       │
+                                  /wiki-query skill synthesizes an answer, citing pages,
+                                  offers to file it back as a new dated section / page
+
+Lint   (specs/0004)  scripts/lint-obsidian.mjs ──► broken wikilinks (fails the run)
+                                                     orphan pages, stale pages (reported only)
+```
+
+Everything is keyed off `RIGBENCH_OBSIDIAN_VAULT_PATH` (matches the existing
+`RIGBENCH_*` env var convention — `hooks/pre-bash-safety.mjs`,
+`hooks/read-budget.mjs`). If it's unset, `sync-obsidian.mjs` is a silent
+no-op (prints one line, exits 0) — `/research`'s `TITLE.MD` writing and
+memory ingest keep working exactly as before for anyone who hasn't
+configured a vault.
+
+The vault-scoped index (`${RIGBENCH_OBSIDIAN_VAULT_PATH}/.vault-index.db`)
+is a separate TF-IDF store from `.claude/memory-vectors.db` — see "Vector
+memory retrieval" above — so the user's personal vault corpus never mixes
+with this repo's own self-memory. Same TF-IDF-not-neural-embeddings
+rationale applies here as everywhere else in this repo.
+
+---
+
 ## Custom Slash Commands
 
 | Command | Workflow | Description |
@@ -892,7 +933,8 @@ would duplicate a platform feature that already does this job.
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
 | `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
 | `/memory-prune` | — | Archive stale `memory/sessions/` notes, flag stale `.claude/memory/` entries for review |
-| `/research <topic>` | `research` | Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 0/1/2/4) |
+| `/research <topic>` | `research` | Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 0/1/2/4) — also syncs into an Obsidian vault if configured, see "Obsidian Vault Integration" |
+| `/wiki-query <question>` | — | Ask a question against the synced Obsidian vault, optionally file the synthesized answer back (`specs/done/0003`) |
 | `/autotune <target> <objective>` | `autotune` | Karpathy-autoresearch-style self-improvement loop for one agent `.md` file |
 
 ---
@@ -910,6 +952,9 @@ pull in `better-sqlite3` for the local memory vector store.
 | `npm run memory:query -- "<text>" [topK]` | CLI for the same query `operator`/`inspector` run via Bash |
 | `npm run memory:prune [maxAgeDays] [minAccessCount]` | Archives stale vectors (default: 30 days, <2 accesses) |
 | `npm run report` | Aggregates `telemetry/runs/*.jsonl` — see "Token Telemetry" |
+| `npm run wiki:sync <slug> <generated_at> <outcome> [titleMdPath] [intakeJsonPath]` | Mirrors one `/research` run into `RIGBENCH_OBSIDIAN_VAULT_PATH` — see "Obsidian Vault Integration" |
+| `npm run wiki:query -- "<question>" [topK]` | Top-K relevant chunks from the vault's `wiki/*.md` pages |
+| `npm run wiki:lint [-- --stale-days N]` | Broken-wikilink/orphan-page/stale-page report for the vault; exits non-zero only on broken links |
 
 ---
 
