@@ -12,3 +12,6 @@ node_modules/
 .claude/memory-vectors.db-*
 memory-archive/
 specs/done/
+specs/*.md
+!specs/README.md
+research/
