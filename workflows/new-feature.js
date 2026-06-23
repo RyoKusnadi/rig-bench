@@ -395,10 +395,10 @@ if (currentState === STATES.FAILED) {
 }
 log(`operator: ${ship.verdict} — ${ship.summary}`)
 
-// `new_memories` (Priority 3 Phase 5): the agent still writes to
-// .claude/memory/ itself via Bash in SHIP mode — todo.md's "let the
-// orchestrator handle ingestion" instruction doesn't hold here, since this
-// workflow script has no filesystem access either (same constraint as
+// `new_memories`: the agent still writes to
+// .claude/memory/ itself via Bash in SHIP mode — the orchestrator can't
+// handle ingestion itself, since this workflow script has no filesystem
+// access either (same constraint as
 // everywhere else in this file). Surfacing new_memories in the structured
 // result is additive — it lets hooks/telemetry-writer.mjs log what got
 // flagged as a lesson without duplicating or replacing the agent's own write.

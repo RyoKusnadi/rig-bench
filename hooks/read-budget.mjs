@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse hook (matcher: Read) — tracks files read per session and blocks
-// once a session exceeds RIGBENCH_MAX_READS (default 50), the threshold from
-// todo.md's "Context Isolation Enforcement" success criterion. A session
+// once a session exceeds RIGBENCH_MAX_READS (default 50). A session
 // reading more than ~50 files via the Read tool usually means an agent gave
 // up on Grep-based retrieval and started loading the repo wholesale — this
 // forces a pivot back to Grep instead of silently burning context.
@@ -37,7 +36,7 @@ runHook(HOOK_NAME, 'PreToolUse', root, input.tool_name, () => {
 
   // Concurrent sessions can call this hook at the same instant — lock around
   // the read-modify-write so two increments to the same session never race
-  // and silently drop a count (see todo.md High — architecture/consistency).
+  // and silently drop a count.
   const entry = withFileLock(telemetryPath, () => {
     let telemetry = { sessions: {} };
     try {

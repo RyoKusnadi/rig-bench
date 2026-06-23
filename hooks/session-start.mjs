@@ -6,8 +6,8 @@
 // first prompt, so a new session starts with the same context the last one
 // ended with.
 //
-// Also injects both tiers of the Code Checkpoint Architecture (todo.md "The
-// 'Zero-Context' Dogma"), wrapped in <structural_checkpoint> and
+// Also injects both tiers of the Code Checkpoint Architecture, wrapped in
+// <structural_checkpoint> and
 // <working_set_checkpoint> tags so operator.md/inspector.md's "Checkpoint
 // Primacy" hard rule can recognize them: the structural map from
 // scripts/code-map.mjs (module boundaries, no Grep needed) and the

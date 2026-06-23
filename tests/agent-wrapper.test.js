@@ -1,6 +1,6 @@
 // Direct unit tests for lib/agent-wrapper.mjs's safeAgent()/
-// buildCorrectionPrompt() behavior (todo.md P0 #2, "Zero-Tolerance for
-// Schema Failures"). The cross-file drift check against workflows/*.js's
+// buildCorrectionPrompt() behavior, enforcing zero-tolerance for schema
+// failures. The cross-file drift check against workflows/*.js's
 // inline AGENT_MAX_RETRIES mirror lives in tests/lib-workflow-sync.test.js —
 // this file only exercises safeAgent's own retry/correction-prompt logic in
 // isolation.

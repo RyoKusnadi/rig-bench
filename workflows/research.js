@@ -210,8 +210,8 @@ function researchPrompt() {
   return `Mode: RESEARCH\n\n${projectStateForPrompt(state.next_search_query)}`
 }
 
-// ── Stagnation detection + query mutation (todo.md P1 "Stagnation and
-// Infinite Loops in the Research Agent"). Without this, a researcher that
+// ── Stagnation detection + query mutation, guarding against the loop
+// burning its budget chasing a stalled signal. Without this, a researcher that
 // keeps re-extracting the same facts or re-issuing the same search burns
 // through max_iterations/token budget without making progress. Two
 // independent guards: (1) if confidence improves by less than

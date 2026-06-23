@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Reads every markdown file under .claude/memory/ and memory/, plus every
-// research/{topic}/TITLE.MD report (todo.md Phase 6), splits each into
-// chunks by header (## / ###), and ingests them into the local TF-IDF
-// vector store (lib/memory-store.mjs). Re-running re-ingests everything from
-// scratch (chunk content is cheap to regenerate; the store is a derived
-// artifact, not a source of truth — the markdown files are).
+// research/{topic}/TITLE.MD report, splits each into chunks by header
+// (## / ###), and ingests them into the local TF-IDF vector store
+// (lib/memory-store.mjs). Re-running re-ingests everything from scratch
+// (chunk content is cheap to regenerate; the store is a derived artifact,
+// not a source of truth — the markdown files are).
 //
-// "Tagging" a research chunk with type/topic/version (todo.md Phase 6) isn't
-// a separate schema column — lib/memory-store.mjs's chunks table has no
+// "Tagging" a research chunk with type/topic/version isn't a separate
+// schema column — lib/memory-store.mjs's chunks table has no
 // metadata columns to filter on, and queryTopK() only ever ranks by cosine
 // similarity, never by a structured filter. Instead, TITLE.MD's own YAML
 // frontmatter (topic/target_outcome/latest_version/...) is plain text that

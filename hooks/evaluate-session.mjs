@@ -2,7 +2,7 @@
 // Stop hook — scans the session transcript for our own failure vocabulary
 // (GATE_FAIL, BLOCKED, ESCALATE, etc.) and captures recurring patterns as
 // "instincts" under .claude/instincts/pending/. This is the Capture step (plus
-// a cheap version of Validate, via an occurrence counter) from todo.md's
+// a cheap version of Validate, via an occurrence counter) from the
 // Instincts v2 pipeline. Auto-promotion to subagents/rules/common/ happens
 // via the /evolve command (see .claude/commands/evolve.md), not here.
 //

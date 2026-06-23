@@ -21,7 +21,7 @@ A production-grade multi-agent harness for AI-driven software engineering. Provi
 
 ```
 rig-bench/
-├── subagents/       # 4 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster + scout (mechanical-only, no judgment work — see workflows/README.md "Declined") + researcher (questionnaire-driven research loop, todo.md "Ralph Loop" Phase 1)
+├── subagents/       # 4 specialized agent definitions (.md with YAML frontmatter) — "Lean 2" roster + scout (mechanical-only, no judgment work — see workflows/README.md "Declined") + researcher (questionnaire-driven research loop)
 ├── workflows/       # 8 deterministic state-machine pipelines (.js orchestration scripts)
 ├── config/
 │   ├── model-tiers.json    # Tier registry: frontier/standard/economy → model ID, max_tokens, temperature
@@ -65,8 +65,7 @@ Each agent is a single `.md` file with YAML frontmatter declaring its model, too
 Each agent's frontmatter declares a `model_tier` (`frontier`/`standard`/`economy`), not a hardcoded model ID — see [Model Tier Registry & Routing](#model-tier-registry--routing) below for how the actual model gets resolved per call.
 
 Both agents are spawned with zero *stale* file context, not zero context —
-the **Code Checkpoint Architecture** (`todo.md` "The 'Zero-Context' Dogma")
-gives each agent two checkpoints up front so it doesn't pay a cold-start tax
+the **Code Checkpoint Architecture** gives each agent two checkpoints up front so it doesn't pay a cold-start tax
 re-discovering the same architecture every session:
 
 - **Tier 1, structural checkpoint** — `scripts/code-map.mjs` regex-walks
@@ -88,7 +87,7 @@ checkpoint covers — checkpoints bound the rediscovery cost, they don't
 eliminate the need for ground-truth lookups on uncovered code. See the
 "Context isolation" section at the top of each agent's `.md` file.
 
-This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `todo.md` for the rationale (spawn-tax reduction). A third agent, `scout`, was added later — it's a deliberate, narrow exception (see the `memory-manager` "Not built" note further down): mechanical command-running only, zero judgment surface, so it doesn't reintroduce the reviewer-sprawl this consolidation guards against. A fourth, `researcher` (`todo.md` "Ralph Loop"), is a second deliberate exception, on different grounds: it's not a reviewer competing with `inspector`'s role, it's a genuinely distinct job (iterative web research, not build/review) that neither `operator` nor `inspector` is scoped for. Per-call loop control, confidence scoring, and state merging stay in JavaScript (`lib/research-state.mjs`) — `researcher` only does the search-and-verify step itself, the same separation of judgment-vs-control already used for `operator`/`inspector`.
+This collapses what used to be a 15-agent roster (orchestrator, planner, developer, test-writer, refactorer, code-reviewer, security-reviewer, secret-scanner, dependency-auditor, verifier, debugger, docs-writer, git-assistant, changelog-writer, memory-manager) into two agents that each do their combined job in a single spawn — see `.claude/memory/decisions.md` for the rationale (spawn-tax reduction). A third agent, `scout`, was added later — it's a deliberate, narrow exception (see the `memory-manager` "Not built" note further down): mechanical command-running only, zero judgment surface, so it doesn't reintroduce the reviewer-sprawl this consolidation guards against. A fourth, `researcher`, is a second deliberate exception, on different grounds: it's not a reviewer competing with `inspector`'s role, it's a genuinely distinct job (iterative web research, not build/review) that neither `operator` nor `inspector` is scoped for. Per-call loop control, confidence scoring, and state merging stay in JavaScript (`lib/research-state.mjs`) — `researcher` only does the search-and-verify step itself, the same separation of judgment-vs-control already used for `operator`/`inspector`.
 
 ### Agent Communication Protocol
 
@@ -554,7 +553,7 @@ test command for that file (`timeout 30`), and emits a compact JSON summary —
 `{"status":"pass","tool":"go test","exit_code":0,"summary":"ok ...","first_error":""}`
 — as supplementary hook feedback. Exits silently (no test config found, or the file
 extension isn't covered) rather than nagging on every doc/config edit. This is the
-`auto-run-tests` hook from `todo.md` Phase 2 — it doesn't replace the standalone
+`auto-run-tests` hook — it doesn't replace the standalone
 verifier step (that's now part of `operator`'s self-verification gate), it just adds a
 fast, cheap pass/fail signal right after a file changes. Also persists the
 rolling last 3 results to `.claude/session-state/last-test-results.json`, so
@@ -575,8 +574,8 @@ exits 0 — this hook is purely observational.
 Runs **before** every `Read` tool call. Tracks how many files the current
 session has read (`session_id` → count, plus a capped recent-files list) in
 `.claude/agent-telemetry.json`, and blocks once a session exceeds
-`RIGBENCH_MAX_READS` (default **50** — the threshold from todo.md's "Context
-Isolation Enforcement" target). Reading more than ~50 files via the `Read`
+`RIGBENCH_MAX_READS` (default **50**, the context-isolation enforcement
+threshold). Reading more than ~50 files via the `Read`
 tool in one session usually means an agent gave up on `Grep`-based retrieval
 and started loading the repo wholesale — the block message tells it to
 narrow scope with `Grep` instead, or raise `RIGBENCH_MAX_READS` if the task
@@ -596,8 +595,7 @@ if each spawn gets its own `session_id`, it's naturally per-agent. Tune
 ### `hooks/pre-webfetch-security.mjs` (PreToolUse, matcher: `WebFetch`)
 
 Runs **before** every `WebFetch` tool call — SSRF protection for the
-`researcher` agent's web access (`todo.md` P0 "Trivially Bypassable Regex-
-Based Bash Security" item, the WebFetch half). Parses the requested URL,
+`researcher` agent's web access. Parses the requested URL,
 resolves its hostname via DNS (or reads the literal IP directly if the URL
 already has one), and blocks the call if any resolved address falls in a
 private/reserved range: `10.x`, `172.16-31.x`, `192.168.x`, `127.x`,
@@ -630,7 +628,7 @@ session transcript for our own failure vocabulary (`GATE_FAIL`, `NO_TESTS`,
 `.claude/instincts/pending/INST-<hash>.md` — frontmatter with `confidence: 0.3` and
 an `occurrences:` counter that increments on repeat sightings of the same pattern.
 This is the Capture step (plus a cheap Validate, via the occurrence counter) from
-`todo.md`'s Instincts v2 pipeline — promotion to `subagents/rules/common/` happens
+the Instincts v2 pipeline (see `.claude/memory/decisions.md`) — promotion to `subagents/rules/common/` happens
 via the `/evolve` command, not automatically here. **Always exits 0** — it's purely
 observational and must never force the session to keep going (exit 2 on a Stop hook
 blocks stopping).
@@ -768,7 +766,7 @@ treat that block as authoritative — see "Hard Rules" in `operator.md`/`inspect
 
 `npm run memory:ingest` also walks `research/{topic}/TITLE.MD` (every report
 the `research` workflow's `/research` command writes — see "research"
-workflow above) into the same store (`todo.md` Phase 6). There's no separate
+workflow above) into the same store. There's no separate
 `type: research`/`topic`/`version` tag column — `lib/memory-store.mjs`'s
 schema has no metadata filter, only cosine-similarity ranking — so "tagging"
 is just `TITLE.MD`'s own YAML frontmatter sitting in plain text as that
@@ -892,7 +890,7 @@ would duplicate a platform feature that already does this job.
 | `/review [pr-number]` | `pr-review` | Parallel quality review of a PR or current diff |
 | `/evolve` | — | Cluster `.claude/instincts/pending/` into a permanent `subagents/rules/common/` rule |
 | `/memory-prune` | — | Archive stale `memory/sessions/` notes, flag stale `.claude/memory/` entries for review |
-| `/research <topic>` | `research` | Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 0/1/2/4) |
+| `/research <topic>` | `research` | Questionnaire-driven research loop |
 | `/autotune <target> <objective>` | `autotune` | Karpathy-autoresearch-style self-improvement loop for one agent `.md` file |
 
 ---

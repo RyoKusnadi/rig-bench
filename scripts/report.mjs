@@ -5,8 +5,7 @@
 //
 // Usage: node scripts/report.mjs
 //
-// Note on "validation failure rate per agent" (asked for in todo.md Phase 5):
-// not tracked here. Workflow-driven agent() calls already get validated,
+// Note on "validation failure rate per agent": not tracked here. Workflow-driven agent() calls already get validated,
 // structured output via the Workflow tool's `schema` option — a call either
 // returns a validated object or `null` (treated as BLOCK/ESCALATE upstream),
 // so there's no separate "validation failed but kept going" state to count.

@@ -11,8 +11,9 @@
 //   standard — + generic destructive-command blocking (default)
 //   strict   — + blocks `git add .`/`git add -A` and `--no-verify`
 //
-// Optional allowlist mode (todo.md P0 "Trivially Bypassable Regex-Based Bash
-// Security"): set RIGBENCH_ALLOWED_COMMANDS to a comma-separated list of
+// Optional allowlist mode, closing the gap where a denylist-only check is
+// bypassable via variable expansion or piping to a shell: set
+// RIGBENCH_ALLOWED_COMMANDS to a comma-separated list of
 // command names (e.g. "git,npm,node,cargo,go,test") to switch from
 // blocklisting to default-deny. When set, every `&&`/`||`/`;`/`|`/newline-
 // separated segment of the command must resolve to an allowlisted binary

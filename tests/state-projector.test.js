@@ -1,6 +1,6 @@
 // Tests for lib/state-projector.mjs — projects the full researchState down
-// to a bounded Markdown prompt fragment for the research loop (todo.md P0
-// #1, "Context Window Bomb").
+// to a bounded Markdown prompt fragment for the research loop, keeping it
+// from growing unbounded as the research loop accumulates state.
 //
 // Run with: node --test tests/
 
