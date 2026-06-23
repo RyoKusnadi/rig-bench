@@ -1,15 +1,20 @@
 # Specs
 
-Spec-driven decomposition of `todo.md`. `todo.md` stays as the long-form
-rationale ("why this matters"); a spec here is the short-form executable
-unit ("what to build, scoped to one PR").
+Specs are the short-form executable unit ("what to build, scoped to one
+PR"). A spec's `source:` field can point at whatever prior context
+motivated it — an existing decision in `.claude/memory/decisions.md`, a
+GitHub issue, a discussion, or a short description of the request — there's
+no single canonical long-form doc it's decomposed from. Shipped/historical
+rationale (decisions already made and built) lives in
+`.claude/memory/decisions.md`; specs are reserved for forward-looking,
+not-yet-built, single-deliverable work.
 
 ## Rule
 
 One spec = one deliverable, sized to fit a single `new-feature.js`/`bug-fix.js`/
 `refactor.js` workflow run (one hook, one script, one schema change — not a
-whole `todo.md` section). If a spec's Implementation Notes start spanning
-multiple unrelated files, split it.
+whole feature's worth of work). If a spec's Implementation Notes start
+spanning multiple unrelated files, split it.
 
 This is a deliberate divergence from GitHub Spec Kit and Kiro, which split
 each feature into separate `spec.md` (requirements)/`plan.md`
@@ -43,6 +48,20 @@ before flipping status. This mirrors Spec Kit's same marker pattern and
 exists because vague, unresolved acceptance criteria is the single
 most-cited cause of spec drift in every convention surveyed (Spec Kit, EARS).
 
+## Validation
+
+`depends_on` is checked, not just declared. `npm run specs:graph`
+(`scripts/specs-graph.mjs`) walks `specs/*.md` and `specs/done/*.md` and
+reports three things, exiting 1 if any are found: a cycle in `depends_on`, a
+`depends_on` pointing at an id that doesn't exist, and drift — a `done` or
+`in_progress` spec depending on something still `draft`. `/specs` resolves
+new `depends_on` references against the existing listing at creation time
+(asking rather than guessing on a typo or an unresolved sibling), but doesn't
+re-run the full graph check itself except when scaffolding more than one
+spec at once — run `npm run specs:graph` directly any other time you want to
+confirm the whole graph is still consistent (e.g. after manually editing a
+spec's `status` or `depends_on`).
+
 ## Frontmatter
 
 ```yaml
@@ -51,7 +70,7 @@ id: 0001
 title: Short imperative title
 status: draft
 depends_on: []
-source: todo.md#anchor-or-section-name
+source: free text — a decision in .claude/memory/decisions.md, an issue link, or a short description of what motivated this spec
 ---
 ## Problem
 ## Acceptance Criteria
