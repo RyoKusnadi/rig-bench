@@ -11,6 +11,7 @@
     "wiki:query": "node scripts/query-obsidian.mjs",
     "wiki:lint": "node scripts/lint-obsidian.mjs",
     "code:map": "node scripts/code-map.mjs",
+    "specs:graph": "node scripts/specs-graph.mjs",
     "report": "node scripts/report.mjs",
     "token-dashboard": "node scripts/token-dashboard.mjs",
     "test": "node --test"

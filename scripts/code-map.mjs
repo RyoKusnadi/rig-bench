@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// Tier 1 of the Code Checkpoint Architecture (todo.md "The Structural
-// Checkpoint"). Walks hooks/, lib/, scripts/, workflows/, and subagents/ and
-// extracts a deterministic topology map — imports/exports for plain ESM
-// files, meta.name/description for workflows, frontmatter for agents — so a
-// new session can see module boundaries without Grep/Read discovery.
+// Tier 1 of the Code Checkpoint Architecture. Walks hooks/, lib/, scripts/,
+// workflows/, and subagents/ and extracts a deterministic topology map —
+// imports/exports for plain ESM files, meta.name/description for workflows,
+// frontmatter for agents — so a new session can see module boundaries
+// without Grep/Read discovery.
 //
-// Deliberately regex-based, not an AST parser: todo.md calls for "regex/
-// simple parsing", and this repo has no build step or TS compiler to lean on
-// (see CLAUDE.md "Hooks/lib/scripts are plain ESM .mjs, no build step"). A
+// Deliberately regex-based, not an AST parser, since this repo has no build
+// step or TS compiler to lean on (see CLAUDE.md "Hooks/lib/scripts are plain
+// ESM .mjs, no build step"). A
 // missed edge case here just means an incomplete map, not a wrong one — the
 // agent still has Read/Grep as a fallback for anything this script misses.
 //

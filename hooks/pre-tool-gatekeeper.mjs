@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse hook (matcher: "" — fires for every tool) — Role-Based Access
-// Control gatekeeper (todo.md "Implement Role-Based Access Control (RBAC)
-// via PreToolUse Hook"). Reads RIGBENCH_AGENT_ROLE and enforces a strict
+// Control gatekeeper. Reads RIGBENCH_AGENT_ROLE and enforces a strict
 // read-only boundary for the autonomous `research` role (the Ralph loop
 // must never edit src/ or run arbitrary code), while staying out of the way
 // for the interactive `developer` role, which keeps relying on

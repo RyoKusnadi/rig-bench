@@ -1,5 +1,5 @@
-// Tests for hooks/pre-tool-gatekeeper.mjs (todo.md "Implement Role-Based
-// Access Control (RBAC) via PreToolUse Hook"). Runs the hook as a real
+// Tests for hooks/pre-tool-gatekeeper.mjs, which implements Role-Based
+// Access Control (RBAC) via a PreToolUse hook. Runs the hook as a real
 // subprocess (same invocation Claude Code uses: JSON on stdin, decision on
 // stdout) rather than importing it, since the hook's behavior is its
 // process boundary contract — env vars in, JSON/exit-code out.

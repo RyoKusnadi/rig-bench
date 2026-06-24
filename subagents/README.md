@@ -237,4 +237,4 @@ You are a [role]. [System prompt follows...]
 
 - `isolation: worktree` in agent frontmatter — run parallel mutating agents in isolated git worktrees without conflicts (runtime `isolation` in workflow `agent()` calls already works; frontmatter field is reserved)
 - IDE LSP integration — `mcp__ide__getDiagnostics` always active for TypeScript projects
-- Hook-driven automation (`PreToolUse`/`PostToolUse`/`Stop` hooks) to replace some of operator's and inspector's deterministic steps (test runs, dependency audits, secret scans) with scripts instead of LLM tool calls — see `todo.md` Phase 2
+- Hook-driven automation (`PreToolUse`/`PostToolUse`/`Stop` hooks) to replace some of operator's and inspector's deterministic steps (test runs, dependency audits, secret scans) with scripts instead of LLM tool calls

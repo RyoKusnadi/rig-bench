@@ -1,5 +1,5 @@
 // Tests for scripts/code-map.mjs — Tier 1 of the Code Checkpoint
-// Architecture (todo.md "The Structural Checkpoint"). Walks a fixture repo
+// Architecture. Walks a fixture repo
 // and asserts the regex-based import/export/meta extraction produces the
 // expected structural-checkpoint.json shape. Runs the script as a real
 // subprocess against a temp dir built to look like rig-bench's layout

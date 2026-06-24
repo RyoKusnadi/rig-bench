@@ -4,8 +4,8 @@
 // compacts context, so a long operator/inspector session doesn't lose track
 // of its original request across a compaction.
 //
-// Also writes Tier 2 of the Code Checkpoint Architecture (todo.md "The
-// Working-Set Checkpoint"): the actual content of files under active
+// Also writes Tier 2 of the Code Checkpoint Architecture (the Working-Set
+// Checkpoint): the actual content of files under active
 // modification, so the next session can resume editing without re-Reading
 // them from disk. Tier 1 (the structural map of the whole repo) is a
 // separate, on-demand script — see scripts/code-map.mjs.

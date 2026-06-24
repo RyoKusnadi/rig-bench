@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Sets/clears the agent-role state file that hooks/pre-tool-gatekeeper.mjs
-// reads (todo.md "Implement Role-Based Access Control (RBAC) via PreToolUse
-// Hook", Task 3). Subagents spawned via the Workflow tool's agent() calls
+// reads to enforce role-based access control via the PreToolUse hook.
+// Subagents spawned via the Workflow tool's agent() calls
 // run in-process, sharing this session's environment — there's no
 // `spawn('claude', ...)` subprocess boundary to set RIGBENCH_AGENT_ROLE on
 // per-call. A deterministic state file the main session writes immediately
