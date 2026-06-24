@@ -276,7 +276,8 @@ scout (MANIFEST) → inspector (effort=maximum) ── ESCALATION / CRITICAL_CVE
 
 ### `research.js`
 
-Questionnaire-driven research loop (`todo.md` "Ralph Loop", Phases 4–5). No
+Questionnaire-driven research loop ("Ralph loop" — search/extract/verify
+repeated until confidence clears a threshold or the loop stagnates). No
 `scout` stage — there's no code/build/lint to gate, just an iterative
 search-verify loop followed by a single synthesis call.
 
@@ -302,10 +303,9 @@ never self-reports it or decides the loop is done. The loop stops at
 `completed: true` once confidence clears `validation_threshold`; otherwise
 `completed: false` and `research_state.stop_reason` is one of
 `max_iterations` (the iteration cap was hit) or `stagnated` (confidence
-improved by less than `0.05` for 2 consecutive iterations — `todo.md`
-"Stagnation and Infinite Loops in the Research Agent": stops the loop early
-instead of burning the remaining iteration/token budget chasing a confidence
-score that's stopped moving). Independently, if `researcher`'s
+improved by less than `0.05` for 2 consecutive iterations — stops the loop
+early instead of burning the remaining iteration/token budget chasing a
+confidence score that's stopped moving). Independently, if `researcher`'s
 `next_search_query` comes back identical to the query it was just given (the
 agent stuck re-issuing the same search), the workflow force-mutates it
 (appending `" site:reddit.com"` or `" alternative to"`, alternating) before

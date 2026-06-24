@@ -1,6 +1,6 @@
 // Shared helpers for Claude Code hooks. Plain Node.js (no deps) so hooks run
 // identically on macOS, Linux, and Windows — the reason this harness moved
-// off Bash (see todo.md "Cross-Platform Hook Migration"). Also centralizes
+// off Bash. Also centralizes
 // structured logging, fail-open error handling, and the RIGBENCH_* env vars
 // so every hook gets them uniformly instead of reimplementing them.
 

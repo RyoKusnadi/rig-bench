@@ -2,8 +2,8 @@
 // workflow scripts have no filesystem/Node API access and can't `import`
 // lib/*.mjs or read config/*.json directly (see lib/agent-wrapper.mjs and
 // workflows/research.js's "TIER_MODELS are mirrored everywhere else"
-// comments). todo.md High — architecture/consistency: nothing previously
-// caught the lib/inline copies drifting apart; these tests are that check.
+// comments). Nothing previously caught the lib/inline copies drifting
+// apart; these tests are that check.
 //
 // Run with: node --test tests/
 

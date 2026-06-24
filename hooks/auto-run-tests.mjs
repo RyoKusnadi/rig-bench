@@ -58,7 +58,7 @@ function recordResult(result) {
   const path = join(stateDir, 'last-test-results.json');
   // Lock around the read-modify-write — concurrent Write/Edit calls in
   // parallel subagents can otherwise race and drop a result (same hazard as
-  // read-budget's telemetry counters; see todo.md High — architecture).
+  // read-budget's telemetry counters).
   withFileLock(path, () => {
     let history = [];
     try {

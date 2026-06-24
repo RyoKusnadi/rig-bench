@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse hook (matcher: WebFetch) — SSRF protection for the research
-// agent's web access (todo.md P0 #3). Parses the requested URL, resolves
+// agent's web access. Parses the requested URL, resolves
 // its hostname to IP address(es), and blocks the request if any resolved
 // address falls in a private/link-local/loopback range or the cloud
 // metadata address — without this, a `researcher` agent following a
@@ -27,9 +27,9 @@ const HOOK_NAME = 'pre-webfetch-security';
 const input = readStdinJson();
 const root = repoRoot(import.meta.url);
 
-// Private/reserved IPv4 ranges, plus the cloud metadata address explicitly
-// called out in todo.md. IPv6 equivalents (loopback, unique-local, link-local)
-// are included since Node's DNS lookup can return either family.
+// Private/reserved IPv4 ranges, plus the cloud metadata address. IPv6
+// equivalents (loopback, unique-local, link-local) are included since
+// Node's DNS lookup can return either family.
 function isPrivateOrReservedIPv4(ip) {
   const [a, b] = ip.split('.').map(Number);
   if (a === 10) return true; // 10.0.0.0/8

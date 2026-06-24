@@ -15,8 +15,8 @@
 // script. There is no `input_tokens`/`cache_read_tokens`/`cache_creation_tokens`
 // breakdown available at this layer, so this hook does not fabricate those
 // fields; it logs what's actually measurable (label, output-token delta,
-// escalation events, outcome) rather than padding the schema to match
-// todo.md's literal field list with invented numbers.
+// escalation events, outcome) rather than padding the schema with invented
+// numbers.
 //
 // Respects RIGBENCH_DISABLED_HOOKS=telemetry-writer.
 // Stdin: JSON with tool_name, tool_input, tool_response
