@@ -13,4 +13,5 @@ node_modules/
 memory-archive/
 specs/*.md
 !specs/README.md
+specs/*/*.md
 research/
