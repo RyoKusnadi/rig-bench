@@ -27,7 +27,13 @@
       "Bash(curl:*)",
       "Bash(wget:*)",
       "Workflow(deep-research)",
-      "Bash(tee /tmp/test-output.txt)"
+      "Bash(tee /tmp/test-output.txt)",
+      "Bash(grep '\\\\.md$')",
+      "Bash(rm -f .claude/agents/researcher.md)",
+      "Bash(rm -f .claude/commands/research.md .claude/commands/wiki-query.md)",
+      "Bash(npm install *)",
+      "Bash(npm test *)",
+      "Bash(git *)"
     ],
     "defaultMode": "acceptEdits"
   }

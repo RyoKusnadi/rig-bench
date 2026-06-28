@@ -1,12 +1,8 @@
-.PHONY: clean clean-dry-run test lint build token-dashboard
+.PHONY: clean clean-dry-run test lint build
 
 # Remove all files/directories ignored by .gitignore
 clean:
 	git clean -fdX
-
-# Serve the local token usage dashboard at http://localhost:4500/
-token-dashboard:
-	node scripts/token-dashboard.mjs
 
 # Run the test suite (node --test tests/**/*.test.js)
 test:

@@ -1,22 +1,11 @@
 {
   "name": "rig-bench",
   "private": true,
-  "description": "Local memory tooling for rig-bench (vector store, ingestion, pruning). Not a runtime dependency of workflows/*.js — those scripts have no filesystem or Node.js API access; see lib/memory-store.mjs.",
+  "description": "Multi-agent harness for Claude Code: subagents, workflows, hooks, and spec-driven pipelines.",
   "type": "module",
   "scripts": {
-    "memory:ingest": "node scripts/ingest-memory.mjs",
-    "memory:query": "node scripts/query-memory.mjs",
-    "memory:prune": "node scripts/prune-memory.mjs",
-    "wiki:sync": "node scripts/sync-obsidian.mjs",
-    "wiki:query": "node scripts/query-obsidian.mjs",
-    "wiki:lint": "node scripts/lint-obsidian.mjs",
     "code:map": "node scripts/code-map.mjs",
     "specs:graph": "node scripts/specs-graph.mjs",
-    "report": "node scripts/report.mjs",
-    "token-dashboard": "node scripts/token-dashboard.mjs",
     "test": "node --test"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.3.0"
   }
 }

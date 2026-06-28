@@ -1,15 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/session-start.mjs"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "",
@@ -26,15 +16,6 @@
           {
             "type": "command",
             "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-bash-safety.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/read-budget.mjs"
           }
         ]
       },
@@ -64,36 +45,6 @@
           {
             "type": "command",
             "command": "node ${CLAUDE_PROJECT_DIR}/hooks/auto-run-tests.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Workflow",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/telemetry-writer.mjs"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/evaluate-session.mjs"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR}/hooks/pre-compact.mjs"
           }
         ]
       }

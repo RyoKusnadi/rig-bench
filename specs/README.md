@@ -25,9 +25,18 @@ convention's lightweight equivalent of Spec Kit/Kiro's `plan.md`.
 stable references for commit messages and PRs; don't renumber on reorder,
 use `depends_on` instead. This matches GitHub Spec Kit's own numbering
 convention. When you start work on a spec, name the feature branch after it
-(`0001-memory-vector-db-auto-ingest`) the same way Spec Kit mirrors its
+(`0001-expense-tracker-scaffold`) the same way Spec Kit mirrors its
 feature-number+slug as the branch name — makes it trivial to find the spec
 a given branch/PR implements.
+
+**Finding the next ID:** spec files are gitignored, so never look in git
+history — check what exists on disk instead:
+
+```bash
+find specs -name "[0-9]*.md" | sort | tail -1
+```
+
+If nothing is found, start at `0001`.
 
 ## Lifecycle
 
@@ -104,7 +113,7 @@ directly into `Agent`/`Workflow` invocations. No tooling change to
 the existing `task` string parameter.
 
 For a non-trivial spec, prefer authoring it through an interview pass
-(`/specs` already does this via `AskUserQuestion` before drafting) rather
+(`/plan` already does this via `AskUserQuestion` before drafting) rather
 than writing the full spec in one shot — per Anthropic's guidance, having
 the agent ask clarifying questions before the spec is written catches
 ambiguity earlier and cheaper than catching it during implementation.
