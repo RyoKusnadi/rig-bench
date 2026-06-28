@@ -15,3 +15,5 @@ specs/*.md
 !specs/README.md
 specs/*/*.md
 research/
+projects/*
+!projects/.gitkeep

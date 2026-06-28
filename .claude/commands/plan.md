@@ -13,9 +13,10 @@ Runs entirely in plan mode. Never create a file before the user approves the pla
 **Phase 1 — Enter plan mode and orient**
 1. Call `EnterPlanMode` immediately.
 2. Read `specs/README.md` for the frontmatter/lifecycle and template convention.
-3. List `specs/*.md` and `specs/done/*.md` to find the highest existing `id`. Allocate
-   every new `id` this session needs from this single read (never re-scan mid-pass — doing
-   so causes id collisions when drafting multiple specs together).
+3. Run `find specs -name "[0-9]*.md" | sort | tail -1` to find the highest existing `id`
+   across all lifecycle folders. Allocate every new `id` this session needs from this single
+   read (never re-scan mid-pass — doing so causes id collisions when drafting multiple specs
+   together).
 4. If `$ARGUMENTS` references a decision in `.claude/memory/decisions.md`, a GitHub issue,
    or prior discussion, read it now for `rationale:` framing.
 
@@ -47,7 +48,7 @@ in $ARGUMENTS:
 
 The template below applies to **each** spec, whether you're drafting one or several.
 The plan must contain the literal file content for every spec — not just a description.
-Default `status: draft`.
+Default `status: ready` — the spec is written directly to `specs/ready/` after user approval, skipping the draft folder entirely.
 
 Spec sections (in order):
 1. `Problem` — what the current state is and why it's insufficient
@@ -69,8 +70,8 @@ Spec sections (in order):
 
 **Phase 4 — Exit and write**
 5. Call `ExitPlanMode` with all drafted spec content for user review.
-6. After approval, write each spec to `specs/{id}-{kebab-slug}.md` exactly as approved.
-   No additions, removals, or reordering.
+6. After approval, write each spec to `specs/ready/{id}-{kebab-slug}.md` with `status: ready`
+   exactly as approved. No additions, removals, or reordering.
 7. Report the file path(s) and id(s). If more than one spec was created, also run
    `npm run specs:graph` and report its result — confirms `depends_on` links resolve
    cleanly before handoff.
