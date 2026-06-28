@@ -31,7 +31,7 @@ a given branch/PR implements.
 
 ## Lifecycle
 
-`draft` → `ready` → `in_progress` → `done` (or `blocked` / `abandoned`).
+`draft` → `ready` → `in_progress` → `waiting_verification` → `done` (or `blocked` / `abandoned`).
 
 Each status has a matching folder — move the spec file into the folder that
 matches its current status:
@@ -41,6 +41,7 @@ matches its current status:
 | `specs/draft/` | Being written; may contain `[NEEDS CLARIFICATION]` markers |
 | `specs/ready/` | All ambiguity resolved; ready to be picked up |
 | `specs/in_progress/` | Actively being implemented |
+| `specs/waiting_verification/` | AI built + inspected; awaiting human confirmation before shipping |
 | `specs/done/` | Shipped — merged PR is the permanent record |
 | `specs/blocked/` | Waiting on a dependency or decision |
 | `specs/abandoned/` | Won't do; kept for reference |

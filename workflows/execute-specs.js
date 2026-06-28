@@ -21,12 +21,11 @@ if (specs.length === 0) {
 }
 
 // ── State machine (per-spec; each executeSpec() call tracks its own state) ──
-const STATES = { BUILD: 'BUILD', INSPECT: 'INSPECT', CORRECT: 'CORRECT', SHIP: 'SHIP', DONE: 'DONE', FAILED: 'FAILED' }
+const STATES = { BUILD: 'BUILD', INSPECT: 'INSPECT', CORRECT: 'CORRECT', WAITING_VERIFICATION: 'WAITING_VERIFICATION', DONE: 'DONE', FAILED: 'FAILED' }
 const TRANSITIONS = {
   [STATES.BUILD]:   { PASS: STATES.INSPECT, BLOCK: STATES.FAILED },
-  [STATES.INSPECT]: { PASS: STATES.SHIP, BLOCK: STATES.CORRECT, ESCALATE: STATES.FAILED },
+  [STATES.INSPECT]: { PASS: STATES.WAITING_VERIFICATION, BLOCK: STATES.CORRECT, ESCALATE: STATES.FAILED },
   [STATES.CORRECT]: { PASS: STATES.INSPECT, BLOCK: STATES.INSPECT },
-  [STATES.SHIP]:    { PASS: STATES.DONE, BLOCK: STATES.FAILED },
 }
 const MAX_RETRIES = 1
 const GATE_MAX_RETRIES = 2
@@ -39,7 +38,6 @@ const TIER_MODELS = { frontier: 'claude-opus-4-8', standard: 'claude-sonnet-4-6'
 const ESCALATION_POLICY = {
   [STATES.BUILD]:   { default_tier: 'standard', escalation_tier: 'frontier' },
   [STATES.INSPECT]: { default_tier: 'standard', escalation_tier: 'frontier' },
-  [STATES.SHIP]:    { default_tier: 'economy', escalation_tier: 'standard' },
 }
 const forceTier = args && args.tier && TIER_MODELS[args.tier] ? args.tier : null
 const resolveModel = (state) => TIER_MODELS[forceTier || ESCALATION_POLICY[state].default_tier]
@@ -269,7 +267,7 @@ ${ctx()}`
       return { spec_id: spec.id, pipeline_gate: 'BLOCK', verdict: 'ESCALATE', summary: inspectResult ? inspectResult.summary : 'Escalated', files_changed: specState.files_changed, findings: inspectResult ? inspectResult.findings : [], blocking_stage: 'inspector' }
     }
 
-    if (next === STATES.SHIP) { currentState = STATES.SHIP; break }
+    if (next === STATES.WAITING_VERIFICATION) { currentState = STATES.WAITING_VERIFICATION; break }
 
     if (retries >= MAX_RETRIES) { currentState = STATES.FAILED; break }
 
@@ -298,26 +296,26 @@ ${ctx()}`
   }
   log(`${specTag} inspector: ${inspectResult ? inspectResult.verdict : 'CLEAN'}.`)
 
-  // Stage 3: Ship
-  log(`${specTag} operator: shipping and updating spec status...`)
-  const ship = await trackedAgent(
-    `Mode: SHIP\n\nSpec: ${spec.id} — ${spec.title}\n\nAll pipeline gates passed. Your tasks:\n1. Run pre-flight checks\n2. Push the branch and create a draft PR referencing spec ${spec.id} in the title/body\n3. Update the spec file: set \`status: done\` in frontmatter and move from specs/in_progress/ to specs/done/ using Bash\n4. Save any lessons learned to .claude/memory/\n${ctx()}`,
-    { label: label('operator:ship'), phase: phaseLabel, schema: GATE_SCHEMA, agentType: 'operator', model: resolveModel(STATES.SHIP) }
+  // Stage 3: Move to waiting_verification
+  log(`${specTag} operator: marking spec as waiting_verification...`)
+  const specFilename = spec.filePath.split('/').pop()
+  const wait = await trackedAgent(
+    `Mode: BUILD\n\nSpec: ${spec.id} — ${spec.title}\n\nAll pipeline gates passed. Move the spec to waiting_verification:\n1. Update the spec file frontmatter: set \`status: waiting_verification\`\n2. Move the file using Bash: mv "specs/in_progress/${specFilename}" "specs/waiting_verification/${specFilename}"\n3. Commit locally with message: "chore(specs): ${spec.id} awaiting verification"\n\nDo NOT push. Do NOT create a PR.\n${ctx()}`,
+    { label: label('operator:wait'), phase: phaseLabel, schema: GATE_SCHEMA, agentType: 'operator', model: TIER_MODELS.economy }
   )
-  mergeSpecState(ship, 'operator')
+  mergeSpecState(wait, 'operator')
 
-  currentState = ship ? (TRANSITIONS[STATES.SHIP][ship.pipeline_gate] || STATES.FAILED) : STATES.FAILED
-  if (currentState === STATES.FAILED) {
-    log(`${specTag} operator: SHIP BLOCK — ${ship ? ship.summary : 'no response'}`)
-    return blocked('SHIP', ship ? ship.summary : 'No response', ship ? ship.findings : [])
+  if (!wait || wait.pipeline_gate !== 'PASS') {
+    log(`${specTag} operator: WAIT BLOCK — ${wait ? wait.summary : 'no response'}`)
+    return blocked('WAIT', wait ? wait.summary : 'No response', wait ? wait.findings : [])
   }
-  log(`${specTag} operator: SHIP — ${ship.summary}`)
+  log(`${specTag} operator: moved to waiting_verification.`)
 
   return {
     spec_id: spec.id,
     pipeline_gate: 'PASS',
-    verdict: 'IMPLEMENTED',
-    summary: ship.summary || `Spec ${spec.id} implemented and shipped.`,
+    verdict: 'AWAITING_VERIFICATION',
+    summary: `Spec ${spec.id} built and inspected — run /verify ${spec.id} to confirm and ship.`,
     files_changed: specState.files_changed,
     findings: [],
   }
@@ -361,18 +359,24 @@ for (let i = 0; i < levels.length; i++) {
 // ── Phase 3: Report ──────────────────────────────────────────────────────────
 phase('Report')
 
-const passed = executed.filter(r => r.pipeline_gate === 'PASS')
+const awaiting = executed.filter(r => r.verdict === 'AWAITING_VERIFICATION')
+const passed = executed.filter(r => r.pipeline_gate === 'PASS' && r.verdict !== 'AWAITING_VERIFICATION')
 const blocked = executed.filter(r => r.pipeline_gate === 'BLOCK')
 const skipped = unreachable.map(s => ({ spec_id: s.id, reason: 'Unresolvable dependency' }))
 
 log(`\nExecution summary:`)
+log(`  AWAITING_VERIFICATION (${awaiting.length}): ${awaiting.map(r => r.spec_id).join(', ') || 'none'}`)
 log(`  PASS (${passed.length}): ${passed.map(r => r.spec_id).join(', ') || 'none'}`)
 log(`  BLOCK (${blocked.length}): ${blocked.map(r => `${r.spec_id} [${r.verdict}]`).join(', ') || 'none'}`)
 log(`  SKIPPED (${skipped.length}): ${skipped.map(r => r.spec_id).join(', ') || 'none'}`)
+if (awaiting.length > 0) {
+  log(`\nRun /verify ${awaiting.map(r => r.spec_id).join(' ')} to confirm and ship.`)
+}
 
 return {
   outcome: blocked.length === 0 && skipped.length === 0 ? 'COMPLETE' : 'PARTIAL',
   executed: passed,
+  awaiting_verification: awaiting,
   blocked,
   skipped,
   token_telemetry: tokenLog,
