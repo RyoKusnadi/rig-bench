@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "operator-output",
+  "type": "object",
+  "required": ["agent", "pipeline_gate", "status", "mode", "artifacts", "findings", "summary", "blocking"],
+  "properties": {
+    "agent": { "const": "operator" },
+    "status": { "type": "string", "enum": ["COMPLETE", "BLOCKED"] },
+    "mode": { "type": "string", "enum": ["BUILD", "REFACTOR", "DOCS", "SHIP", "TUNE"] },
+    "verdict": {
+      "type": "string",
+      "enum": ["IMPLEMENTED", "GATE_FAIL", "NO_TESTS", "REGRESSION", "DOCS_UPDATED", "EXAMPLE_FAIL", "PR_CREATED", "PREFLIGHT_FAIL", "MUTATED", "COMMITTED", "REVERTED", "TUNE_BLOCKED"]
+    },
+    "pipeline_gate": { "type": "string", "enum": ["PASS", "BLOCK"] },
+    "blocking": { "type": "boolean" },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+          "file": { "type": "string" },
+          "line": { "type": "number" },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "test_status": { "type": "string" },
+    "last_error_message": { "type": "string" },
+    "new_memories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "content"],
+        "properties": {
+          "title": { "type": "string" },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["assumption", "reason"],
+        "properties": {
+          "assumption": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

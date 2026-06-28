@@ -1,0 +1,20 @@
+{
+  "frontier": {
+    "model": "claude-opus-4-8",
+    "max_tokens": 8192,
+    "temperature": 0.2,
+    "use_cases": "Complex architectural planning, ambiguous bug diagnosis, multi-file refactors, maximum-effort security/quality review, pre-release gates."
+  },
+  "standard": {
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 8192,
+    "temperature": 0.3,
+    "use_cases": "Standard feature implementation, bug fixes, refactors, TDD cycles, medium/high-effort code review."
+  },
+  "economy": {
+    "model": "claude-haiku-4-5",
+    "max_tokens": 4096,
+    "temperature": 0.2,
+    "use_cases": "Secret scanning, dependency auditing, formatting, changelog generation, docs updates, pre-flight/PR-formatting (SHIP mode), low-effort review."
+  }
+}
