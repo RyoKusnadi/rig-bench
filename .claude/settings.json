@@ -1,3 +1,18 @@
 {
-  "hooks": {}
+  "hooks": {},
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Read",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Command(plan)"
+    ]
+  }
 }

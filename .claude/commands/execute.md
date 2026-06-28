@@ -1,5 +1,5 @@
 ---
-description: Execute one or more ready specs with dependency ordering and concurrency. Usage: /execute [all | <id> <id> ...] [--resume]
+description: Execute one or more ready specs with dependency ordering. Usage: /execute [all | <id> <id> ...] [--resume]
 ---
 
 Execute specs from `specs/ready/` (and `specs/in_progress/` if `--resume` is present) for: $ARGUMENTS
@@ -21,9 +21,9 @@ Read the frontmatter of each file (use `Read` on each path) and extract:
 - `status` — should be `ready` or `in_progress`
 - `depends_on` — array of spec IDs this spec depends on (may be empty)
 
-Also collect the IDs of all specs in `specs/done/` (they count as pre-satisfied dependencies):
+Also collect the IDs of all specs in `specs/finished/` (they count as pre-satisfied dependencies):
 ```bash
-ls specs/done/ 2>/dev/null | grep '\.md$' | sed 's/-.*//' | head -100
+ls specs/finished/ 2>/dev/null | grep '\.md$' | sed 's/-.*//' | head -100
 ```
 
 ## Step 2 — Determine which specs to run
@@ -37,13 +37,13 @@ Parse `$ARGUMENTS` (ignoring `--resume`):
 ## Step 3 — Validate dependencies
 
 For each selected spec, check that every entry in its `depends_on` array is either:
-- An ID present in `specs/done/` (already satisfied), OR
+- An ID present in `specs/finished/` (already satisfied), OR
 - Also in the selected set (will be run in this batch)
 
 If any dependency is unsatisfied, **stop** and report clearly:
 ```
-ERROR: Spec 0003 depends on spec 0001, but 0001 is not done and was not selected.
-Either add 0001 to the selection or ensure it is in specs/done/.
+ERROR: Spec 0003 depends on spec 0001, but 0001 is not finished and was not selected.
+Either add 0001 to the selection or ensure it is in specs/finished/.
 ```
 
 Do not proceed until all dependencies are satisfied.
@@ -58,31 +58,29 @@ Proceeding anyway.
 ```
 Do not block execution — this is advisory only.
 
-## Step 5 — Invoke the workflow
+## Step 5 — Execute each spec
 
-Build the `specs` array: for each selected spec, include its full file content (from `Read`), the file path, and the parsed frontmatter fields.
+Process specs in dependency order (specs with no unfinished `depends_on` first, then those
+whose dependencies have just completed). For each spec:
 
-Invoke:
+**5a. Move to in_progress**
+```bash
+git mv specs/ready/<filename> specs/in_progress/<filename>
 ```
-Workflow({
-  name: 'execute-specs',
-  args: {
-    specs: [
-      {
-        id: '<id>',
-        title: '<title>',
-        filePath: 'specs/ready/<filename>',  // or in_progress/ for --resume
-        depends_on: [...],
-        content: '<full file contents>'
-      },
-      ...
-    ],
-    effort: 'medium'   // default; the user may override with --effort=high etc.
-  }
-})
+(If `--resume` and the file is already in `specs/in_progress/`, skip this move.)
+
+**5b. Implement the spec**
+
+Read the full spec file content, then implement all acceptance criteria: create a feature
+branch named after the spec ID and slug, make the necessary code changes, commit, and open
+a draft PR.
+
+**5c. Move to waiting_verification**
+```bash
+git mv specs/in_progress/<filename> specs/waiting_verification/<filename>
 ```
 
-The workflow handles topological sorting, concurrent execution per dependency level, and per-spec status updates (spec moves to `specs/in_progress/` on BUILD start, to `specs/done/` on SHIP success).
+Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 
 ## Argument quick reference
 
@@ -92,4 +90,3 @@ The workflow handles topological sorting, concurrent execution per dependency le
 | `/execute all` | Execute all specs in `specs/ready/` |
 | `/execute 0001 0003` | Execute only specs 0001 and 0003 |
 | `/execute all --resume` | Include specs already in `specs/in_progress/` |
-| `/execute 0002 --effort=high` | Execute spec 0002 with high-effort inspector |

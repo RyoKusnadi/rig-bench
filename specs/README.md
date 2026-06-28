@@ -40,7 +40,7 @@ If nothing is found, start at `0001`.
 
 ## Lifecycle
 
-`draft` → `ready` → `in_progress` → `waiting_verification` → `done` (or `blocked` / `abandoned`).
+`draft` → `ready` → `in_progress` → `waiting_verification` → `finished` (or `blocked` / `abandoned`).
 
 Each status has a matching folder — move the spec file into the folder that
 matches its current status:
@@ -51,7 +51,7 @@ matches its current status:
 | `specs/ready/` | All ambiguity resolved; ready to be picked up |
 | `specs/in_progress/` | Actively being implemented |
 | `specs/waiting_verification/` | AI built + inspected; awaiting human confirmation before shipping |
-| `specs/done/` | Shipped — merged PR is the permanent record |
+| `specs/finished/` | Shipped — merged PR is the permanent record |
 | `specs/blocked/` | Waiting on a dependency or decision |
 | `specs/abandoned/` | Won't do; kept for reference |
 
@@ -86,7 +86,7 @@ source: todo.md#anchor-or-section-name
   marker, not vaguer prose.
 - **Verification** — the concrete, end-to-end step that proves the spec is
   done (a test name to run, a command and its expected output, a manual
-  check). Required before a spec can move to `done`. (Both of these come
+  check). Required before a spec can move to `finished`. (Both of these come
   directly from Anthropic's own Claude Code spec-writing guidance: "the most
   useful specs are self-contained — they name the files and interfaces
   involved, state what is out of scope, and end with an end-to-end
