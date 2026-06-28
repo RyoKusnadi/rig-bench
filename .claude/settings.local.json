@@ -26,7 +26,11 @@
       "Bash(docker-compose:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
-      "Workflow(deep-research)"
+      "Workflow(deep-research)",
+      "Bash(tee /tmp/test-output.txt)",
+      "Bash(git commit *)",
+      "Bash(git rm *)",
+      "Bash(git add *)"
     ],
     "defaultMode": "acceptEdits"
   }
