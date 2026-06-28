@@ -5,6 +5,21 @@ All of these are planned for re-implementation in the future.
 
 ---
 
+## Workflows, output schemas, and shared lib utilities *(second pass)*
+
+**What was removed:**
+- `workflows/` — all orchestration scripts (`bug-fix.js`, `new-feature.js`, `refactor.js`, `pr-review.js`, `docs-update.js`, `release-prep.js`, `execute-specs.js`, `verify-specs.js`, `README.md`); replaced by `workflows/.gitkeep`
+- `config/schemas/` — all agent output schemas (`inspector-output`, `operator-output`, `scout-output`, `execute-spec-output`) plus `README.md`; replaced by `config/schemas/.gitkeep`
+- `config/model-tiers.json` — model-tier routing table (was mirrored inline in every workflow)
+- `lib/pipeline-state.mjs` — structured pipeline state shape (only used by workflows)
+- `lib/agent-wrapper.mjs` — retry wrapper for `agent()` calls in workflows
+- `lib/schema-validator.mjs` — lightweight JSON Schema validator for agent output boundaries
+- `tests/pipeline-state.test.js`, `tests/agent-wrapper.test.js`, `tests/schema-validator.test.js`, `tests/lib-workflow-sync.test.js`, `tests/execute-specs.test.js`
+
+**Why:** All workflows depended on agent definitions (operator/inspector/scout) that were removed in the first pass. Keeping workflow skeletons without their agents was noise. Starting fresh when the agent design is settled.
+
+---
+
 ## Memory system
 
 **What was removed:**
