@@ -17,8 +17,6 @@ Runs entirely in plan mode. Never create a file before the user approves the pla
    across all lifecycle folders. Allocate every new `id` this session needs from this single
    read (never re-scan mid-pass — doing so causes id collisions when drafting multiple specs
    together).
-4. If `$ARGUMENTS` references a decision in `.claude/memory/decisions.md`, a GitHub issue,
-   or prior discussion, read it now for `rationale:` framing.
 
 **Phase 2 — Intent capture (the Karpathy step)**
 
@@ -64,16 +62,14 @@ Spec sections (in order):
 6. `Files / Interfaces Touched` — concrete files, functions, schemas (required; a spec that
    cannot name these is not ready)
 7. `Implementation Plan` — ordered task list, one task per line, each small enough for a
-   single workflow run
+   single `/execute` run
 8. `Verification` — one end-to-end check proving the spec is done (test name, command +
    expected output, or manual step)
 
 **Phase 4 — Exit and write**
-5. Call `ExitPlanMode` with all drafted spec content for user review.
-6. After approval, write each spec to `specs/ready/{id}-{kebab-slug}.md` with `status: ready`
+1. Call `ExitPlanMode` with all drafted spec content for user review.
+2. After approval, write each spec to `specs/ready/{id}-{kebab-slug}.md` with `status: ready`
    exactly as approved. No additions, removals, or reordering.
-7. Report the file path(s) and id(s). If more than one spec was created, also run
-   `npm run specs:graph` and report its result — confirms `depends_on` links resolve
-   cleanly before handoff.
+3. Report the file path(s) and id(s).
 
 Start by saying: "Planning: $ARGUMENTS" then call `EnterPlanMode`.
