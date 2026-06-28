@@ -32,9 +32,18 @@ a given branch/PR implements.
 ## Lifecycle
 
 `draft` → `ready` → `in_progress` → `done` (or `blocked` / `abandoned`).
-On `done`, move the file to `specs/done/`. `specs/done/` is gitignored — once
-a spec ships, the merged PR/commit is the permanent record, not the spec
-file itself. Treat `specs/done/` as local scratch space, not history.
+
+Each status has a matching folder — move the spec file into the folder that
+matches its current status:
+
+| Folder | Meaning |
+|---|---|
+| `specs/draft/` | Being written; may contain `[NEEDS CLARIFICATION]` markers |
+| `specs/ready/` | All ambiguity resolved; ready to be picked up |
+| `specs/in_progress/` | Actively being implemented |
+| `specs/done/` | Shipped — merged PR is the permanent record |
+| `specs/blocked/` | Waiting on a dependency or decision |
+| `specs/abandoned/` | Won't do; kept for reference |
 
 **Ambiguity gate:** a spec may contain inline `[NEEDS CLARIFICATION: ...]`
 markers while in `draft`. It cannot move to `ready` while any marker remains
