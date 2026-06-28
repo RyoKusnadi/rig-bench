@@ -33,7 +33,9 @@
       "Bash(rm -f .claude/commands/research.md .claude/commands/wiki-query.md)",
       "Bash(npm install *)",
       "Bash(npm test *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ],
     "defaultMode": "acceptEdits"
   }

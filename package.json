@@ -1,11 +1,6 @@
 {
   "name": "rig-bench",
   "private": true,
-  "description": "Multi-agent harness for Claude Code: subagents, workflows, hooks, and spec-driven pipelines.",
-  "type": "module",
-  "scripts": {
-    "code:map": "node scripts/code-map.mjs",
-    "specs:graph": "node scripts/specs-graph.mjs",
-    "test": "node --test"
-  }
+  "description": "Multi-agent harness for Claude Code — skeleton after cleanup. See REMOVED.md.",
+  "type": "module"
 }

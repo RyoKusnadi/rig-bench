@@ -5,6 +5,21 @@ All of these are planned for re-implementation in the future.
 
 ---
 
+## Hooks, lib, and scripts *(third pass)*
+
+**What was removed:**
+- `hooks/`: all hook files (`auto-run-tests.mjs`, `post-bash-processor.mjs`, `pre-bash-safety.mjs`, `pre-tool-gatekeeper.mjs`, `pre-webfetch-security.mjs`) and `hooks/lib/hook-utils.mjs`; replaced by `hooks/.gitkeep`
+- `lib/spec-graph.mjs` — spec dependency graph validator; replaced by `lib/.gitkeep`
+- `scripts/code-map.mjs`, `scripts/specs-graph.mjs`; replaced by `scripts/.gitkeep`
+- `tests/`: all remaining test files; replaced by `tests/.gitkeep`
+- `settings.json` hooks block cleared (no hooks registered)
+- `package.json` scripts cleared; `package-lock.json` trimmed
+- `Makefile` reduced to `make clean` only
+
+**Why:** Completing the clean-slate reset. Will be re-added when the new design is ready.
+
+---
+
 ## Workflows, output schemas, and shared lib utilities *(second pass)*
 
 **What was removed:**
