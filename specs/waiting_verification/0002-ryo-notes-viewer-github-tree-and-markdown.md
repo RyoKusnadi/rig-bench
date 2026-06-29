@@ -1,7 +1,7 @@
 ---
 id: "0002"
 title: GitHub tree navigation and markdown rendering
-status: ready
+status: waiting_verification
 depends_on: ["0001"]
 source: user-request
 ---
