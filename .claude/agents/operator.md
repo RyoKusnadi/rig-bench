@@ -89,45 +89,98 @@ After the workflow completes, report to the user:
 
 You were spawned by the operator workflow to implement one specific spec.
 
-**1. Create a feature branch**
-`git checkout -b {spec_id}-{slug}` where slug is the spec title in kebab-case.
-
-**2. Move spec to in_progress and commit**
-```bash
-git mv specs/ready/{filename} specs/in_progress/{filename}
-git add specs/in_progress/{filename}
-git commit -m "spec({id}): start {title}"
-```
-
-**3. Read the spec in full**
+**1. Read the spec in full**
 Read `specs/in_progress/{filename}` — every section, every acceptance criterion.
 
-**4. Implement all acceptance criteria**
-Follow the Implementation Plan section exactly. Use only the files listed in "Files / Interfaces Touched". No gold-plating, no scope creep.
+**2. Determine spec type**
 
-**5. Commit the implementation**
-Stage only the files the spec touches — never `git add .` or `git add -A`.
+Check the "Files / Interfaces Touched" section:
+- If files are under `projects/{name}/` → **Project spec** (new standalone repo)
+- Otherwise → **Rig-bench spec** (changes live in the rig-bench worktree)
+
+---
+
+### Project spec path (files under `projects/{name}/`)
+
+Each `projects/{name}/` directory is its own independent git repository, separate from rig-bench.
+
+**2a. Move spec to in_progress**
+```bash
+mv specs/ready/{filename} specs/in_progress/{filename}
+# edit status field: ready → in_progress
+```
+
+**2b. Create or enter the project directory**
+```bash
+mkdir -p projects/{name}
+cd projects/{name}
+```
+If `projects/{name}/.git` does not exist yet, initialise a new repo:
+```bash
+git init && git checkout -b main
+```
+
+**2c. Create a feature branch inside the project repo**
+```bash
+git checkout -b {spec_id}-{slug}
+```
+
+**2d. Implement all acceptance criteria**
+Follow the Implementation Plan exactly. No gold-plating, no scope creep.
+
+**2e. Commit inside the project repo**
+```bash
+git add {files listed in spec}
+git commit -m "feat({id}): {title}"
+```
+
+**2f. Move spec to waiting_verification (back in the rig-bench worktree root)**
+```bash
+cd ../..   # return to rig-bench worktree root
+mv specs/in_progress/{filename} specs/waiting_verification/{filename}
+# edit status field: in_progress → waiting_verification
+```
+
+**2g. Return structured result**
+Return: `spec_id`, `status` (completed/failed), `project_dir` (`projects/{name}`), `branch` (the feature branch inside the project repo), `summary`, `errors[]`.
+
+---
+
+### Rig-bench spec path (all other specs)
+
+**2a. Create a feature branch in the rig-bench worktree**
+```bash
+git checkout -b {spec_id}-{slug}
+```
+
+**2b. Move spec to in_progress**
+```bash
+mv specs/ready/{filename} specs/in_progress/{filename}
+# edit status field: ready → in_progress
+```
+
+**2c. Implement all acceptance criteria**
+Follow the Implementation Plan exactly. Stage files explicitly — never `git add .` or `git add -A`.
 ```bash
 git add {files}
 git commit -m "feat({id}): {title}"
 ```
 
-**6. Move spec to waiting_verification**
+**2d. Move spec to waiting_verification**
 ```bash
-git mv specs/in_progress/{filename} specs/waiting_verification/{filename}
-```
-Update `status: ready` → `status: waiting_verification` in the spec's YAML frontmatter using Edit tool.
-```bash
-git add specs/waiting_verification/{filename}
-git commit -m "spec({id}): awaiting verification"
+mv specs/in_progress/{filename} specs/waiting_verification/{filename}
+# edit status field: in_progress → waiting_verification
 ```
 
-**7. Return structured result**
+**2e. Return structured result**
 Return: `spec_id`, `status` (completed/failed), `branch`, `summary`, `errors[]`.
+
+---
 
 ## Hard Rules
 
-- Never commit to the worktree's default branch directly — always create a feature branch first.
-- In Implement phase: one spec only, stage files explicitly, commit after each step.
+- **Project specs**: the project repo (`projects/{name}/`) is its own git repo — never commit project files into the rig-bench worktree.
+- **Rig-bench specs**: never commit to the worktree's default branch — always create a feature branch first.
+- In both paths: one spec only, stage files explicitly, commit after each logical step.
 - In Plan phase: never write spec files before the user approves the plan.
-- Your structured return value is machine-read in Implement phase — never omit a field.
+- Your structured return value is machine-read — never omit a field.
