@@ -1,1 +1,302 @@
-[]
+[
+  {
+    "sha": "cd2ef3155c877c839ab8af5be61f71df59dd10e3",
+    "commit_date": "2026-07-01",
+    "message": "chore: enforce file-conflict scan before spec approval",
+    "files": ".claude/agents/operator.md,specs/README.md"
+  },
+  {
+    "sha": "3fb383303a1db2821865ad7616390ecf1f235766",
+    "commit_date": "2026-07-01",
+    "message": "feat(0015): time-decay LEGACY tagging for git history search",
+    "files": ".claude/agents/operator.md,scripts/bootstrap-git-history.sh,scripts/search-git-history.sh,specs/waiting_verification/0015-time-decay-git-history.md"
+  },
+  {
+    "sha": "441ba7fd122b89447561416141a47c25ad6e2f50",
+    "commit_date": "2026-07-01",
+    "message": "feat(0008): on-demand file summary tool with hash-based cache invalidation",
+    "files": ".claude/agents/operator.md,scripts/read-file-summary.sh,scripts/write-file-summary.sh,specs/waiting_verification/0008-file-summary-tool.md"
+  },
+  {
+    "sha": "82ad7aa1d5f7659d7bd8b79da4831d70b747511b",
+    "commit_date": "2026-07-01",
+    "message": "feat(0013): checkpoint pattern for long-running operator tasks",
+    "files": ".claude/agents/operator.md,workflows/operator.js"
+  },
+  {
+    "sha": "21c4d0dc9edcd78f852bbca474aae59b8987b67c",
+    "commit_date": "2026-07-01",
+    "message": "feat(0005): structural search tool for operator agent",
+    "files": ".claude/agents/operator.md,scripts/search-structure.sh,specs/waiting_verification/0005-structural-search-tool.md"
+  },
+  {
+    "sha": "a4d1cf546197e0835b5894c40d22c32965ac5e56",
+    "commit_date": "2026-07-01",
+    "message": "feat(0001): create memory directory structure",
+    "files": "memory/ARCHITECTURE.md,memory/RULES.md,memory/archive/git/index.json,memory/archive/index.json,memory/archive/summaries/.gitkeep"
+  },
+  {
+    "sha": "d1dcb54ec206fb1d1c8e999e9cbe0c7e4749d41f",
+    "commit_date": "2026-06-30",
+    "message": "feat(0010): diff-only inspection tool for inspector agent (#44)",
+    "files": ".claude/agents/inspector.md,scripts/read-worktree-diff.sh"
+  },
+  {
+    "sha": "382b05bd1a5fe037a3c0c10cf403012446576655",
+    "commit_date": "2026-06-30",
+    "message": "feat(0007): git history search tool for operator agent (#48)",
+    "files": ".claude/agents/operator.md,scripts/search-git-history.sh,specs/waiting_verification/0007-git-history-search-tool.md"
+  },
+  {
+    "sha": "ff535696a238de02c2281698d10a22814ae0e768",
+    "commit_date": "2026-06-30",
+    "message": "feat(0012): drift alert handler with automated maintenance agent (#43)",
+    "files": "memory/PENDING_UPDATES.md,workflows/operator.js"
+  },
+  {
+    "sha": "96f93efc8b64fb89d911b708f2c65b82d4955a6c",
+    "commit_date": "2026-06-30",
+    "message": "feat(0006): pre-flight structural index sync in operator workflow (#42)",
+    "files": "workflows/operator.js"
+  },
+  {
+    "sha": "ba58b245cc9e6a7ce2eab6ab234ab6932f4a6d59",
+    "commit_date": "2026-06-30",
+    "message": "feat(0004): AI-driven semantic memory generation workflow (#37)",
+    "files": "workflows/bootstrap-memory.js"
+  },
+  {
+    "sha": "e85356133f09c92a24629f95f1e44e0225320222",
+    "commit_date": "2026-06-30",
+    "message": "feat(0003): structural index script (#38)",
+    "files": "memory/structure.json,scripts/build-structure-index.sh"
+  },
+  {
+    "sha": "9fefc8e54b4ace35bb33e5a5f64dc847dfcb18dc",
+    "commit_date": "2026-06-30",
+    "message": "feat(0009): add spec archiving script (#39)",
+    "files": ".claude/agents/shipper.md,scripts/archive-spec.sh"
+  },
+  {
+    "sha": "2b38d4519a4c138d5aaae304b454ada653e6fed1",
+    "commit_date": "2026-06-30",
+    "message": "feat(0011): add drift detection prompt to inspector agent (#40)",
+    "files": ".claude/agents/inspector.md"
+  },
+  {
+    "sha": "95915c195913359c8eecace984cbd7cd84a4b104",
+    "commit_date": "2026-06-30",
+    "message": "feat(0014): complexity-based memory loading in operator workflow (#41)",
+    "files": "workflows/operator.js"
+  },
+  {
+    "sha": "97e28f869966e25d826850bb7754544e5c94724b",
+    "commit_date": "2026-06-30",
+    "message": "feat(0002): add git history bootstrap script (#36)",
+    "files": "scripts/bootstrap-git-history.sh"
+  },
+  {
+    "sha": "9281467852ab7181c9b04f5707600ef9a836588b",
+    "commit_date": "2026-06-29",
+    "message": "fix(agents): operator and shipper treat projects/ as standalone repos (#35)",
+    "files": ".claude/agents/operator.md,.claude/agents/shipper.md"
+  },
+  {
+    "sha": "7f8a991810415295525d640c1b757c08c97c81b2",
+    "commit_date": "2026-06-29",
+    "message": "Revert \"feat: add ryo-notes-viewer — GitHub-backed markdown notes site (#33)\" (#34)",
+    "files": "projects/ryo-notes-viewer/.env.local.example,projects/ryo-notes-viewer/eslint.config.mjs,projects/ryo-notes-viewer/next-env.d.ts,projects/ryo-notes-viewer/next.config.ts,projects/ryo-notes-viewer/package-lock.json,projects/ryo-notes-viewer/package.json,projects/ryo-notes-viewer/postcss.config.mjs,projects/ryo-notes-viewer/src/app/globals.css,projects/ryo-notes-viewer/src/app/layout.tsx,projects/ryo-notes-viewer/src/app/notes/[...slug]/page.tsx,projects/ryo-notes-viewer/src/app/page.tsx,projects/ryo-notes-viewer/src/components/AppShell.tsx,projects/ryo-notes-viewer/src/components/MarkdownRenderer.tsx,projects/ryo-notes-viewer/src/components/MobileDrawer.tsx,projects/ryo-notes-viewer/src/components/TreeNav.tsx,projects/ryo-notes-viewer/src/lib/chakra-theme.ts,projects/ryo-notes-viewer/src/lib/github.ts,projects/ryo-notes-viewer/tsconfig.json,projects/ryo-notes-viewer/vercel.json,specs/waiting_verification/0001-ryo-notes-viewer-scaffold.md,specs/waiting_verification/0002-ryo-notes-viewer-github-tree-and-markdown.md"
+  },
+  {
+    "sha": "2440df2da04452a5d4dbb4f1a2826111eb8af323",
+    "commit_date": "2026-06-29",
+    "message": "feat: add ryo-notes-viewer — GitHub-backed markdown notes site (#33)",
+    "files": "projects/ryo-notes-viewer/.env.local.example,projects/ryo-notes-viewer/eslint.config.mjs,projects/ryo-notes-viewer/next-env.d.ts,projects/ryo-notes-viewer/next.config.ts,projects/ryo-notes-viewer/package-lock.json,projects/ryo-notes-viewer/package.json,projects/ryo-notes-viewer/postcss.config.mjs,projects/ryo-notes-viewer/src/app/globals.css,projects/ryo-notes-viewer/src/app/layout.tsx,projects/ryo-notes-viewer/src/app/notes/[...slug]/page.tsx,projects/ryo-notes-viewer/src/app/page.tsx,projects/ryo-notes-viewer/src/components/AppShell.tsx,projects/ryo-notes-viewer/src/components/MarkdownRenderer.tsx,projects/ryo-notes-viewer/src/components/MobileDrawer.tsx,projects/ryo-notes-viewer/src/components/TreeNav.tsx,projects/ryo-notes-viewer/src/lib/chakra-theme.ts,projects/ryo-notes-viewer/src/lib/github.ts,projects/ryo-notes-viewer/tsconfig.json,projects/ryo-notes-viewer/vercel.json,specs/waiting_verification/0001-ryo-notes-viewer-scaffold.md,specs/waiting_verification/0002-ryo-notes-viewer-github-tree-and-markdown.md"
+  },
+  {
+    "sha": "185c9f0f6718cfdc848587b47442ab866e6d57ed",
+    "commit_date": "2026-06-29",
+    "message": "feat: add inspector/operator/shipper agents, verify command, and operator workflow (#32)",
+    "files": ".claude/agents/inspector.md,.claude/agents/operator.md,.claude/agents/shipper.md,.claude/commands/verify.md,README.md,workflows/operator.js"
+  },
+  {
+    "sha": "7ab026f6ce3115586703f496159662025ae09494",
+    "commit_date": "2026-06-28",
+    "message": "chore: update commands, settings, and rename specs/done to specs/finished (#30)",
+    "files": ".claude/commands/execute.md,.claude/commands/plan.md,.claude/settings.json,.claude/settings.local.json,.github/workflows/ci.yml,specs/README.md,specs/done/.gitkeep,specs/finished/.gitkeep"
+  },
+  {
+    "sha": "a91b26c65da899610d1b1ee69a1828c79f977b65",
+    "commit_date": "2026-06-28",
+    "message": "chore: strip harness to clean skeleton (#29)",
+    "files": ".claude/agents/inspector.md,.claude/agents/operator.md,.claude/agents/researcher.md,.claude/agents/rules/common/git-workflow.md,.claude/agents/rules/go.md,.claude/agents/rules/security/owasp-stride.md,.claude/agents/rules/testing/aaa-pattern.md,.claude/agents/rules/typescript.md,.claude/agents/scout.md,.claude/commands/audit.md,.claude/commands/autotune.md,.claude/commands/evolve.md,.claude/commands/memory-prune.md,.claude/commands/plan.md,.claude/commands/research.md,.claude/commands/review.md,.claude/commands/ship.md,.claude/commands/verify.md,.claude/commands/wiki-query.md,.claude/memory/MEMORY.md,.claude/memory/architecture.md,.claude/memory/conventions.md,.claude/memory/decisions.md,.claude/memory/gotchas.md,.claude/memory/lessons-learned.md,.claude/settings.json,.claude/settings.local.json,.gitignore,CLAUDE.md,Makefile,REMOVED.md,config/model-tiers.json,config/schemas/.gitkeep,config/schemas/README.md,config/schemas/execute-spec-output.schema.json,config/schemas/inspector-output.schema.json,config/schemas/operator-output.schema.json,config/schemas/research-intake.schema.json,config/schemas/research-state.schema.json,config/schemas/researcher-output.schema.json,config/schemas/scout-output.schema.json,hooks/.gitkeep,hooks/auto-run-tests.mjs,hooks/evaluate-session.mjs,hooks/lib/hook-utils.mjs,hooks/post-bash-processor.mjs,hooks/pre-bash-safety.mjs,hooks/pre-compact.mjs,hooks/pre-tool-gatekeeper.mjs,hooks/pre-webfetch-security.mjs,hooks/read-budget.mjs,hooks/session-start.mjs,hooks/telemetry-writer.mjs,intake/research-questionnaire.yaml,intake/spec-driven-task-splitting.yaml,lib/.gitkeep,lib/agent-wrapper.mjs,lib/memory-store.mjs,lib/pipeline-state.mjs,lib/research-state.mjs,lib/schema-validator.mjs,lib/spec-graph.mjs,lib/state-projector.mjs,memory/README.md,memory/knowledge/README.md,memory/knowledge/agents/pipeline-patterns.md,memory/knowledge/agents/verdict-vocabulary.md,memory/knowledge/agents/writing-agents.md,memory/knowledge/security/owasp-top10.md,memory/knowledge/security/sec-4-patterns.md,memory/knowledge/security/stride-cheatsheet.md,memory/personas/default.md,memory/sessions/.gitkeep,package-lock.json,package.json,projects/.gitkeep,scripts/.gitkeep,scripts/ask-questionnaire.mjs,scripts/code-map.mjs,scripts/ingest-memory.mjs,scripts/lint-obsidian.mjs,scripts/prune-memory.mjs,scripts/query-memory.mjs,scripts/query-obsidian.mjs,scripts/report.mjs,scripts/set-agent-role.mjs,scripts/specs-graph.mjs,scripts/sync-obsidian.mjs,scripts/token-dashboard.mjs,scripts/token-usage.mjs,specs/README.md,subagents/README.md,subagents/SCHEMA.md,subagents/inspector/inspector.md,subagents/operator/operator.md,subagents/researcher/researcher.md,subagents/rules/common/git-workflow.md,subagents/rules/go.md,subagents/rules/security/owasp-stride.md,subagents/rules/testing/aaa-pattern.md,subagents/rules/typescript.md,subagents/scout/scout.md,tests/.gitkeep,tests/agent-wrapper.test.js,tests/ask-questionnaire.test.js,tests/auto-run-tests.test.js,tests/code-map.test.js,tests/evaluate-session.test.js,tests/execute-specs.test.js,tests/helpers/memory-db-lock.mjs,tests/ingest-memory.test.js,tests/lib-workflow-sync.test.js,tests/lint-obsidian.test.js,tests/memory-store.test.js,tests/pipeline-state.test.js,tests/post-bash-processor.test.js,tests/pre-bash-safety.test.js,tests/pre-compact.test.js,tests/pre-tool-gatekeeper.test.js,tests/pre-webfetch-security.test.js,tests/prune-memory.test.js,tests/query-memory.test.js,tests/query-obsidian.test.js,tests/read-budget.test.js,tests/report.test.js,tests/research-state.test.js,tests/schema-validator.test.js,tests/session-start.test.js,tests/set-agent-role.test.js,tests/specs-graph.test.js,tests/state-projector.test.js,tests/sync-obsidian.test.js,tests/telemetry-writer.test.js,workflows/.gitkeep,workflows/README.md,workflows/autotune.js,workflows/bug-fix.js,workflows/docs-update.js,workflows/execute-specs.js,workflows/new-feature.js,workflows/pr-review.js,workflows/refactor.js,workflows/release-prep.js,workflows/research.js,workflows/verify-specs.js"
+  },
+  {
+    "sha": "1cca215bfb050317bd11ed64f85ab896af72105f",
+    "commit_date": "2026-06-28",
+    "message": "feat(specs): add waiting_verification state and /verify command (#28)",
+    "files": ".claude/commands/verify.md,specs/README.md,specs/waiting_verification/.gitkeep,workflows/execute-specs.js,workflows/verify-specs.js"
+  },
+  {
+    "sha": "74de8b1c69ac78afbad3db5e599d7d0e22460e5d",
+    "commit_date": "2026-06-28",
+    "message": "feat(execute): add /execute skill for spec-driven pipeline execution (#27)",
+    "files": ".claude/commands/execute.md,config/schemas/execute-spec-output.schema.json,lib/spec-graph.mjs,tests/execute-specs.test.js,workflows/execute-specs.js"
+  },
+  {
+    "sha": "3d1628454498529243e16556928ec64e5750d471",
+    "commit_date": "2026-06-28",
+    "message": "feat(specs): add lifecycle status folders for spec organisation (#25)",
+    "files": ".gitignore,specs/README.md,specs/abandoned/.gitkeep,specs/blocked/.gitkeep,specs/done/.gitkeep,specs/draft/.gitkeep,specs/in_progress/.gitkeep,specs/ready/.gitkeep"
+  },
+  {
+    "sha": "52c8d9778bc745c7bad7d3ae4d22c4dbf6d42e9a",
+    "commit_date": "2026-06-28",
+    "message": "refactor(specs): replace /specs command with /plan; tighten specs/README (#23)",
+    "files": ".claude/commands/plan.md,.claude/commands/specs.md,specs/README.md"
+  },
+  {
+    "sha": "5b85616bb2d0e9c4252799973f744e45a74ac3d0",
+    "commit_date": "2026-06-24",
+    "message": "Add specs-graph validation tool; remove dangling todo.md citations (#22)",
+    "files": ".claude/agents/researcher.md,.claude/commands/research.md,.claude/commands/specs.md,.claude/memory/decisions.md,.claude/settings.local.json,README.md,hooks/auto-run-tests.mjs,hooks/evaluate-session.mjs,hooks/lib/hook-utils.mjs,hooks/pre-bash-safety.mjs,hooks/pre-compact.mjs,hooks/pre-tool-gatekeeper.mjs,hooks/pre-webfetch-security.mjs,hooks/read-budget.mjs,hooks/session-start.mjs,hooks/telemetry-writer.mjs,lib/agent-wrapper.mjs,lib/research-state.mjs,lib/state-projector.mjs,package.json,scripts/code-map.mjs,scripts/ingest-memory.mjs,scripts/report.mjs,scripts/set-agent-role.mjs,scripts/specs-graph.mjs,specs/README.md,subagents/README.md,subagents/researcher/researcher.md,tests/agent-wrapper.test.js,tests/code-map.test.js,tests/lib-workflow-sync.test.js,tests/pre-tool-gatekeeper.test.js,tests/specs-graph.test.js,tests/state-projector.test.js,workflows/README.md,workflows/new-feature.js,workflows/research.js"
+  },
+  {
+    "sha": "eb4075f785ca1d2bbaf47434261c63804e5cca03",
+    "commit_date": "2026-06-22",
+    "message": "feat(obsidian): sync research output to an external Obsidian vault (#20)",
+    "files": ".claude/commands/research.md,.claude/commands/wiki-query.md,CLAUDE.md,README.md,package.json,scripts/lint-obsidian.mjs,scripts/query-obsidian.mjs,scripts/sync-obsidian.mjs,tests/lint-obsidian.test.js,tests/query-obsidian.test.js,tests/sync-obsidian.test.js"
+  },
+  {
+    "sha": "22c569a960c4e7946655a3ad46148da21b7c80f8",
+    "commit_date": "2026-06-22",
+    "message": "feat(operator): add assumptions field for surfacing resolved ambiguity (#19)",
+    "files": "config/schemas/operator-output.schema.json,subagents/operator/operator.md"
+  },
+  {
+    "sha": "b0ae491a96b1698a58d705ce38011d7671fbf45d",
+    "commit_date": "2026-06-22",
+    "message": "Token dashboard sessions/Tailwind/UX + CLAUDE.md cleanup (#18)",
+    "files": ".gitignore,CLAUDE.md,Makefile,package.json,research/spec-driven-development-workflow-for-breaking-down-todo-md-into-small-individual-specs/intake.json,research/spec-driven-task-splitting-for-todo-md-improvements/intake.json,scripts/token-dashboard.mjs,scripts/token-usage.mjs,specs/0001-memory-vector-db-auto-ingest.md,specs/0002-token-budget-loop-circuit-breaker.md,specs/0003-research-agent-checkpoint-integration.md"
+  },
+  {
+    "sha": "4e458a74caa921551a11307365a1ed451519f15d",
+    "commit_date": "2026-06-21",
+    "message": "Add /specs spec-driven-development scaffolding and a /tmp write allowance for the research role (#17)",
+    "files": ".claude/commands/specs.md,.claude/settings.local.json,.gitignore,hooks/pre-tool-gatekeeper.mjs,research/spec-driven-development-workflow-for-breaking-down-todo-md-into-small-individual-specs/intake.json,specs/0001-memory-vector-db-auto-ingest.md,specs/0002-token-budget-loop-circuit-breaker.md,specs/0003-research-agent-checkpoint-integration.md,specs/README.md,tests/pre-tool-gatekeeper.test.js"
+  },
+  {
+    "sha": "35748233bfd2a074d6510090d61ad5d208453ae2",
+    "commit_date": "2026-06-20",
+    "message": "Add gatekeeper self-clear carve-out and research scaffolding (#16)",
+    "files": ".claude/agents/inspector.md,.claude/agents/operator.md,.claude/agents/researcher.md,.claude/agents/rules/common/git-workflow.md,.claude/agents/rules/go.md,.claude/agents/rules/security/owasp-stride.md,.claude/agents/rules/testing/aaa-pattern.md,.claude/agents/rules/typescript.md,.claude/agents/scout.md,hooks/pre-tool-gatekeeper.mjs,intake/spec-driven-task-splitting.yaml,research/spec-driven-task-splitting-for-todo-md-improvements/intake.json,tests/pre-tool-gatekeeper.test.js"
+  },
+  {
+    "sha": "66ca77e0e91374db89fca94130f3703a3f499d08",
+    "commit_date": "2026-06-20",
+    "message": "Implement the Code Checkpoint Architecture to eliminate the cold-start tax (#15)",
+    "files": "CLAUDE.md,README.md,hooks/pre-compact.mjs,hooks/session-start.mjs,package.json,scripts/code-map.mjs,subagents/inspector/inspector.md,subagents/operator/operator.md,tests/code-map.test.js,tests/pre-compact.test.js,tests/session-start.test.js"
+  },
+  {
+    "sha": "c4e76040b9f6a5ebf976dc5e1f7e4d297b42e356",
+    "commit_date": "2026-06-20",
+    "message": "CI gating, hook robustness, docs (#14)",
+    "files": ".github/workflows/ci.yml,CLAUDE.md,Makefile,config/schemas/README.md,hooks/auto-run-tests.mjs,hooks/evaluate-session.mjs,hooks/lib/hook-utils.mjs,hooks/post-bash-processor.mjs,hooks/read-budget.mjs,hooks/session-start.mjs,lib/memory-store.mjs,package.json,scripts/ask-questionnaire.mjs,tests/agent-wrapper.test.js,tests/ask-questionnaire.test.js,tests/auto-run-tests.test.js,tests/evaluate-session.test.js,tests/helpers/memory-db-lock.mjs,tests/ingest-memory.test.js,tests/lib-workflow-sync.test.js,tests/memory-store.test.js,tests/pipeline-state.test.js,tests/post-bash-processor.test.js,tests/pre-bash-safety.test.js,tests/pre-compact.test.js,tests/pre-webfetch-security.test.js,tests/prune-memory.test.js,tests/query-memory.test.js,tests/read-budget.test.js,tests/report.test.js,tests/research-state.test.js,tests/schema-validator.test.js,tests/session-start.test.js,tests/set-agent-role.test.js,tests/state-projector.test.js,tests/telemetry-writer.test.js,workflows/README.md"
+  },
+  {
+    "sha": "5732b9307f9540f06d7eb87dc5bdbad5d15ca74d",
+    "commit_date": "2026-06-20",
+    "message": "Update local Claude Code permissions allowlist (#13)",
+    "files": ".claude/settings.local.json"
+  },
+  {
+    "sha": "6ad432cb1d6e32386f2a89b938e5123ff050124e",
+    "commit_date": "2026-06-20",
+    "message": "Add RBAC PreToolUse gatekeeper hook for the research agent role (#12)",
+    "files": ".claude/commands/research.md,.claude/settings.json,.gitignore,hooks/lib/hook-utils.mjs,hooks/pre-tool-gatekeeper.mjs,package.json,scripts/set-agent-role.mjs,tests/pre-tool-gatekeeper.test.js"
+  },
+  {
+    "sha": "32eb320cb03f0d2224b6fb92fff89bc244a71fad",
+    "commit_date": "2026-06-20",
+    "message": "Add Makefile with clean target (#11)",
+    "files": "Makefile"
+  },
+  {
+    "sha": "31b7b6bb26cfff1ef1c5629c1c239685347021d0",
+    "commit_date": "2026-06-20",
+    "message": "Add schema-correction retry, research-loop state projection, WebFetch SSRF guard, and Bash allowlisting",
+    "files": ".claude/settings.json,README.md,hooks/pre-bash-safety.mjs,hooks/pre-webfetch-security.mjs,lib/agent-wrapper.mjs,lib/research-state.mjs,lib/state-projector.mjs,workflows/README.md,workflows/autotune.js,workflows/bug-fix.js,workflows/docs-update.js,workflows/new-feature.js,workflows/pr-review.js,workflows/refactor.js,workflows/release-prep.js,workflows/research.js"
+  },
+  {
+    "sha": "6bb49572e2c55e7ee3d1c71626432af34d966f8f",
+    "commit_date": "2026-06-20",
+    "message": "Merge pull request #10 from RyoKusnadi/feat/research-and-autotune-loops",
+    "files": ""
+  },
+  {
+    "sha": "cf559c1120a9ac88f809a845dd3ce08752488e70",
+    "commit_date": "2026-06-20",
+    "message": "Add questionnaire-driven research loop and autotune self-improvement loop",
+    "files": ".claude/commands/autotune.md,.claude/commands/research.md,README.md,config/schemas/inspector-output.schema.json,config/schemas/operator-output.schema.json,config/schemas/research-intake.schema.json,config/schemas/research-state.schema.json,config/schemas/researcher-output.schema.json,config/schemas/scout-output.schema.json,intake/research-questionnaire.yaml,lib/research-state.mjs,scripts/ask-questionnaire.mjs,scripts/ingest-memory.mjs,subagents/inspector/inspector.md,subagents/operator/operator.md,subagents/researcher/researcher.md,subagents/scout/scout.md,workflows/README.md,workflows/autotune.js,workflows/research.js"
+  },
+  {
+    "sha": "6da34b118e353773f5f778c5a568f79a31c973f7",
+    "commit_date": "2026-06-19",
+    "message": "Merge pull request #9 from RyoKusnadi/feat/scout-gate-stage",
+    "files": ""
+  },
+  {
+    "sha": "6774a98daf54e8133f98a65169f2d1cd6bdead37",
+    "commit_date": "2026-06-19",
+    "message": "Add scout agent: parallel discovery, repo manifest, and fail-fast gates",
+    "files": "README.md,config/schemas/scout-output.schema.json,lib/pipeline-state.mjs,subagents/SCHEMA.md,subagents/inspector/inspector.md,subagents/operator/operator.md,subagents/scout/scout.md,workflows/README.md,workflows/bug-fix.js,workflows/docs-update.js,workflows/new-feature.js,workflows/pr-review.js,workflows/refactor.js,workflows/release-prep.js"
+  },
+  {
+    "sha": "e2ad6a5fe609d25a3adac7f222aae897d27e0fda",
+    "commit_date": "2026-06-19",
+    "message": "Add state-passing, local TF-IDF memory retrieval, and pruning (#8)",
+    "files": ".gitignore,README.md,config/schemas/inspector-output.schema.json,config/schemas/operator-output.schema.json,lib/memory-store.mjs,lib/pipeline-state.mjs,package-lock.json,package.json,scripts/ingest-memory.mjs,scripts/prune-memory.mjs,scripts/query-memory.mjs,subagents/SCHEMA.md,subagents/inspector/inspector.md,subagents/operator/operator.md,workflows/README.md,workflows/bug-fix.js,workflows/docs-update.js,workflows/new-feature.js,workflows/pr-review.js,workflows/refactor.js,workflows/release-prep.js"
+  },
+  {
+    "sha": "224e1203e1ef39e6adfbda561713ca019bbcabd7",
+    "commit_date": "2026-06-19",
+    "message": "Add model tier registry, state-machine workflows, schema validation, and telemetry reporting (#7)",
+    "files": ".claude/settings.json,.gitignore,README.md,config/model-tiers.json,config/schemas/inspector-output.schema.json,config/schemas/operator-output.schema.json,hooks/telemetry-writer.mjs,lib/schema-validator.mjs,scripts/report.mjs,subagents/SCHEMA.md,subagents/inspector/inspector.md,subagents/operator/operator.md,workflows/README.md,workflows/bug-fix.js,workflows/docs-update.js,workflows/new-feature.js,workflows/pr-review.js,workflows/refactor.js,workflows/release-prep.js"
+  },
+  {
+    "sha": "230ce5c9f836845945c57e00bb9f35cb77e5c52a",
+    "commit_date": "2026-06-19",
+    "message": "Replace XML/YAML agent completion signal with strict JSON output (#6)",
+    "files": "subagents/README.md,subagents/SCHEMA.md,subagents/inspector/inspector.md,subagents/operator/operator.md,workflows/README.md"
+  },
+  {
+    "sha": "ce8694afda2bd0c4fc65d1c93e087ab56ee39723",
+    "commit_date": "2026-06-19",
+    "message": "Merge pull request #5 from RyoKusnadi/chore/token-telemetry-memory-prune",
+    "files": ""
+  },
+  {
+    "sha": "c9015e1445f68d35cf99668aca3cc4c2a54c9563",
+    "commit_date": "2026-06-19",
+    "message": "Token telemetry, soft tool-call budgets, memory TTL enforcement",
+    "files": ".claude/commands/memory-prune.md,README.md,subagents/operator/operator.md,workflows/README.md,workflows/bug-fix.js,workflows/docs-update.js,workflows/new-feature.js,workflows/pr-review.js,workflows/refactor.js,workflows/release-prep.js"
+  },
+  {
+    "sha": "2f1356827419d2a703fe4edd78f05c6f524eddc0",
+    "commit_date": "2026-06-18",
+    "message": "Merge pull request #4 from RyoKusnadi/chore/hook-polish-memory-cleanup",
+    "files": ""
+  },
+  {
+    "sha": "a77dbbbc2dd96c48072d701b5f6e41d13924fbcd",
+    "commit_date": "2026-06-18",
+    "message": "Hook polish, memory optimization, and eval-harness removal",
+    "files": ".claude/settings.json,.github/workflows/eval-harness.yml,.gitignore,README.md,eval-harness/golden-tasks.json,eval-harness/run-eval.js,hooks/auto-run-tests.mjs,hooks/evaluate-session.mjs,hooks/lib/hook-utils.mjs,hooks/post-bash-processor.mjs,hooks/pre-bash-safety.mjs,hooks/pre-compact.mjs,hooks/read-budget.mjs,hooks/session-start.mjs,subagents/operator/operator.md"
+  },
+  {
+    "sha": "21ce38216ad8116af2b3f48a07e6ae52aacadad8",
+    "commit_date": "2026-06-18",
+    "message": "Merge pull request #3 from RyoKusnadi/chore/token-zero-waste-polish",
+    "files": ""
+  }
+]
