@@ -23,10 +23,10 @@ trap 'rm -f "$TMP_FILE"' EXIT
 
 mkdir -p "$OUT_DIR"
 
-# Collect the last 50 commits as SHA|||message, then for each commit
+# Collect the last 50 commits as SHA|||date|||message, then for each commit
 # resolve its changed files via git diff-tree. Hand everything to a
 # small Node script for safe JSON construction (avoids manual escaping).
-git log --pretty=format:'%H|||%s' -50 | node -e '
+git log --pretty=format:'%H|||%cd|||%s' --date=format:'%Y-%m-%d' -50 | node -e '
   const { execSync } = require("child_process");
   const fs = require("fs");
 
@@ -35,9 +35,11 @@ git log --pretty=format:'%H|||%s' -50 | node -e '
 
   const entries = lines.map((line) => {
     const sep = "|||";
-    const idx = line.indexOf(sep);
-    const sha = line.slice(0, idx);
-    const message = line.slice(idx + sep.length);
+    const firstIdx = line.indexOf(sep);
+    const secondIdx = line.indexOf(sep, firstIdx + sep.length);
+    const sha = line.slice(0, firstIdx);
+    const commit_date = line.slice(firstIdx + sep.length, secondIdx);
+    const message = line.slice(secondIdx + sep.length);
 
     let files = "";
     try {
@@ -50,7 +52,7 @@ git log --pretty=format:'%H|||%s' -50 | node -e '
       files = "";
     }
 
-    return { sha, message, files };
+    return { sha, commit_date, message, files };
   });
 
   process.stdout.write(JSON.stringify(entries, null, 2) + "\n");
