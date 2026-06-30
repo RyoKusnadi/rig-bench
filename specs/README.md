@@ -105,6 +105,39 @@ than aspirational:
 One criterion = one sentence = one checkable thing. If a criterion needs
 "and" to join two unrelated behaviors, split it into two criteria.
 
+## File-conflict gate
+
+Before a batch of specs can move to `ready`, run a conflict scan across
+all `## Files/Interfaces Touched` sections. Any file that appears in two or
+more specs in the batch will produce a merge conflict if those specs are
+executed concurrently (each runs in its own worktree from the same base
+commit).
+
+**Rule**: if two specs touch the same file, the later one must list the
+earlier one in `depends_on`. This forces serial execution — the second spec
+lands on top of the first instead of diverging from the same base.
+
+How to scan (run from repo root after drafting all specs):
+
+```bash
+# Print every file listed across all ready specs, with the spec ID
+grep -h "^- " specs/ready/*.md | sort | uniq -d
+```
+
+Or manually: for each file in `## Files/Interfaces Touched`, check if any
+other spec in the batch lists the same file. If yes, add `depends_on`.
+
+**Common shared files to watch for** in this repo:
+- `.claude/agents/operator.md` — touched by any spec that adds operator
+  instructions or memory tools
+- `workflows/operator.js` — touched by any spec that changes workflow
+  behaviour (preflight hooks, checkpoint logic, drift handling, etc.)
+- `memory/*.md` or `memory/*.json` — touched by any spec that writes to
+  the memory vault at bootstrap time
+
+A spec that cannot yet name its files in `## Files/Interfaces Touched` is
+not ready — mark it `draft` and add a `[NEEDS CLARIFICATION]` marker.
+
 ## Workflow
 
 A spec's body is the `task` argument to a workflow — copy/summarize it

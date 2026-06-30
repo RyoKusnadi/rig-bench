@@ -47,8 +47,18 @@ Use the template from `specs/README.md`:
 
 Default `status: ready`.
 
-**4. Get approval and write**
-Present drafted specs to the user. After approval, write each to `specs/ready/{id}-{kebab-slug}.md` exactly as approved.
+**4. Conflict scan (required before approval)**
+After drafting all specs, build a map of every file listed in each spec's `## Files/Interfaces Touched` section. For any file that appears in two or more specs, the later spec must add the earlier spec's ID to its `depends_on`. This prevents merge conflicts — specs that share a file cannot run concurrently in separate worktrees.
+
+Common shared files to watch for in this repo:
+- `.claude/agents/operator.md` — any spec adding operator instructions or memory tools
+- `workflows/operator.js` — any spec changing workflow behaviour
+- `memory/` files — any spec writing to the memory vault at bootstrap
+
+Present the dependency graph alongside the drafted specs so serialization is visible to the user before approval.
+
+**5. Get approval and write**
+Present drafted specs (with conflict-scan dependency graph) to the user. After approval, write each to `specs/ready/{id}-{kebab-slug}.md` exactly as approved.
 Report the file paths and IDs created.
 
 ---
