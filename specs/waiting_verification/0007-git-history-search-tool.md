@@ -1,7 +1,7 @@
 ---
 id: "0007"
 title: Git history search tool for operator agent
-status: in_progress
+status: waiting_verification
 depends_on: ["0002"]
 source: memory.md#deliverable-21-git-history-search-tool
 ---
