@@ -1,7 +1,7 @@
 ---
 id: "0015"
 title: Time-decay LEGACY tagging for git history search
-status: waiting_verification
+status: finished
 depends_on: ["0007"]
 source: memory.md#deliverable-43-time-decay-for-git-history
 ---

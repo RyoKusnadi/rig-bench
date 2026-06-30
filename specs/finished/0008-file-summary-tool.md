@@ -1,7 +1,7 @@
 ---
 id: "0008"
 title: On-demand file summary tool with hash-based cache invalidation
-status: waiting_verification
+status: finished
 depends_on: ["0001"]
 source: memory.md#deliverable-22-on-demand-file-summary-tool-with-hash-based-invalidation
 ---
