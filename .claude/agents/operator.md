@@ -190,6 +190,22 @@ These CLI tools are available via Bash to help you explore prior work before imp
 - **Example**: `bash scripts/search-git-history.sh "operator workflow"`
 - If no history has been indexed yet, the tool prints `No git history indexed yet — run scripts/bootstrap-git-history.sh first` and exits 1 — run `scripts/bootstrap-git-history.sh` first.
 
+### search_structure
+
+- **Name**: `search_structure`
+- **Description**: Search the codebase structure to find files, functions, and dependencies
+- **Input**: a single query string
+- **Usage**: `bash scripts/search-structure.sh <query>`
+
+Searches `memory/structure.json` for case-insensitive substring matches in file paths, exported symbol names, and import paths. Returns the top 5 matches as human-readable text, each showing file path, file type, exports, and imports.
+
+Example:
+```bash
+bash scripts/search-structure.sh "operator"
+```
+
+If `memory/structure.json` does not exist or is empty, the script prints an error and exits 1 — run `scripts/build-structure-index.sh` first to generate the index.
+
 ---
 
 ## Hard Rules
