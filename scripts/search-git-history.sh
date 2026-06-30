@@ -23,11 +23,19 @@ if [ ! -f "$INDEX_FILE" ]; then
   exit 1
 fi
 
+# Compute 6-month cutoff date (macOS vs Linux)
+if date -v-6m +%Y-%m-%d >/dev/null 2>&1; then
+  CUTOFF_DATE="$(date -v-6m +%Y-%m-%d)"
+else
+  CUTOFF_DATE="$(date -d '6 months ago' +%Y-%m-%d)"
+fi
+
 node -e "
 const fs = require('fs');
 
 const indexFile = process.argv[1];
 const query = process.argv[2].toLowerCase();
+const cutoff = process.argv[3];
 
 let data;
 try {
@@ -55,8 +63,14 @@ if (matches.length === 0) {
 
 matches.forEach((entry, i) => {
   const shortSha = String(entry.sha || '').slice(0, 8);
-  console.log((i + 1) + '. ' + shortSha + ' — ' + entry.message);
+  const commitDate = String(entry.commit_date || '');
+  const isLegacy = commitDate && cutoff && commitDate < cutoff;
+  const prefix = isLegacy ? '[LEGACY] ' : '';
+  console.log((i + 1) + '. ' + prefix + shortSha + ' — ' + entry.message);
+  if (commitDate) {
+    console.log('   date: ' + commitDate + (isLegacy ? ' (older than 6 months)' : ''));
+  }
   console.log('   files: ' + (entry.files || '(none)'));
   console.log('');
 });
-" "$INDEX_FILE" "$QUERY"
+" "$INDEX_FILE" "$QUERY" "$CUTOFF_DATE"

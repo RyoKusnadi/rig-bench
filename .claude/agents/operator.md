@@ -189,6 +189,19 @@ If you have made more than 30 tool calls or feel your context is getting full, w
 
 The harness caps checkpoint resumes at 3 attempts per spec before marking the spec failed.
 
+### search_git_history
+
+- **Name**: `search_git_history`
+- **Description**: Search past Git commits to see how features were implemented
+- **Input**: a single query string
+- **Usage**: `bash scripts/search-git-history.sh <query>`
+
+Searches `memory/archive/git/index.json` for case-insensitive matches in commit messages and file lists. Returns the top 5 matching commits showing SHA, message, files changed, and commit date. Commits older than 6 months are tagged `[LEGACY]`.
+
+**Important**: Never use code patterns from commits tagged `[LEGACY]` — they use outdated APIs or frameworks.
+
+If the index is empty, run `scripts/bootstrap-git-history.sh` first.
+
 ### search_structure
 
 - **Name**: `search_structure`
