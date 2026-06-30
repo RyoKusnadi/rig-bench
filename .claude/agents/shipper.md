@@ -146,3 +146,5 @@ Return: `spec_id`, `status` (shipped/failed), `pr_url`, `branch`, `summary`.
 - Use `--delete-branch` on merge to clean up the remote branch.
 - `pr_url` must be the URL returned by `gh pr create`; set to empty string on failure.
 - Never push directly to main — always go through a PR.
+- After a PR merges and the spec lands in `specs/finished/`, call
+  `scripts/archive-spec.sh {id}` to record the spec under `memory/archive/`.
