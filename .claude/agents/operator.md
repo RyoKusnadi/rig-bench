@@ -177,18 +177,17 @@ Return: `spec_id`, `status` (completed/failed), `branch`, `summary`, `errors[]`.
 
 ---
 
-## Memory Tools
+## Checkpointing
 
-These CLI tools are available via Bash to help you explore prior work before implementing.
+If you have made more than 30 tool calls or feel your context is getting full, write a checkpoint before stopping:
 
-### search_git_history
+1. Write `PROGRESS.md` in the worktree root with two sections:
+   - `## Done` — bullet list of completed steps
+   - `## Next` — bullet list of remaining steps
+2. Stage and commit: `git add PROGRESS.md && git commit -m "checkpoint: progress snapshot"`
+3. Return your structured result with `status: "completed"` — the harness will detect the checkpoint and spawn a fresh instance to continue from the ## Next section.
 
-- **Description**: Search the indexed git commit history to find how similar work was done in past commits (commit message and changed-files matches).
-- **Usage**: `bash scripts/search-git-history.sh <query>`
-- **Input**: a single query string (case-insensitive substring match against commit messages and changed-file lists).
-- **Output**: the top 5 matching commits as human-readable text — short SHA (first 8 chars), commit message, and files changed.
-- **Example**: `bash scripts/search-git-history.sh "operator workflow"`
-- If no history has been indexed yet, the tool prints `No git history indexed yet — run scripts/bootstrap-git-history.sh first` and exits 1 — run `scripts/bootstrap-git-history.sh` first.
+The harness caps checkpoint resumes at 3 attempts per spec before marking the spec failed.
 
 ### search_structure
 

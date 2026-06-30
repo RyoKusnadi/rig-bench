@@ -261,7 +261,7 @@ Return structured output with rules_content and architecture_content.`,
         }
       }
 
-      return agent(
+      let execResult = await agent(
         `Implement spec ${spec.id}: "${spec.title}".
 
 The spec file is: specs/ready/${spec.filename}
@@ -284,6 +284,48 @@ Follow your agent instructions:
           schema:    EXEC_SCHEMA,
         },
       )
+
+      // ── Checkpoint detection + resume ───────────────────────────────────────
+      // If the operator agent ran low on context, it writes PROGRESS.md and
+      // returns status: 'completed' even though the spec isn't actually
+      // finished. Detect that on the returned branch and spawn a fresh
+      // operator agent to continue, capped at 3 resume attempts.
+      if (execResult && execResult.status === 'completed') {
+        let resumeCount = 0
+        while (resumeCount < 3) {
+          const progressCheck = await agent(
+            `On branch ${execResult.branch}, does PROGRESS.md exist in the worktree root? Run: git show ${execResult.branch}:PROGRESS.md 2>/dev/null && echo EXISTS || echo ABSENT`,
+            { label: `checkpoint-check:${spec.id}`, phase: 'Execute' },
+          )
+          if (!progressCheck || !progressCheck.includes('EXISTS')) break
+
+          log(`Spec ${spec.id}: checkpoint detected — resuming (attempt ${resumeCount + 1}/3)`)
+
+          const progress = await agent(
+            `Read PROGRESS.md from branch ${execResult.branch}`,
+            { label: `read-checkpoint:${spec.id}`, phase: 'Execute' },
+          )
+
+          execResult = await agent(
+            `You are resuming a task from a checkpoint. Here is the progress so far:\n${progress}\n\nContinue from the ## Next section. Branch: ${execResult.branch}`,
+            {
+              label:     `resume:${spec.id}`,
+              phase:     'Execute',
+              isolation: 'worktree',
+              agentType: 'operator',
+              schema:    EXEC_SCHEMA,
+            },
+          )
+
+          resumeCount++
+        }
+
+        if (resumeCount >= 3) {
+          execResult = { ...execResult, status: 'failed', errors: [...(execResult.errors || []), 'checkpoint_resume_limit'] }
+        }
+      }
+
+      return execResult
     },
 
     // ── Stage 2: Verify (+ one retry) ────────────────────────────────────────
