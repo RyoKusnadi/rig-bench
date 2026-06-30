@@ -21,17 +21,28 @@ const DISCOVERY_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          id:         { type: 'string' },
-          title:      { type: 'string' },
-          filename:   { type: 'string' },
-          depends_on: { type: 'array', items: { type: 'string' } },
+          id:                   { type: 'string' },
+          title:                { type: 'string' },
+          filename:             { type: 'string' },
+          depends_on:           { type: 'array', items: { type: 'string' } },
+          complexity:           { type: ['string', 'null'] },
+          files_to_modify_count: { type: ['number', 'null'] },
         },
-        required: ['id', 'title', 'filename', 'depends_on'],
+        required: ['id', 'title', 'filename', 'depends_on', 'complexity', 'files_to_modify_count'],
       },
     },
     finished_ids: { type: 'array', items: { type: 'string' } },
   },
   required: ['ready_specs', 'finished_ids'],
+}
+
+const MEMORY_CONTEXT_SCHEMA = {
+  type: 'object',
+  properties: {
+    rules_content:        { type: 'string' },
+    architecture_content: { type: 'string' },
+  },
+  required: ['rules_content', 'architecture_content'],
 }
 
 const EXEC_SCHEMA = {
@@ -114,6 +125,31 @@ function failVerify(spec_id, reason) {
   }
 }
 
+// Classifies a spec as 'simple' or 'complex' from its frontmatter fields
+// (as returned by the Discover stage: `complexity` and
+// `files_to_modify_count`).
+//
+// Rules (per spec 0014):
+//   - complexity: "low"  -> simple
+//   - complexity: "high" -> complex
+//   - no complexity field, files_to_modify has < 3 entries -> simple
+//   - no complexity field, files_to_modify has >= 3 entries -> complex
+//   - neither field present -> complex (conservative default: load full context)
+function classifySpec({ complexity, files_to_modify_count } = {}) {
+  const normalisedComplexity = typeof complexity === 'string' ? complexity.toLowerCase() : null
+  const count = typeof files_to_modify_count === 'number' ? files_to_modify_count : null
+
+  if (normalisedComplexity === 'low') return 'simple'
+  if (normalisedComplexity === 'high') return 'complex'
+
+  if (normalisedComplexity === null && count !== null) {
+    return count >= 3 ? 'complex' : 'simple'
+  }
+
+  // Neither field present (or unrecognised complexity value) -> conservative default
+  return 'complex'
+}
+
 // ── Discover ──────────────────────────────────────────────────────────────────
 
 phase('Discover')
@@ -126,10 +162,12 @@ Run:
   ls specs/finished/ 2>/dev/null | grep '\\.md$' | sed 's/-.*//'
 
 For each file in specs/ready/, read its YAML frontmatter and extract:
-  id         — zero-padded string, e.g. "0001"
-  title      — short imperative title
-  filename   — just the file name, e.g. "0001-my-feature.md"
-  depends_on — array of spec ID strings; empty array if none
+  id                     — zero-padded string, e.g. "0001"
+  title                  — short imperative title
+  filename               — just the file name, e.g. "0001-my-feature.md"
+  depends_on             — array of spec ID strings; empty array if none
+  complexity             — the frontmatter "complexity" field value ("low", "medium", or "high"), or null if absent
+  files_to_modify_count  — the number of entries in the frontmatter "files_to_modify" array field (count lines starting with "-" under that key), or null if the field is absent
 
 For specs/finished/, collect only the IDs (the prefix before the first "-").
 
@@ -171,8 +209,42 @@ for (let i = 0; i < waves.length; i++) {
     wave,
 
     // ── Stage 1: Execute ──────────────────────────────────────────────────────
-    spec => agent(
-      `Implement spec ${spec.id}: "${spec.title}".
+    async spec => {
+      const complexity = classifySpec(spec)
+      log(`Spec ${spec.id}: complexity=${complexity}`)
+
+      let memoryContextBlock = ''
+
+      if (complexity === 'complex') {
+        const memoryContext = await agent(
+          `Read the contents of memory/RULES.md and memory/ARCHITECTURE.md if they exist in the repo root.
+
+For each file:
+  - If it doesn't exist, or exists but is empty (no non-whitespace content), return an empty string for it.
+  - Otherwise return its full raw text content.
+
+Return structured output with rules_content and architecture_content.`,
+          {
+            label:     `memory-context:${spec.id}`,
+            phase:     'Execute',
+            isolation: 'worktree',
+            schema:    MEMORY_CONTEXT_SCHEMA,
+          },
+        )
+
+        const rulesContent = memoryContext?.rules_content?.trim() || ''
+        const architectureContent = memoryContext?.architecture_content?.trim() || ''
+
+        if (rulesContent || architectureContent) {
+          const sections = []
+          if (rulesContent) sections.push(`### memory/RULES.md\n\n${rulesContent}`)
+          if (architectureContent) sections.push(`### memory/ARCHITECTURE.md\n\n${architectureContent}`)
+          memoryContextBlock = `\n\n## Memory Context\n\n${sections.join('\n\n')}`
+        }
+      }
+
+      return agent(
+        `Implement spec ${spec.id}: "${spec.title}".
 
 The spec file is: specs/ready/${spec.filename}
 
@@ -185,15 +257,16 @@ Follow your agent instructions:
 6. Commit the implementation (stage explicitly — never git add -A)
 7. Move spec to waiting_verification/ and update status frontmatter
 8. Commit the lifecycle move
-9. Return structured result`,
-      {
-        label:     `exec:${spec.id}`,
-        phase:     'Execute',
-        isolation: 'worktree',
-        agentType: 'operator',
-        schema:    EXEC_SCHEMA,
-      },
-    ),
+9. Return structured result${memoryContextBlock}`,
+        {
+          label:     `exec:${spec.id}`,
+          phase:     'Execute',
+          isolation: 'worktree',
+          agentType: 'operator',
+          schema:    EXEC_SCHEMA,
+        },
+      )
+    },
 
     // ── Stage 2: Verify (+ one retry) ────────────────────────────────────────
     async (execResult, spec) => {
