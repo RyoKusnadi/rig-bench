@@ -1,7 +1,7 @@
 ---
 id: "0005"
 title: Structural search tool for operator agent
-status: waiting_verification
+status: finished
 depends_on: ["0003"]
 source: memory.md#deliverable-13-structural-search-tool
 ---
