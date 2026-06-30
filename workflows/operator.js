@@ -2,12 +2,13 @@ export const meta = {
   name: 'operator',
   description: 'Execute-Verify-Merge pipeline: runs ready specs concurrently in git worktrees, verifies each against acceptance criteria, retries once on failure, opens draft PRs for passing specs',
   phases: [
-    { title: 'Discover', detail: 'Read specs/ready/ and build dependency graph' },
-    { title: 'Execute',  detail: 'Run specs concurrently — each in its own git worktree' },
-    { title: 'Verify',   detail: 'Check acceptance criteria per spec; retry failed specs once' },
-    { title: 'Retry',    detail: 'Re-execute and re-verify failed specs (capped at 1 attempt)' },
-    { title: 'Merge',    detail: 'Open draft PR per verified spec' },
-    { title: 'Report',   detail: 'Summarise outcomes' },
+    { title: 'Discover',  detail: 'Read specs/ready/ and build dependency graph' },
+    { title: 'PreFlight', detail: 'Refresh the structural index so agents navigate a current map' },
+    { title: 'Execute',   detail: 'Run specs concurrently — each in its own git worktree' },
+    { title: 'Verify',    detail: 'Check acceptance criteria per spec; retry failed specs once' },
+    { title: 'Retry',     detail: 'Re-execute and re-verify failed specs (capped at 1 attempt)' },
+    { title: 'Merge',     detail: 'Open draft PR per verified spec' },
+    { title: 'Report',    detail: 'Summarise outcomes' },
   ],
 }
 
@@ -156,6 +157,23 @@ if (waves.length === 0) {
   log('No specs can run — all have unresolvable dependencies.')
   return { status: 'blocked', results: [], waves: [], stuck: stuck.map(s => s.id) }
 }
+
+// ── Pre-flight: refresh structural index ─────────────────────────────────────
+
+phase('PreFlight')
+log('Refreshing structural index...')
+
+let preflightResult
+try {
+  preflightResult = await agent(
+    'Run the structural index script: bash scripts/build-structure-index.sh\nReport success or the error output.',
+    { label: 'preflight:structure-index', phase: 'PreFlight' },
+  )
+} catch (err) {
+  preflightResult = `error: ${err?.message || err}`
+}
+
+log('Pre-flight complete: ' + (preflightResult || 'done'))
 
 // ── Execute waves ─────────────────────────────────────────────────────────────
 
