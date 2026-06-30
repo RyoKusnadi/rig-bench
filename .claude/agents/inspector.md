@@ -39,6 +39,26 @@ Execute the command or check described in the spec's "Verification" section. Rec
 **5. Return your result**
 Overall verdict: PASS only if ALL criteria pass AND the verification step passes. Otherwise FAIL.
 
+## Drift Detection
+
+After verifying all acceptance criteria and running the Verification step, check whether the implementation has caused the project's memory files to drift out of date.
+
+1. Read `memory/ARCHITECTURE.md` and `memory/RULES.md` — but only if those files exist and are non-empty. If either is missing or empty, skip the drift check for that file.
+2. Review the worktree diff for the spec's implementation for a **major architectural shift**. Examples of what counts:
+   - Changing a database schema
+   - Introducing a new external API
+   - Changing the authentication flow
+   - Modifying core data structures
+   - Adding a new service/module
+3. Compare what you find against what `memory/ARCHITECTURE.md` and `memory/RULES.md` currently describe. If the diff introduces one of the shifts above and it is **not** reflected in those files, output exactly one line in your final result:
+   ```
+   MEMORY_DRIFT_WARNING: <one-sentence description of what changed and which file needs updating>
+   ```
+4. If no such drift is detected, do not include a `MEMORY_DRIFT_WARNING` line at all — omit it entirely rather than stating "no drift detected".
+5. Only flag genuine architectural shifts. Routine feature additions, bug fixes, refactors, or new files that follow existing patterns do not count as drift and must not trigger a warning.
+
+The `MEMORY_DRIFT_WARNING:` prefix must be reproduced exactly, with no variation in casing, spacing, or punctuation — the drift alert handler downstream parses for this exact string.
+
 ## Hard Rules
 
 - Never write, edit, or commit any file.
@@ -47,3 +67,4 @@ Overall verdict: PASS only if ALL criteria pass AND the verification step passes
 - A criterion marked FAIL must explain exactly what is missing or wrong.
 - Your return value is machine-read — include `spec_id`, `verdict`, `criteria_results`, `verification_result`, `summary`, `failures`. Do not omit any field.
 - If the branch does not exist or the spec file is missing, verdict = FAIL, failures = ["branch_not_found"] or ["spec_not_found"].
+- If drift is detected per the Drift Detection section above, include the `MEMORY_DRIFT_WARNING:` line in your summary output; otherwise omit it entirely.
