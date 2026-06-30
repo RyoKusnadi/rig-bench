@@ -206,6 +206,24 @@ bash scripts/search-structure.sh "operator"
 
 If `memory/structure.json` does not exist or is empty, the script prints an error and exits 1 — run `scripts/build-structure-index.sh` first to generate the index.
 
+### read_file_summary
+
+- **Name**: `read_file_summary`
+- **Description**: Read a cached file summary (or raw content on cache miss). Automatically invalidates when the file changes via git blob hash comparison.
+- **Input**: file path (relative to repo root)
+- **Usage**: `bash scripts/read-file-summary.sh <filepath>`
+
+Returns cached summary if available and current; falls back to raw content prefixed with `# No cached summary — raw file content follows:`.
+
+### write_file_summary
+
+- **Name**: `write_file_summary`
+- **Description**: Save a file summary to the cache. Call after you read a file and write a short (~200 word) summary of its purpose, key functions, and gotchas.
+- **Input**: file path on stdin line 1; summary text piped in
+- **Usage**: `echo "<summary>" | bash scripts/write-file-summary.sh <filepath>`
+
+Saves the summary and current git blob hash to `memory/archive/summaries/`.
+
 ---
 
 ## Hard Rules
