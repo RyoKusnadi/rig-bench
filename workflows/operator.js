@@ -315,6 +315,22 @@ Follow your agent instructions:
 
       let result = await verifyOnce(execResult.branch, `verify:${spec.id}`)
 
+      // Check for drift warning
+      const verifyOutput = result?.summary || ''
+      const driftMatch = verifyOutput.match(/MEMORY_DRIFT_WARNING:\s*(.+)/)
+      if (driftMatch) {
+        const warning = driftMatch[1].trim()
+        log(`DRIFT DETECTED in spec ${spec.id} — spawning maintenance agent`)
+        // Append to PENDING_UPDATES.md via agent
+        await agent(
+          `Append this drift warning to memory/PENDING_UPDATES.md:
+## [<current timestamp>] Spec ${spec.id}: ${warning}
+
+Then read memory/ARCHITECTURE.md and memory/RULES.md, analyze the warning, rewrite the outdated section to reflect the new architecture described in the warning. Finally, remove the entry you just added from memory/PENDING_UPDATES.md.`,
+          { label: 'maintenance:drift', phase: 'Verify', model: 'claude-haiku-4-5-20251001' }
+        )
+      }
+
       if (result && result.verdict === 'PASS') {
         return { ...result, branch: execResult.branch }
       }
