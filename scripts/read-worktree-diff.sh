@@ -28,7 +28,7 @@ fi
 total_lines="$(printf '%s\n' "$diff_output" | wc -l | tr -d ' ')"
 
 echo "# Worktree diff (${diff_label}):"
-printf '%s\n' "$diff_output" | head -n "$TRUNCATE_LIMIT"
+{ printf '%s\n' "$diff_output" || true; } | head -n "$TRUNCATE_LIMIT"
 
 if [ "$total_lines" -gt "$TRUNCATE_LIMIT" ]; then
   echo "# [TRUNCATED at ${TRUNCATE_LIMIT} lines]"
