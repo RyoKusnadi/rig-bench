@@ -1,6 +1,6 @@
 # rig-bench
 
-A clean-slate multi-agent harness for Claude Code. Spec-driven development with a plan→execute pipeline, concurrent worktree-isolated execution, and a structured lifecycle for every deliverable.
+A clean-slate multi-agent harness for Claude Code. Spec-driven development with a plan→execute pipeline, concurrent worktree-isolated execution, a structured lifecycle for every deliverable, and a persistent memory system that gives every agent codebase context without re-reading files.
 
 ---
 
@@ -11,6 +11,7 @@ A clean-slate multi-agent harness for Claude Code. Spec-driven development with 
 1. **Plan** — design a spec interactively before any code is written
 2. **Execute** — implement specs concurrently, each agent in its own git worktree
 3. **Verify** — confirm implementation matches requirements before marking as finished
+4. **Remember** — structural index, git history, and AI-generated docs persist across runs so agents start informed
 
 The `operator` agent is the core execution primitive. It runs inside an isolated git worktree per spec, creates a feature branch, implements, commits, and advances the spec through the lifecycle — all without touching any other spec's work.
 
@@ -23,16 +24,34 @@ rig-bench/
 ├── .claude/
 │   ├── agents/
 │   │   ├── operator.md       # Plan + implement (orchestrator or per-spec worker)
-│   │   ├── inspector.md      # Verification (worktree-isolated, read-only)
+│   │   ├── inspector.md      # Verification + drift detection (worktree-isolated, read-only)
 │   │   └── shipper.md        # PR creation (worktree-isolated, push+PR)
 │   ├── commands/
-│   │   ├── operator.md       # /operator — plan once, then execute all specs concurrently
 │   │   ├── plan.md           # /plan    — interactive spec authoring
 │   │   ├── execute.md        # /execute — execute one or more ready specs
 │   │   └── verify.md         # /verify  — verify waiting specs against their criteria
 │   └── settings.json         # Permissions
 ├── workflows/
-│   └── operator.js           # Concurrent execution workflow (pipeline + worktrees)
+│   ├── operator.js           # Concurrent execution workflow (pipeline + worktrees)
+│   └── bootstrap-memory.js   # One-shot AI memory generation (Architect + Reviewer agents)
+├── scripts/
+│   ├── bootstrap-git-history.sh   # Index last 50 commits → memory/archive/git/index.json
+│   ├── build-structure-index.sh   # Scan repo exports/imports → memory/structure.json
+│   ├── search-structure.sh        # Query structural index (used by operator)
+│   ├── search-git-history.sh      # Query git history index with LEGACY tagging
+│   ├── read-file-summary.sh       # Read cached file summary (hash-invalidated)
+│   ├── write-file-summary.sh      # Write file summary to cache
+│   ├── read-worktree-diff.sh      # Print diff vs main, truncated to 10k lines
+│   └── archive-spec.sh            # Archive a finished spec into memory/archive/
+├── memory/                   # Persistent memory vault
+│   ├── ARCHITECTURE.md       # AI-generated system architecture (semantic memory)
+│   ├── RULES.md              # AI-generated coding standards (semantic memory)
+│   ├── PENDING_UPDATES.md    # Drift alerts awaiting resolution
+│   ├── structure.json        # Structural index of all source files
+│   └── archive/
+│       ├── git/index.json    # Git commit history (last 50, with LEGACY tagging)
+│       ├── index.json        # Index of archived finished specs
+│       └── summaries/        # Hash-invalidated file summary cache
 ├── specs/                    # Spec lifecycle folders
 │   ├── draft/                # Being written; may have [NEEDS CLARIFICATION] markers
 │   ├── ready/                # All ambiguity resolved; ready to execute
@@ -41,12 +60,11 @@ rig-bench/
 │   ├── finished/             # Shipped — merged PR is the permanent record
 │   ├── blocked/              # Waiting on a dependency or decision
 │   └── abandoned/            # Won't do; kept for reference
-├── hooks/                    # Placeholder (to be implemented)
-├── lib/                      # Placeholder (to be implemented)
-├── scripts/                  # Placeholder (to be implemented)
-├── config/schemas/           # Placeholder (to be implemented)
-├── tests/                    # Placeholder (to be implemented)
-└── projects/                 # Placeholder (to be implemented)
+├── hooks/                    # Reserved for lifecycle hooks
+├── lib/                      # Reserved for shared libraries
+├── config/schemas/           # Reserved for JSON schemas
+├── tests/                    # Reserved for test harness
+└── projects/                 # Standalone project repos (each is its own git repo)
 ```
 
 ---
@@ -101,15 +119,22 @@ Two modes, one agent:
 
 ```
 Discover
-  ↓ read specs/ready/, build dependency graph
+  ↓ read specs/ready/, build dependency graph, classify each spec simple/complex
+
+PreFlight
+  ↓ run build-structure-index.sh to refresh memory/structure.json
 
 Wave N (all specs in this wave run concurrently via pipeline())
   ↓
   Stage 1 — Execute (operator, worktree)
+    classify complexity → inject memory context if complex (RULES.md + ARCHITECTURE.md)
     create branch → implement → commit → move spec to waiting_verification/
+    checkpoint: if context fills, write PROGRESS.md and resume (up to 3×)
   ↓
   Stage 2 — Verify (inspector, worktree)
-    checkout branch → check criteria → run verification step
+    read diff first (read-worktree-diff.sh) → check criteria → run verification step
+    drift check: compare diff against ARCHITECTURE.md/RULES.md
+      drift found → emit MEMORY_DRIFT_WARNING → maintenance agent updates memory files
       PASS → continue
       FAIL → retry: re-execute (operator) → re-verify (inspector)
                PASS → continue
@@ -198,14 +223,115 @@ If you have gitignored files that should be available in worktrees (e.g. `.env`)
 
 ---
 
+## Memory
+
+The memory system gives every agent codebase context without re-reading files on each run. It has four layers that serve different purposes:
+
+```mermaid
+flowchart TD
+    subgraph Vault["📁 memory/  (vault)"]
+        direction TB
+        ARCH["ARCHITECTURE.md\n─────────────\nModules · data flow\nkey files · integrations\n(semantic)"]
+        RULES["RULES.md\n─────────────\nNaming · error handling\nlifecycle rules · constraints\n(semantic)"]
+        STRUCT["structure.json\n─────────────\nEvery source file:\npath · type · exports · imports\n(structural)"]
+        PENDING["PENDING_UPDATES.md\n─────────────\nDrift alerts awaiting\nresolution\n(live)"]
+        subgraph Archive["archive/"]
+            GIT["git/index.json\n50 commits\nsha · date · message · files"]
+            SUMS["summaries/\nhash-invalidated\nper-file summaries"]
+            SIDX["index.json\nfinished spec index"]
+        end
+    end
+
+    subgraph Bootstrap["🔧 Bootstrap  (run once)"]
+        BM["workflows/bootstrap-memory.js\nArchitect agent → ARCHITECTURE.md + RULES.md\nReviewer agent → fact-checks + corrects"]
+        BGH["scripts/bootstrap-git-history.sh\ngit log -50 → git/index.json"]
+    end
+
+    subgraph Workflow["⚙️ workflows/operator.js"]
+        PF["PreFlight\nbuild-structure-index.sh"]
+        CX["Complexity check\nsimple → minimal ctx\ncomplex → full ctx"]
+        EXEC["Execute\noperator agent"]
+        VFY["Verify\ninspector agent"]
+        MA["Maintenance agent\nupdates ARCHITECTURE.md\nor RULES.md"]
+    end
+
+    subgraph Tools["🛠 Memory Tools  (bash scripts)"]
+        SS["search-structure.sh\nquery structure.json"]
+        SGH["search-git-history.sh\nquery git index\n+ LEGACY tagging"]
+        RFS["read-file-summary.sh\ncached summary or\nraw fallback"]
+        WFS["write-file-summary.sh\nsave summary + hash"]
+        AS["archive-spec.sh\nspec → memory/archive/"]
+    end
+
+    BM -->|generates| ARCH
+    BM -->|generates| RULES
+    BGH -->|populates| GIT
+    PF -->|refreshes| STRUCT
+
+    STRUCT -->|queried by| SS
+    GIT -->|queried by| SGH
+    SUMS <-->|read/write| RFS
+    RFS --- WFS
+
+    CX -->|complex: injects| ARCH
+    CX -->|complex: injects| RULES
+    EXEC -->|calls| SS
+    EXEC -->|calls| SGH
+    EXEC -->|calls| RFS
+    EXEC -->|calls| WFS
+
+    VFY -->|reads for drift check| ARCH
+    VFY -->|reads for drift check| RULES
+    VFY -->|MEMORY_DRIFT_WARNING →| MA
+    MA -->|rewrites outdated sections| ARCH
+    MA -->|rewrites outdated sections| RULES
+    MA -->|logs to| PENDING
+
+    AS -->|indexes| SIDX
+```
+
+### Memory layers
+
+| Layer | Files | Updated by | Used by |
+|---|---|---|---|
+| **Semantic** | `ARCHITECTURE.md`, `RULES.md` | `bootstrap-memory.js` (once), maintenance agent (on drift) | operator (complex specs), inspector (drift check) |
+| **Structural** | `structure.json` | `build-structure-index.sh` (every pre-flight) | `search-structure.sh` → operator |
+| **Episodic** | `archive/git/index.json`, `archive/index.json` | `bootstrap-git-history.sh` (once), `archive-spec.sh` (per finish) | `search-git-history.sh` → operator |
+| **Summary cache** | `archive/summaries/*.md` + `*.hash` | `write-file-summary.sh` (agent-driven) | `read-file-summary.sh` → operator |
+
+### Bootstrapping
+
+Run these once after cloning (or after major architecture changes):
+
+```bash
+# 1. Index the last 50 git commits
+bash scripts/bootstrap-git-history.sh
+
+# 2. Generate structural index of all source files
+bash scripts/build-structure-index.sh
+
+# 3. AI-generate ARCHITECTURE.md + RULES.md (runs two agents — requires Claude API)
+# Via Claude Code:  /workflow workflows/bootstrap-memory.js
+```
+
+The structural index is automatically refreshed before every workflow run (PreFlight step). The git index and semantic files are stable unless the architecture changes significantly — the inspector detects those shifts and a maintenance agent rewrites the affected sections automatically.
+
+### Drift detection
+
+The inspector reads `ARCHITECTURE.md` and `RULES.md` during every verification pass. If it detects a major architectural shift in the diff (new external API, schema change, new service), it emits `MEMORY_DRIFT_WARNING:` in its output. The workflow catches this, spawns a fast maintenance agent (`claude-haiku-4-5-20251001`) to rewrite the outdated sections, then clears the entry from `PENDING_UPDATES.md`.
+
+---
+
 ## Design Principles
 
 - **Spec first** — no code before the spec is written and approved
 - **One spec = one PR** — sized to fit one feature branch and one review
 - **Dependency ordering** — `depends_on` is the only coordination mechanism between specs
+- **File-conflict gate** — before approval, every batch of specs is scanned for shared files; any two specs that touch the same file are chained via `depends_on` to prevent merge conflicts during concurrent worktree execution
 - **Worktree isolation** — concurrent agents never share a working directory
 - **Structured output** — every agent call returns a typed schema, not prose
 - **State, not transcripts** — the workflow passes structured data between phases, never raw text
+- **Memory over re-reading** — structural index, git history, and AI-generated docs are queried at task time; agents never cold-start without codebase context
 
 ---
 
@@ -214,6 +340,4 @@ If you have gitignored files that should be available in worktrees (e.g. `.env`)
 See `REMOVED.md` for the full inventory of systems stripped during the clean-slate reset, and their intended re-implementations:
 
 - Hook system (safety, telemetry, lifecycle)
-- Memory system (per-project + portable cross-project)
-- Inspector agent (adversarial review, security, quality gates)
 - Token telemetry
