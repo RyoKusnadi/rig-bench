@@ -38,6 +38,8 @@ Read the frontmatter of each file and extract:
 - `id` — zero-padded 4-digit string (e.g. `0001`)
 - `title` — short imperative title
 - `status` — should be `waiting_verification`
+- `verify_attempts` — how many times this spec has already failed verification (default `0`
+  if the field predates this being tracked; treat a missing field as `0`, don't error on it)
 
 Also read the full body of each file to extract:
 - `Acceptance Criteria` — the EARS-style behavioral sentences that must hold
@@ -100,6 +102,11 @@ Overall: PASS / FAIL
 
 For every spec where **all** criteria and the verification step passed:
 
+If the file has a `## Verification Failures` section from an earlier failed attempt, remove
+it — a shipped spec shouldn't carry stale failure history in the working tree; the git history
+of the file is the permanent record of what failed before, per "Clearing the record on
+success" in `specs/README.md`.
+
 ```bash
 git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
 ```
@@ -116,13 +123,62 @@ Report: `Spec {id} — {title}: verified and moved to finished.`
 
 ## Phase 6 — Handle failing specs
 
-For every spec where **any** criterion or the verification step failed:
+For every spec where **any** criterion or the verification step failed, follow the retry
+contract in "State Transitions" → "Retry contract" in `specs/README.md` — this is the
+canonical description; the steps below are just this skill's execution of it.
 
-- Leave the file in `specs/<project>/waiting_verification/` — do not move it.
-- Report all failures clearly so the implementer knows exactly what to fix.
-- Do **not** commit anything for failing specs.
+**6a. Record the failure**
 
-Report: `Spec {id} — {title}: verification FAILED — see above for details.`
+1. Increment `verify_attempts` by 1 in the spec's frontmatter (treat a missing field as `0`
+   before incrementing, so it becomes `1`).
+2. Write a `## Verification Failures` section into the spec body (append it if absent,
+   otherwise replace the existing one — don't accumulate failure history across attempts,
+   the current attempt's list is what matters). Format:
+   ```
+   ## Verification Failures
+
+   Attempt {verify_attempts} of {MAX_VERIFY_ATTEMPTS}.
+
+   - Criterion: <criterion text>
+     Reason: <what was missing or wrong>
+   - Verification step: <what ran>
+     Reason: <how the output didn't match>
+   ```
+   Only list what actually failed — passing criteria don't need an entry here (Phase 4's
+   report already covers those).
+
+**6b. Stay in place, or escalate to blocked**
+
+`MAX_VERIFY_ATTEMPTS = 2` (defined in `specs/README.md`, don't hardcode a different number
+here — if it ever changes, that's the one place to change it).
+
+- **If `verify_attempts < MAX_VERIFY_ATTEMPTS`:** leave the file in
+  `specs/<project>/waiting_verification/` — do not move it, `status` unchanged. Commit the
+  frontmatter/section update:
+  ```bash
+  git add specs/<project>/waiting_verification/<filename>
+  git commit -m "spec(<id>): record verification failure, attempt <verify_attempts>/<MAX_VERIFY_ATTEMPTS>"
+  ```
+  Report: `Spec {id} — {title}: verification FAILED (attempt {verify_attempts} of
+  {MAX_VERIFY_ATTEMPTS}) — see above for details. Ask spec-exec to fix and resubmit.`
+
+- **If `verify_attempts >= MAX_VERIFY_ATTEMPTS`:** move the spec to `blocked/` instead of
+  leaving it to fail silently forever:
+  ```bash
+  git mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
+  ```
+  Update `status` to `blocked` in the frontmatter, then commit:
+  ```bash
+  git add -f specs/<project>/blocked/<filename>
+  git commit -m "spec(<id>): block after <verify_attempts> failed verification attempts"
+  ```
+  Report clearly, as an escalation rather than a routine failure:
+  `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked/.
+  This needs human review before another attempt; see specs/README.md's "Un-blocking a spec"
+  for how to bring it back.`
+
+Do not auto-retry within the same run — one verify pass per spec per invocation, same as a
+passing spec only moves once.
 
 ## Quick reference
 
@@ -132,8 +188,13 @@ Report: `Spec {id} — {title}: verification FAILED — see above for details.`
 | "verify all specs in template" | Verify every spec in `specs/template/waiting_verification/` |
 | "verify 0001 and 0003 in template" | Verify only those two specs |
 | "is the template stuff ready to ship" | Same as "verify the specs", scoped to `template` |
+| (a spec fails verification a 2nd time) | Moved to `specs/<project>/blocked/` automatically — not a request the user makes, but the resulting behavior |
 
 ## Gotchas
 
-None recorded yet. Add entries here as real failure modes surface in practice — this section
-is more valuable filled in from actual mistakes than speculated in advance.
+- A spec's `verify_attempts` only increments on an actual failed verification run — re-running
+  `spec-verify` against a spec that already passed (and is sitting in `finished/`) is a no-op,
+  not a fresh attempt; this skill only ever looks at `waiting_verification/`.
+- Don't forget to strip the `## Verification Failures` section on a passing run (Phase 5) —
+  leaving it in a `finished/` spec makes the file's last-known state look like it's still
+  failing, which is confusing for anyone reading it later without checking git history.

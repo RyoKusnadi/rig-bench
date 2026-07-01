@@ -11,6 +11,8 @@
 #   - specs whose Files/Interfaces Touched list has grown past the
 #     "one deliverable" sizing rule (specs/README.md "Rule" section), which
 #     nothing currently catches automatically
+#   - a spec's frontmatter `status` not matching the lifecycle folder it's
+#     physically sitting in (specs/README.md "State Transitions" invariant)
 #
 # This is advisory, not a hard gate — matching the existing file-conflict scan's
 # own severity. Exits 1 if any issue is found so it can be wired into CI later,
@@ -116,6 +118,31 @@ for f in "${SPEC_FILES[@]}"; do
   if [[ "$count" -gt "$SIZING_THRESHOLD" ]]; then
     echo "ISSUE [sizing]: $f lists $count files under Files/Interfaces Touched (threshold: $SIZING_THRESHOLD)."
     echo "  specs/README.md's Rule: one spec = one deliverable. Consider splitting."
+    ISSUES=$((ISSUES + 1))
+  fi
+done
+
+# ── Status/folder mismatch: frontmatter status must match the lifecycle folder ──
+VALID_STATES=(draft ready in_progress waiting_verification finished blocked abandoned)
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+  fm="$(frontmatter "$f")"
+  status="$(printf '%s\n' "$fm" | grep -E '^status:' | head -1 | sed -E 's/^status:[[:space:]]*//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
+  if [[ -z "$status" ]]; then
+    echo "ISSUE [missing-status]: $f has no 'status' field in frontmatter."
+    ISSUES=$((ISSUES + 1))
+    continue
+  fi
+  is_valid=0
+  for s in "${VALID_STATES[@]}"; do
+    [[ "$status" == "$s" ]] && is_valid=1 && break
+  done
+  if [[ "$is_valid" -eq 0 ]]; then
+    echo "ISSUE [unknown-status]: $f has status '$status', which isn't one of: ${VALID_STATES[*]}."
+    ISSUES=$((ISSUES + 1))
+  elif [[ "$status" != "$folder" ]]; then
+    echo "ISSUE [status-mismatch]: $f has status '$status' but sits in '$folder/'."
+    echo "  specs/README.md's State Transitions invariant: status must always match the physical folder."
     ISSUES=$((ISSUES + 1))
   fi
 done
