@@ -106,8 +106,8 @@ limbo forever without anyone noticing.
 
 ## How to Use This Repo
 
-This covers planning and execution — verification will follow the same pattern once its own
-docs are written here.
+This covers planning, execution, and verification — the three phases of the spec lifecycle,
+in order.
 
 **Planning a new feature or task:**
 
@@ -149,6 +149,34 @@ resume 0003, it got interrupted last time
 If you don't name specific spec IDs, you'll be shown what's available and asked which to run.
 Anything with an unfinished dependency gets blocked with a clear message rather than run
 out of order.
+
+**Verifying an implemented spec:**
+
+Once a spec is sitting in `waiting_verification/`, just ask for it:
+
+```
+verify 0001 for template
+```
+```
+is the waiting_verification stuff ready to ship?
+```
+```
+did 0003 actually meet its acceptance criteria?
+```
+
+If you don't name specific spec IDs, you'll be shown what's waiting and asked which to check.
+Each spec's Acceptance Criteria and Verification step are checked against the actual code —
+not assumed from the implementation report — and only a full pass moves a spec to `finished/`.
+
+A spec that fails stays in `waiting_verification/` with a clear list of what's still wrong, so
+you can ask `spec-exec` to fix it directly:
+
+```
+fix 0001 — the rate limiter isn't returning 429s under load
+```
+
+Fail the same spec twice and it won't loop silently: it moves to `blocked/` instead, and needs
+a human decision before another attempt.
 
 ---
 
