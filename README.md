@@ -21,58 +21,37 @@ The `operator` agent is the core execution primitive. It runs inside an isolated
 
 ### `/spec-plan`
 
-> Not a literal slash command — it's a Skill (`.claude/skills/spec-plan/`) that triggers from
-> natural conversation ("let's plan X", "help me design a spec for Y") or proactively when you
-> jump straight to "let's build X" for anything nontrivial with no spec yet. The `/spec-plan`
-> heading here is shorthand for "the planning skill," not something you type literally.
+> Just a shorthand name — you don't type `/spec-plan`. It kicks in automatically when you
+> ask to plan or design something, like saying "let's plan X" or "help me build Y."
 
-**What it does:** runs a collaborative planning session that produces a docs-level spec
-*before* any code is written. The spec — not the code that follows it — is the source of
-truth. **No spec file, and no code, gets written before you've approved the plan**;
-everything is drafted and shown to you first.
-
-**How it works** — five phases, run in order:
+Think of it as a thinking partner before any code gets written. Instead of jumping straight
+into building, it helps turn your idea into a clear, written-down plan first — then only
+starts writing files once you've said "yes, that's right."
 
 ```mermaid
 flowchart TD
-    A["Resolve project<br/>specs/&lt;project&gt;/"] --> B["Orient:<br/>read specs/README.md +<br/>spec-template.md +<br/>find next spec ID"]
-    B --> C["Capture intent:<br/>success criteria, key decisions,<br/>explicit out-of-scope"]
-    C --> D["Check against<br/>CLAUDE.md Non-negotiables<br/>(always, even trivial specs)"]
-    D --> E{"Nontrivial spec?<br/>new UI / service / integration"}
-    E -->|yes| F["Considerations scan<br/>— see diagram below"]
-    E -->|no, trivial fix| G["Draft spec"]
-    F --> G
-    G --> H["Present full draft<br/>for review"]
-    H --> I{Approved?}
-    I -->|no, revise| C
-    I -->|yes| J["Write to<br/>specs/&lt;project&gt;/ready/"]
-    J --> K["Run scripts/check-specs.sh"]
-    K --> L["Report file path + spec ID"]
+    A[You describe what you want] --> B[It asks a few questions,<br/>only if something's unclear]
+    B --> C[It writes up the plan]
+    C --> D[You review it]
+    D --> E{Good to go?}
+    E -->|Not quite| B
+    E -->|Yes| F[Plan gets saved,<br/>ready to build]
 ```
 
-The **considerations scan** (step 4, only for nontrivial specs) is the part worth a second
-diagram — it's designed to surface things you didn't think to mention without turning into a
-fixed checklist that creates false confidence once a box is ticked:
+For bigger or trickier requests, it also thinks about things you might not have mentioned —
+like how something should work on mobile, or what happens if it fails — without turning into
+a rigid checklist:
 
 ```mermaid
 flowchart TD
-    A["For each dimension:<br/>non-functional attrs, integration,<br/>operational surface, edge cases"] --> B{"Already answered by<br/>the repo's own config?"}
-    B -->|yes| C["State as fact in the spec<br/>— not a question"]
-    B -->|no| D{"Would the answer<br/>change the design?"}
-    D -->|no| E["Skip — not worth asking"]
-    D -->|"yes, genuinely open"| F["Add to question batch<br/>capped at ~5"]
-    F --> G{"Sensible default<br/>exists?"}
-    G -->|yes| H["Web search it, propose<br/>the default + 1-line reason"]
-    G -->|no| I["Ask as an open question"]
-    H --> J["Batch into one ask —<br/>review once, not back-and-forth"]
-    I --> J
+    A[Consider things you<br/>didn't mention] --> B{Already answered by<br/>how the project works?}
+    B -->|Yes| C[Just note it — no need to ask]
+    B -->|No, and it matters| D[Add to a short list<br/>to check with you]
+    D --> E[Suggest a sensible answer<br/>you can approve or change]
 ```
 
-Each spec follows `specs/spec-template.md`'s shape: `Problem`, `Acceptance Criteria`
-(EARS-style, one behavior per sentence), `Out of Scope`, `Files/Interfaces Touched`,
-`Implementation Notes`, `Verification`. Multiple unrelated deliverables in one task get split
-into separate specs up front, cross-linked via `depends_on`, rather than drafted as one
-oversized spec.
+It only asks about things that would actually change how the plan turns out — and when it
+does ask, it comes with a suggestion, not a blank question.
 
 ---
 
