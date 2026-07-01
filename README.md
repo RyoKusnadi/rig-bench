@@ -21,8 +21,8 @@ The `operator` agent is the core execution primitive. It runs inside an isolated
 
 ### `/spec-plan`
 
-> Just a shorthand name — you don't type `/spec-plan`. It kicks in automatically when you
-> ask to plan or design something, like saying "let's plan X" or "help me build Y."
+> You don't type `/spec-plan` — it kicks in automatically when you ask to plan or design
+> something, like saying "let's plan X" or "help me build Y."
 
 Think of it as a thinking partner before any code gets written. Instead of jumping straight
 into building, it helps turn your idea into a clear, written-down plan first — then only
