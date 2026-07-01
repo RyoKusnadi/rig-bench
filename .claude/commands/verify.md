@@ -124,6 +124,6 @@ Report: `Spec {id} — {title}: verification FAILED — see above for details.`
 | Invocation | Behaviour |
 |---|---|
 | `/verify` | Interactive: resolves project (asking if ambiguous), lists waiting specs, asks which to verify |
-| `/verify rig-bench all` | Verify all specs in `specs/rig-bench/waiting_verification/` |
-| `/verify rig-bench 0001 0003` | Verify only specs 0001 and 0003 in the `rig-bench` project |
+| `/verify template all` | Verify all specs in `specs/template/waiting_verification/` |
+| `/verify template 0001 0003` | Verify only specs 0001 and 0003 in the `template` project |
 | `/verify all` | Same as above, but only valid when exactly one project folder exists |

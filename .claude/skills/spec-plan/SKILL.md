@@ -20,7 +20,7 @@ and wait for a clear go-ahead before creating any file.
 ## Phase 0 — Resolve the project
 
 Specs are scoped per project under `specs/<project_name>/` (see `specs/README.md`) —
-`specs/rig-bench/` for the harness itself, or `specs/<name>/` for a project under
+`specs/template/` for the harness itself, or `specs/<name>/` for a project under
 `projects/`. Before anything else, figure out which project this planning session is for:
 
 ```bash
@@ -39,7 +39,7 @@ ls specs/ 2>/dev/null | grep -v '^template$'
 
 1. Read `specs/README.md` for this repo's frontmatter and lifecycle conventions (don't assume
    — conventions like status names and folder structure can drift from what's described here).
-2. Read `specs/template/spec-template.md` — this is the canonical spec shape. Don't
+2. Read `specs/spec-template.md` — this is the canonical spec shape. Don't
    reconstruct the section list from memory; that file is the single source of truth and may
    have changed since this skill was last updated.
 3. Find the highest existing spec `id` within the resolved project:
@@ -81,7 +81,7 @@ much more than the question would have.
   `depends_on` id doesn't exist yet and isn't a sibling being drafted in this same pass, ask
   rather than write a dangling reference.
 
-Follow `specs/template/spec-template.md` for each spec, whether drafting one or several. The
+Follow `specs/spec-template.md` for each spec, whether drafting one or several. The
 plan must contain the literal file content for every spec, not a description of what it would
 contain. Default `status: ready` — an approved spec goes straight to
 `specs/<project_name>/ready/`, skipping `draft/`.

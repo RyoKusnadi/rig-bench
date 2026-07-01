@@ -13,6 +13,7 @@ node_modules/
 memory-archive/
 specs/*.md
 !specs/README.md
+!specs/spec-template.md
 specs/*/*.md
 research/
 projects/*

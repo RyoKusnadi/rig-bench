@@ -8,10 +8,9 @@ unit ("what to build, scoped to one PR").
 
 ```
 specs/
-├── template/
-│   └── spec-template.md   # canonical template — copy this to start a new spec
-└── <project_name>/        # one folder per project, matching a project's
-    ├── draft/              # name under projects/ (rig-bench itself included)
+├── spec-template.md    # canonical template — copy this to start a new spec
+└── <project_name>/      # one folder per project — template/ is this harness's
+    ├── draft/            # own specs; other names come from projects/<name>/
     ├── ready/
     ├── in_progress/
     ├── waiting_verification/
@@ -22,12 +21,14 @@ specs/
 
 Specs are scoped per project because `projects/` can hold multiple
 independent projects over time, each with its own spec lifecycle, ID
-sequence, and history. `specs/rig-bench/` covers work on the harness itself
-(this repo's own tooling — hooks, workflows, skills, scripts); any project
-created under `projects/<name>/` gets a matching `specs/<name>/` the first
-time it needs a spec. There is exactly one shared thing across projects:
-`specs/template/spec-template.md` — the spec shape doesn't change per
-project, only its content does.
+sequence, and history. `specs/template/` covers work on the harness itself
+(this repo's own tooling — hooks, workflows, skills, scripts) — named
+`template` rather than `rig-bench` because that's what this repo is: a
+reusable harness skeleton, not a project in the same sense as something
+under `projects/`. Any project created under `projects/<name>/` gets a
+matching `specs/<name>/` the first time it needs a spec. There is exactly
+one shared thing across all of them: `specs/spec-template.md` — the spec
+shape doesn't change per project, only its content does.
 
 **Starting a new project's specs folder:** copy the lifecycle folder
 skeleton, don't invent a new one:
@@ -48,7 +49,7 @@ each feature into separate `spec.md` (requirements)/`plan.md`
 (design)/`tasks.md` files. That split earns its weight for large,
 multi-week features; for rig-bench's one-deliverable sizing rule it would
 mostly be ceremony, so Problem/Acceptance Criteria stay merged with
-Implementation Notes in a single file — see `template/spec-template.md`.
+Implementation Notes in a single file — see `spec-template.md`.
 
 ## Naming
 
@@ -68,7 +69,7 @@ scoped to the project you're drafting for:
 find specs/<project_name> -name "[0-9]*.md" | sort | tail -1
 ```
 
-If nothing is found, start at `0001`. IDs are per-project — `rig-bench` and
+If nothing is found, start at `0001`. IDs are per-project — `template` and
 each project under `projects/` each have their own `0001`.
 
 ## Lifecycle
@@ -98,7 +99,7 @@ most-cited cause of spec drift in every convention surveyed (Spec Kit, EARS).
 ## Template
 
 The canonical spec shape — frontmatter and section list — lives in
-[`template/spec-template.md`](./template/spec-template.md). Copy it to draft
+[`spec-template.md`](./spec-template.md). Copy it to draft
 a new spec rather than retyping the structure from memory; that file is the
 single source of truth for what a spec contains, so update it (not this
 README) if the shape changes.
@@ -139,7 +140,7 @@ grep -h "^- " specs/<project_name>/ready/*.md | sort | uniq -d
 Or manually: for each file in `## Files/Interfaces Touched`, check if any
 other spec in the batch lists the same file. If yes, add `depends_on`.
 
-**Common shared files to watch for** in `specs/rig-bench/` (the harness
+**Common shared files to watch for** in `specs/template/` (the harness
 itself):
 - `.claude/agents/operator.md` — touched by any spec that adds operator
   instructions or memory tools

@@ -6,7 +6,7 @@ Execute specs for: $ARGUMENTS
 
 ## Step 0 — Resolve the project
 
-Specs live under `specs/<project_name>/` (see `specs/README.md`) — `specs/rig-bench/`
+Specs live under `specs/<project_name>/` (see `specs/README.md`) — `specs/template/`
 for the harness itself, or `specs/<name>/` for a project under `projects/`. Determine which
 project this run targets:
 
@@ -106,7 +106,7 @@ Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 | Invocation | Behaviour |
 |---|---|
 | `/execute` | Interactive: resolves project (asking if ambiguous), lists specs, asks which to run |
-| `/execute rig-bench all` | Execute all specs in `specs/rig-bench/ready/` |
-| `/execute rig-bench 0001 0003` | Execute only specs 0001 and 0003 in the `rig-bench` project |
-| `/execute rig-bench all --resume` | Include specs already in `specs/rig-bench/in_progress/` |
+| `/execute template all` | Execute all specs in `specs/template/ready/` |
+| `/execute template 0001 0003` | Execute only specs 0001 and 0003 in the `template` project |
+| `/execute template all --resume` | Include specs already in `specs/template/in_progress/` |
 | `/execute all` | Same as above, but only valid when exactly one project folder exists |

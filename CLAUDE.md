@@ -10,8 +10,8 @@ A clean-slate harness skeleton for Claude Code. All subsystems (hooks, workflows
 
 | Directory | Contents |
 |---|---|
-| `specs/template/` | Canonical spec template (`spec-template.md`) |
-| `specs/<project_name>/` | Per-project spec lifecycle folders (`draft/`, `ready/`, `in_progress/`, etc.) — `specs/rig-bench/` is this harness's own specs |
+| `specs/spec-template.md` | Canonical spec template |
+| `specs/<project_name>/` | Per-project spec lifecycle folders (`draft/`, `ready/`, `in_progress/`, etc.) — `specs/template/` is this harness's own specs |
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle (see `.claude/commands/` for the execute/verify slash commands) |
 | `workflows/` | Placeholder (`.gitkeep`) |
 | `hooks/` | Placeholder (`.gitkeep`) |
