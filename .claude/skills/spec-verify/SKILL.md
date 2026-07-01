@@ -21,7 +21,7 @@ verification only ever looks backward at work already claimed to be finished.
 ## Phase 0 — Resolve the project
 
 Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
-by this skill, `spec-exec`, and `spec-plan`. If the task clearly names or implies a project,
+by every entry point into the spec workflow. If the task clearly names or implies a project,
 use it; otherwise apply the resolution order described there rather than guessing.
 
 All `specs/...` paths below are relative to `specs/<project>/` — e.g. "`finished/`" means
