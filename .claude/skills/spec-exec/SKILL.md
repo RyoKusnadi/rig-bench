@@ -1,6 +1,6 @@
 ---
 name: spec-exec
-description: Implements approved specs already sitting in a project's ready/ or in_progress/ folder under specs/<project>/, following this repo's spec-driven lifecycle. Use whenever the user asks to execute, implement, build, run, ship, kick off, or resume an approved spec — phrases like "let's execute 0001", "implement the ready specs", "run all specs for template", "resume 0003", "kick off the specs", "pick up where we left off on 0004", or "let's build X" when a spec for X already exists in ready/ or in_progress/. Does not apply to designing a spec that doesn't exist yet (use spec-plan for that) or to confirming already-implemented work meets its acceptance criteria (verification is a separate phase) — see the skill body for the full boundary.
+description: Implements approved specs already sitting in a project's ready/ or in_progress/ folder under specs/<project>/, and fixes specs that failed verification and carry a Verification Failures section, following this repo's spec-driven lifecycle. Use whenever the user asks to execute, implement, build, run, ship, kick off, resume, or fix an approved spec — phrases like "let's execute 0001", "implement the ready specs", "run all specs for template", "resume 0003", "kick off the specs", "pick up where we left off on 0004", "fix 0002 and resubmit", "address the verification failures on 0005", or "let's build X" when a spec for X already exists in ready/ or in_progress/. Does not apply to designing a spec that doesn't exist yet (use spec-plan for that) or to confirming already-implemented work meets its acceptance criteria (verification is a separate phase) — see the skill body for the full boundary.
 ---
 
 # Spec Execution
@@ -12,10 +12,12 @@ what "done" means — implement to the spec, not around it.
 
 **When this applies:** any request to execute, implement, build, run, or ship specs that
 already exist in a project's `ready/` or `in_progress/` folder — including proactively, when a
-user says "let's build X" and a matching spec is already sitting in `ready/`. This does *not*
-apply to designing a spec that doesn't exist yet (use the `spec-plan` skill first) or to
-confirming already-implemented work meets its acceptance criteria (that's verification, a
-separate phase).
+user says "let's build X" and a matching spec is already sitting in `ready/`. Also applies to
+fixing a spec that failed verification and is sitting in `waiting_verification/` with a
+`## Verification Failures` section — that's still implementation work, just against a
+narrower, already-diagnosed list of what to change. This does *not* apply to designing a spec
+that doesn't exist yet (use the `spec-plan` skill first) or to confirming already-implemented
+work meets its acceptance criteria (that's verification, a separate phase).
 
 ## Phase 0 — Resolve the project
 
@@ -36,6 +38,14 @@ ls specs/<project>/ready/ 2>/dev/null | grep '\.md$'
 If resuming, also list:
 ```bash
 ls specs/<project>/in_progress/ 2>/dev/null | grep '\.md$'
+```
+If the request is about fixing a spec that failed verification (or you're just checking
+what's available and want to surface it), also check `waiting_verification/` for specs
+carrying a `## Verification Failures` section — these are implemented but rejected, not
+un-started, so they're fixable via this skill even though they're not in `ready/` or
+`in_progress/`:
+```bash
+grep -l '^## Verification Failures' specs/<project>/waiting_verification/*.md 2>/dev/null
 ```
 
 Read the frontmatter of each file and extract `id`, `title`, `status`, and `depends_on`. Also
@@ -82,12 +92,23 @@ gate for this already ran at spec-approval time (see `spec-plan`'s file-conflict
 Process specs in dependency order — specs with no unfinished `depends_on` first, then specs
 whose dependencies just completed within this run. For each spec:
 
-1. **Move to in_progress.** `git mv specs/<project>/ready/<filename> specs/<project>/in_progress/<filename>` (skip this if resuming a spec already there).
+1. **Move to in_progress.**
+   - Starting fresh: `git mv specs/<project>/ready/<filename> specs/<project>/in_progress/<filename>`.
+   - Resuming a spec already in `in_progress/`: skip this move.
+   - Fixing a spec found in `waiting_verification/` (Phase 1): `git mv
+     specs/<project>/waiting_verification/<filename> specs/<project>/in_progress/<filename>` —
+     it needs to go through `in_progress/` like any other implementation work, not be edited
+     in place inside `waiting_verification/`.
 2. **Implement.** Read the full spec content and implement every acceptance criterion: create
    a feature branch named after the spec ID and slug, make the changes, commit, open a draft
    PR. Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).
+   **If the spec has a `## Verification Failures` section** (i.e. this is a fix, not a first
+   implementation), read it first and treat its contents as the authoritative list of what to
+   change — it's `spec-verify`'s structured report of exactly which criteria failed and why,
+   not just background context. Leave the section in the file; `spec-verify` clears it on the
+   next passing run, or replaces it if this fix still doesn't pass.
 3. **Move to waiting_verification.** `git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 
@@ -99,8 +120,11 @@ whose dependencies just completed within this run. For each spec:
 | "run all specs for template" | Execute every spec in `specs/template/ready/` |
 | "execute 0001 and 0003 in template" | Execute only those two specs |
 | "resume 0002" | Pick up a spec already sitting in `in_progress/` rather than moving it there again |
+| "fix 0005" / "address the verification failures on 0005" | Pick up a spec sitting in `waiting_verification/` with a `## Verification Failures` section, move it to `in_progress/`, and fix it against that section |
 
 ## Gotchas
 
-None recorded yet. Add entries here as real failure modes surface in practice — this section
-is more valuable filled in from actual mistakes than speculated in advance.
+- A spec in `blocked/` is **not** something this skill picks up on its own — `spec-verify`
+  only moves specs there after `MAX_VERIFY_ATTEMPTS` failures, and un-blocking is always a
+  human decision (see `specs/README.md`'s "Un-blocking a spec"). If a human has moved one back
+  to `ready/` or `in_progress/`, it's fair game again like any other spec there.

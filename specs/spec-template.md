@@ -3,6 +3,7 @@ id: "0000"
 title: Short imperative title
 status: draft
 depends_on: []
+verify_attempts: 0
 source: todo.md#anchor-or-section-name
 ---
 ## Problem
@@ -44,3 +45,9 @@ is this convention's lightweight equivalent of Spec Kit/Kiro's `plan.md`.
 The concrete, end-to-end step that proves the spec is done: a test name to
 run, a command and its expected output, or a manual check. Required before
 a spec can move to `finished`.
+
+`verify_attempts` (frontmatter) starts at `0` and is incremented by `spec-verify` each time
+this spec fails verification; you don't set it by hand. A failed run also appends a
+`## Verification Failures` section below this one — see "State Transitions" in
+`specs/README.md` for the full retry contract. Don't author that section yourself; it's
+generated.

@@ -129,6 +129,68 @@ before flipping status. This mirrors Spec Kit's same marker pattern and
 exists because vague, unresolved acceptance criteria is the single
 most-cited cause of spec drift in every convention surveyed (Spec Kit, EARS).
 
+## State Transitions
+
+This is the one canonical transition table — `spec-plan`, `spec-exec`, and `spec-verify` all
+point here instead of each describing the lifecycle in their own prose, so a future edit to
+one skill can't drift out of sync with how the others actually move specs around (the same
+reasoning as "Resolving the target project" above, applied to lifecycle state instead of
+project selection).
+
+**Invariant:** a spec's frontmatter `status` field always matches the folder it physically
+sits in. `scripts/check-specs.sh` checks this automatically — a mismatch (e.g. `status: ready`
+sitting in `in_progress/`) is a bug, not a valid intermediate state, however it happened.
+
+| State | Folder | Entered by | Valid next states |
+|---|---|---|---|
+| `draft` | `draft/` | `spec-plan`, drafting | `ready` |
+| `ready` | `ready/` | `spec-plan` (ambiguity resolved), or a human un-blocking a spec | `in_progress` |
+| `in_progress` | `in_progress/` | `spec-exec` (starting or resuming implementation) | `waiting_verification` |
+| `waiting_verification` | `waiting_verification/` | `spec-exec` (implementation complete) | `finished`, `blocked` |
+| `finished` | `finished/` | `spec-verify` (all criteria + Verification step passed) | — (terminal) |
+| `blocked` | `blocked/` | `spec-verify` (verification failed `MAX_VERIFY_ATTEMPTS` times), or a human blocking a spec manually | `ready`, `in_progress` (human un-blocks) |
+| `abandoned` | `abandoned/` | a human, manually | — (terminal) |
+
+Nothing transitions a spec directly from `waiting_verification` back to `ready` or
+`in_progress` on its own — that only happens via the retry contract below, or a human
+un-blocking it.
+
+### Retry contract: `spec-verify` failure → `spec-exec` fix
+
+`MAX_VERIFY_ATTEMPTS = 2`. Each spec's frontmatter carries a `verify_attempts` field
+(default `0`, see `spec-template.md`) that `spec-verify` — and only `spec-verify` — increments.
+
+When `spec-verify` finds a spec fails (any Acceptance Criterion or the Verification step):
+
+1. Increment `verify_attempts` by 1.
+2. Write (replacing any prior run's) a `## Verification Failures` section into the spec file,
+   listing each failed criterion verbatim plus the reason it failed, and the Verification
+   step's output if that's what failed. This is the structured handoff — it's what `spec-exec`
+   reads to know what to fix, instead of a human having to relay the failure report by hand.
+3. If `verify_attempts < MAX_VERIFY_ATTEMPTS`: leave the file in `waiting_verification/`,
+   status unchanged. Report the failure and that this was attempt `{verify_attempts}` of
+   `MAX_VERIFY_ATTEMPTS`.
+4. If `verify_attempts >= MAX_VERIFY_ATTEMPTS`: move the file to `blocked/`, set
+   `status: blocked`, commit, and report the escalation clearly — this is the defined
+   escalation path, replacing the old behavior of a failed spec sitting in
+   `waiting_verification/` indefinitely with no next step.
+
+When a human (or the human, via `spec-exec`) picks a spec back up to fix it — whether it's
+still in `waiting_verification/` with a `## Verification Failures` section, or was moved to
+`blocked/` and manually moved back to `ready/`/`in_progress/` — `spec-exec` treats that section
+as the authoritative list of what to fix, not merely a status report to skim. See `spec-exec`'s
+own Phase 1 for how it discovers these.
+
+**Un-blocking a spec:** moving a file out of `blocked/` is always a human decision, never
+automatic. When you do, reset `verify_attempts` to `0` in the frontmatter as part of that
+move — a fresh attempt budget for a spec a human has just reviewed and chosen to retry,
+rather than it re-blocking after a single additional failure.
+
+**Clearing the record on success:** once a spec passes verification, `spec-verify` removes
+the `## Verification Failures` section before moving the file to `finished/` — a shipped
+spec's file shouldn't carry stale failure history; the git history of the file is where that
+record actually lives (`git log --follow` on the spec path).
+
 ## Template
 
 The canonical spec shape — frontmatter and section list — lives in

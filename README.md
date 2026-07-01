@@ -92,11 +92,15 @@ flowchart TD
     C --> D[Runs the Verification<br/>step and records the result]
     D --> E{All checks<br/>passed?}
     E -->|Yes| F[Moves the spec<br/>to finished]
-    E -->|No| G[Leaves it in place,<br/>reports what's missing]
+    E -->|No| G{Failed before?}
+    G -->|First time| H[Leaves it in place,<br/>reports what to fix]
+    G -->|Failed twice now| I[Moves it to blocked —<br/>needs a human look]
 ```
 
 Nothing gets marked finished on a partial pass — if even one criterion fails, the spec stays
-put and you get a clear list of what still needs fixing.
+put and you get a clear list of what still needs fixing. Fail the same spec twice and it stops
+looping silently: it moves to a `blocked/` folder instead, so a spec can't sit forgotten in
+limbo forever without anyone noticing.
 
 ---
 
