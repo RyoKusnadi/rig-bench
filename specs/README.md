@@ -160,7 +160,7 @@ directly into `Agent`/`Workflow` invocations. No tooling change to
 the existing `task` string parameter.
 
 For a non-trivial spec, prefer authoring it through an interview pass (the
-`spec-plan` skill, or `/plan` command, already do this via `AskUserQuestion`
+`spec-plan` skill already does this via `AskUserQuestion`
 before drafting) rather than writing the full spec in one shot — per
 Anthropic's guidance, having the agent ask clarifying questions before the
 spec is written catches ambiguity earlier and cheaper than catching it

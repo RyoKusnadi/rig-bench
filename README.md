@@ -27,9 +27,10 @@ rig-bench/
 │   │   ├── inspector.md      # Verification + drift detection (worktree-isolated, read-only)
 │   │   └── shipper.md        # Push, PR, squash-merge (worktree-isolated)
 │   ├── commands/
-│   │   ├── plan.md           # /plan    — interactive spec authoring
-│   │   ├── execute.md        # /execute — execute one or more ready specs
-│   │   └── verify.md         # /verify  — verify waiting specs against their criteria
+│   │   ├── execute.md        # /execute [project] — execute one or more ready specs
+│   │   └── verify.md         # /verify  [project] — verify waiting specs against their criteria
+│   ├── skills/
+│   │   └── spec-plan/        # Interactive spec authoring — triggers from conversation, not just a slash command
 │   └── settings.json         # Permissions
 ├── workflows/
 │   ├── operator.js           # Orchestrator: Discover/PreFlight/Execute; delegates Verify + Ship
@@ -54,14 +55,16 @@ rig-bench/
 │       ├── git/index.json    # Git commit history (last 50, with LEGACY tagging)
 │       ├── index.json        # Index of archived finished specs
 │       └── summaries/        # Hash-invalidated file summary cache
-├── specs/                    # Spec lifecycle folders
-│   ├── draft/                # Being written; may have [NEEDS CLARIFICATION] markers
-│   ├── ready/                # All ambiguity resolved; ready to execute
-│   ├── in_progress/          # Actively being implemented
-│   ├── waiting_verification/ # Implementation complete; awaiting human confirmation
-│   ├── finished/             # Shipped — merged PR is the permanent record
-│   ├── blocked/              # Waiting on a dependency or decision
-│   └── abandoned/            # Won't do; kept for reference
+├── specs/                    # Spec lifecycle folders, scoped per project
+│   ├── spec-template.md      # Canonical spec shape — single source of truth
+│   └── template/             # This harness's own specs (specs/<name>/ for projects/<name>/)
+│       ├── draft/                # Being written; may have [NEEDS CLARIFICATION] markers
+│       ├── ready/                # All ambiguity resolved; ready to execute
+│       ├── in_progress/          # Actively being implemented
+│       ├── waiting_verification/ # Implementation complete; awaiting human confirmation
+│       ├── finished/             # Shipped — merged PR is the permanent record
+│       ├── blocked/              # Waiting on a dependency or decision
+│       └── abandoned/            # Won't do; kept for reference
 ├── hooks/                    # Reserved for lifecycle hooks
 ├── lib/                      # Reserved for shared libraries
 ├── config/schemas/           # Reserved for JSON schemas
@@ -86,21 +89,21 @@ Three agents, each with a focused role:
 Two modes, one agent:
 
 **Orchestrator mode** (invoked with a task description):
-1. **Plan phase** — follows `/plan` command logic: reads `specs/README.md`, finds the next spec ID, captures intent with the user via `AskUserQuestion`, drafts specs, gets user approval, writes them to `specs/ready/`
-2. **Execute phase** — follows `/execute` command logic: validates dependencies, then invokes `workflows/operator.js` which fans out concurrent per-spec execution — each spec runs in its own worktree via a fresh operator spawn
+1. **Plan phase** — same workflow as the `spec-plan` skill (`.claude/skills/spec-plan/SKILL.md`): resolves which project under `specs/<project_name>/` the task belongs to, reads `specs/README.md` and `specs/spec-template.md`, finds the next spec ID for that project, captures intent with the user via `AskUserQuestion`, drafts specs, gets user approval, writes them to `specs/<project_name>/ready/`
+2. **Execute phase** — same workflow as `.claude/commands/execute.md`: validates dependencies, then invokes `workflows/operator.js` which fans out concurrent per-spec execution — each spec runs in its own worktree via a fresh operator spawn
 
 **Implement mode** (spawned by the workflow with a specific spec):
 1. Creates a feature branch (`{id}-{slug}`)
-2. Moves spec `ready/ → in_progress/` and commits
+2. Moves spec `specs/<project_name>/ready/ → specs/<project_name>/in_progress/` and commits
 3. Reads the spec, implements all acceptance criteria
 4. Commits the implementation (staged explicitly, never `git add -A`)
-5. Moves spec `in_progress/ → waiting_verification/`, updates status frontmatter
+5. Moves spec `specs/<project_name>/in_progress/ → specs/<project_name>/waiting_verification/`, updates status frontmatter
 6. Returns: `spec_id`, `status`, `branch`, `summary`, `errors`
 
 ### inspector
 
 1. Checks out the feature branch in its worktree
-2. Reads the spec from `specs/waiting_verification/{filename}`
+2. Reads the spec from `specs/<project_name>/waiting_verification/{filename}`
 3. Checks each EARS-style acceptance criterion — finds the specific code (file:line) that satisfies it
 4. Runs the `Verification` step from the spec
 5. Returns: `spec_id`, `verdict` (PASS/FAIL), `criteria_results[]`, `failures[]`
@@ -109,12 +112,12 @@ Two modes, one agent:
 
 Only runs after the inspector has already returned `PASS` — never implements or re-verifies anything itself. Ships one of two ways, decided by reading "Files / Interfaces Touched" in the spec:
 
-**Rig-bench spec** (changes live in the rig-bench worktree):
+**Harness spec** (changes live in the rig-bench worktree, spec lives in `specs/template/`):
 1. Checks out the feature branch, commits any pending changes
 2. Pushes the branch: `git push origin {branch}`
 3. Opens a PR: `gh pr create` with spec criteria as the body
 4. Squash-merges it: `gh pr merge --squash --delete-branch`
-5. Returns to `main`, pulls, and calls `scripts/archive-spec.sh {id}` once the spec lands in `specs/finished/`
+5. Returns to `main`, pulls, and calls `scripts/archive-spec.sh template {id}` once the spec lands in `specs/template/finished/`
 
 **Project spec** (files under `projects/{name}/` — its own standalone git repo):
 1. `cd projects/{name}`; `git init` on first ship if no repo exists yet
@@ -146,12 +149,12 @@ flowchart LR
 
 ### ① Discover — `workflows/operator.js`
 
-Reads `specs/ready/`, reads frontmatter (`id`, `depends_on`, `complexity`), and collects already-`finished` IDs to build the dependency-wave graph. No worktree, no implementation — just inventory.
+Reads `specs/<project_name>/ready/`, reads frontmatter (`id`, `depends_on`, `complexity`), and collects already-`finished` IDs to build the dependency-wave graph. No worktree, no implementation — just inventory.
 
 ```mermaid
 flowchart LR
-    READY["specs/ready/*.md"] --> DISC["Discover"]
-    FIN["specs/finished/ ids"] --> DISC
+    READY["specs/&lt;project&gt;/ready/*.md"] --> DISC["Discover"]
+    FIN["specs/&lt;project&gt;/finished/ ids"] --> DISC
     DISC --> WAVES["dependency waves\n(specs with no shared deps run concurrently)"]
 ```
 
@@ -222,14 +225,19 @@ flowchart LR
 
 ## Commands
 
-`/plan`, `/execute`, and `/verify` are registered slash commands (`.claude/commands/*.md`). The full plan→execute pipeline isn't a slash command yet — it's the `operator` agent's **orchestrator mode**, invoked by asking Claude Code to use the `operator` agent (e.g. via the `Agent` tool with `subagent_type: operator`) with a task description and no spec assigned.
+`/execute` and `/verify` are registered slash commands (`.claude/commands/*.md`). Planning is
+now a Skill (`.claude/skills/spec-plan/`) instead of a slash command — it triggers naturally
+from conversation (e.g. "let's plan X") rather than needing an explicit invocation. The full
+plan→execute pipeline isn't a slash command either — it's the `operator` agent's
+**orchestrator mode**, invoked by asking Claude Code to use the `operator` agent (e.g. via the
+`Agent` tool with `subagent_type: operator`) with a task description and no spec assigned.
 
 | Invocation | What it does |
 |---|---|
 | `operator` agent, task description, no spec | Plan once (interactive), then execute all generated specs concurrently with worktree isolation |
-| `/plan <task>` | Collaborative planning session — design a spec before any code is written |
-| `/execute [all \| <id> ...]` | Execute one or more ready specs (sequential, no worktrees) |
-| `/verify [all \| <id> ...]` | Verify implementation matches requirements; move passing specs to finished |
+| "let's plan X" / "help me design a spec for Y" | Triggers the `spec-plan` skill — collaborative planning session, design a spec before any code is written |
+| `/execute [project] [all \| <id> ...]` | Execute one or more ready specs for a project (sequential, no worktrees) |
+| `/verify [project] [all \| <id> ...]` | Verify implementation matches requirements; move passing specs to finished |
 
 ### `operator` agent — full pipeline
 
@@ -237,13 +245,13 @@ flowchart LR
 Use the operator agent: add user authentication with JWT
 ```
 
-Runs the Plan phase (interactive, user approves specs) then the Execute phase (`Workflow` tool, concurrent worktree execution). Ends with specs in `waiting_verification/` and branches ready to review.
+Runs the Plan phase (interactive, user approves specs) then the Execute phase (`Workflow` tool, concurrent worktree execution). Ends with specs in `waiting_verification/` (under the resolved project's `specs/<project_name>/`) and branches ready to review.
 
 ### `/execute` — direct execution
 
 ```
-/execute 0001 0002    # execute specific specs
-/execute all          # execute everything in specs/ready/
+/execute template 0001 0002    # execute specific specs in the template project
+/execute template all          # execute everything in specs/template/ready/
 ```
 
 The existing sequential executor — useful when you want to run a single spec or watch each one step-by-step.
@@ -252,30 +260,36 @@ The existing sequential executor — useful when you want to run a single spec o
 
 ## Spec Lifecycle
 
+Specs are scoped per project under `specs/<project_name>/` — `specs/template/` for this
+harness itself, `specs/<name>/` for a project under `projects/<name>/`. Each project has its
+own copy of the lifecycle folders and its own ID sequence:
+
 ```
-draft/ → ready/ → in_progress/ → waiting_verification/ → finished/
-                     ↓ (if blocked)
-                  blocked/   abandoned/
+specs/<project_name>/draft/ → ready/ → in_progress/ → waiting_verification/ → finished/
+                                          ↓ (if blocked)
+                                       blocked/   abandoned/
 ```
 
-Each spec is a single `.md` file with YAML frontmatter:
+The canonical shape lives in `specs/spec-template.md` (see `specs/README.md` for the full
+convention) — each spec is a single `.md` file with YAML frontmatter:
 
 ```yaml
 ---
-id: 0001
+id: "0001"
 title: Add JWT authentication
 status: ready
 depends_on: []
+source: todo.md#anchor-or-section-name
 ---
 ## Problem
 ## Acceptance Criteria
 ## Out of Scope
-## Files / Interfaces Touched
-## Implementation Plan
+## Files/Interfaces Touched
+## Implementation Notes
 ## Verification
 ```
 
-The `depends_on` array controls execution order — specs with no unmet dependencies run first. IDs of specs in `specs/finished/` are automatically treated as pre-satisfied.
+The `depends_on` array controls execution order — specs with no unmet dependencies run first. IDs of specs in `specs/<project_name>/finished/` are automatically treated as pre-satisfied.
 
 ---
 

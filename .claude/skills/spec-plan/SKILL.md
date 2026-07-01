@@ -21,10 +21,13 @@ and wait for a clear go-ahead before creating any file.
 
 Specs are scoped per project under `specs/<project_name>/` (see `specs/README.md`) —
 `specs/template/` for the harness itself, or `specs/<name>/` for a project under
-`projects/`. Before anything else, figure out which project this planning session is for:
+`projects/`. `template` is a real, valid project, not a special case — don't exclude it.
+Before anything else, figure out which project this planning session is for by listing
+directories only (not `specs/README.md` or `specs/spec-template.md`, which `ls` would
+otherwise include):
 
 ```bash
-ls specs/ 2>/dev/null | grep -v '^template$'
+find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
 ```
 
 - If the task clearly names or implies a project (e.g. it's about something under

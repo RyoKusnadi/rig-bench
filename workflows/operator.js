@@ -1,8 +1,16 @@
+// TODO: this workflow doesn't yet have a mechanism for the harness to pass in which
+// project it's running against (the Workflow tool's scriptPath invocation, e.g. from
+// execute.md's `{ "scriptPath": "workflows/operator.js" }`, doesn't currently carry
+// parameters). Hardcoded to 'template' — the only project that exists today — until
+// that's wired up. See .claude/commands/execute.md Step 0 for the project-resolution
+// logic this should eventually delegate to.
+const PROJECT = 'template'
+
 export const meta = {
   name: 'operator',
   description: 'Execute-Verify-Merge pipeline: runs ready specs concurrently in git worktrees, verifies each against acceptance criteria, retries once on failure, opens draft PRs for passing specs',
   phases: [
-    { title: 'Discover',  detail: 'Read specs/ready/ and build dependency graph' },
+    { title: 'Discover',  detail: `Read specs/${PROJECT}/ready/ and build dependency graph` },
     { title: 'PreFlight', detail: 'Refresh the structural index so agents navigate a current map' },
     { title: 'Execute',   detail: 'Run specs concurrently — each in its own git worktree' },
     { title: 'Verify',    detail: 'Check acceptance criteria per spec; retry failed specs once' },
@@ -156,13 +164,13 @@ function classifySpec({ complexity, files_to_modify_count } = {}) {
 phase('Discover')
 
 const discovery = await agent(
-  `List every spec file in specs/ready/ and collect finished spec IDs.
+  `List every spec file in specs/${PROJECT}/ready/ and collect finished spec IDs.
 
 Run:
-  ls specs/ready/ 2>/dev/null | grep '\\.md$'
-  ls specs/finished/ 2>/dev/null | grep '\\.md$' | sed 's/-.*//'
+  ls specs/${PROJECT}/ready/ 2>/dev/null | grep '\\.md$'
+  ls specs/${PROJECT}/finished/ 2>/dev/null | grep '\\.md$' | sed 's/-.*//'
 
-For each file in specs/ready/, read its YAML frontmatter and extract:
+For each file in specs/${PROJECT}/ready/, read its YAML frontmatter and extract:
   id                     — zero-padded string, e.g. "0001"
   title                  — short imperative title
   filename               — just the file name, e.g. "0001-my-feature.md"
@@ -170,14 +178,14 @@ For each file in specs/ready/, read its YAML frontmatter and extract:
   complexity             — the frontmatter "complexity" field value ("low", "medium", or "high"), or null if absent
   files_to_modify_count  — the number of entries in the frontmatter "files_to_modify" array field (count lines starting with "-" under that key), or null if the field is absent
 
-For specs/finished/, collect only the IDs (the prefix before the first "-").
+For specs/${PROJECT}/finished/, collect only the IDs (the prefix before the first "-").
 
 Return all data as structured output.`,
   { phase: 'Discover', label: 'discover:specs', schema: DISCOVERY_SCHEMA },
 )
 
 if (!discovery || discovery.ready_specs.length === 0) {
-  log('No ready specs found — add specs to specs/ready/ first.')
+  log(`No ready specs found — add specs to specs/${PROJECT}/ready/ first.`)
   return { status: 'no_specs', results: [], waves: [], stuck: [] }
 }
 
@@ -264,16 +272,16 @@ Return structured output with rules_content and architecture_content.`,
       let execResult = await agent(
         `Implement spec ${spec.id}: "${spec.title}".
 
-The spec file is: specs/ready/${spec.filename}
+The spec file is: specs/${PROJECT}/ready/${spec.filename}
 
 Follow your agent instructions:
 1. Create feature branch: ${spec.id}-<kebab-slug-of-title>
-2. Move spec: git mv specs/ready/${spec.filename} specs/in_progress/${spec.filename}
+2. Move spec: git mv specs/${PROJECT}/ready/${spec.filename} specs/${PROJECT}/in_progress/${spec.filename}
 3. Commit the move
-4. Read specs/in_progress/${spec.filename} in full
+4. Read specs/${PROJECT}/in_progress/${spec.filename} in full
 5. Implement all acceptance criteria
 6. Commit the implementation (stage explicitly — never git add -A)
-7. Move spec to waiting_verification/ and update status frontmatter
+7. Move spec to specs/${PROJECT}/waiting_verification/ and update status frontmatter
 8. Commit the lifecycle move
 9. Return structured result${memoryContextBlock}`,
         {
@@ -338,11 +346,11 @@ Follow your agent instructions:
         `Verify spec ${spec.id}: "${spec.title}".
 
 Branch: ${branch}
-Spec file on that branch: specs/waiting_verification/${spec.filename}
+Spec file on that branch: specs/${PROJECT}/waiting_verification/${spec.filename}
 
 Follow your agent instructions:
 1. git checkout ${branch}
-2. Read specs/waiting_verification/${spec.filename}
+2. Read specs/${PROJECT}/waiting_verification/${spec.filename}
 3. Check each acceptance criterion against the implementation
 4. Run the Verification step from the spec
 5. Return PASS or FAIL with per-criterion detail`,
@@ -383,8 +391,8 @@ Then read memory/ARCHITECTURE.md and memory/RULES.md, analyze the warning, rewri
       const retryExec = await agent(
         `Re-implement spec ${spec.id}: "${spec.title}" (retry after failed verification).
 
-The spec is in specs/waiting_verification/${spec.filename} on the previous branch.
-Start fresh: read the spec from specs/ready/ if it was moved back, or from waiting_verification/.
+The spec is in specs/${PROJECT}/waiting_verification/${spec.filename} on the previous branch.
+Start fresh: read the spec from specs/${PROJECT}/ready/ if it was moved back, or from specs/${PROJECT}/waiting_verification/.
 
 Follow your agent instructions. Use branch name: ${spec.id}-retry`,
         {
@@ -423,11 +431,11 @@ Follow your agent instructions. Use branch name: ${spec.id}-retry`,
         `Open a draft PR for spec ${spec.id}: "${spec.title}".
 
 Branch: ${verifyResult.branch}
-Spec file on that branch: specs/waiting_verification/${spec.filename}
+Spec file on that branch: specs/${PROJECT}/waiting_verification/${spec.filename}
 
 Follow your agent instructions:
 1. git checkout ${verifyResult.branch}
-2. Read specs/waiting_verification/${spec.filename}
+2. Read specs/${PROJECT}/waiting_verification/${spec.filename}
 3. git push origin ${verifyResult.branch}
 4. gh pr create --draft with the spec title and acceptance criteria in the body
 5. Return the PR URL`,

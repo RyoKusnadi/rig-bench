@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # archive-spec.sh — archive a finished spec into memory/archive/<spec-id>/
 #
-# Usage: scripts/archive-spec.sh <spec-id>
+# Usage: scripts/archive-spec.sh <project> <spec-id>
+#        scripts/archive-spec.sh <spec-id>   (only valid if exactly one specs/<project>/ folder exists)
 #
-# Finds the spec file in specs/finished/ matching the given ID prefix,
+# Finds the spec file in specs/<project>/finished/ matching the given ID prefix,
 # copies it to memory/archive/<spec-id>/spec.md, records the most recent
 # commit SHA that touched the spec file, extracts id/title/tags from the
 # spec's YAML frontmatter, and appends/updates an entry in
@@ -15,18 +16,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-SPEC_ID="${1:-}"
-
-if [[ -z "$SPEC_ID" ]]; then
+if [[ $# -eq 2 ]]; then
+  PROJECT="$1"
+  SPEC_ID="$2"
+elif [[ $# -eq 1 ]]; then
+  SPEC_ID="$1"
+  PROJECTS=()
+  while IFS= read -r -d '' d; do
+    PROJECTS+=("$(basename "$d")")
+  done < <(find specs -mindepth 1 -maxdepth 1 -type d -print0)
+  if [[ ${#PROJECTS[@]} -ne 1 ]]; then
+    echo "Error: no project given, and specs/ does not have exactly one project folder (found: ${PROJECTS[*]:-none})." >&2
+    echo "Usage: scripts/archive-spec.sh <project> <spec-id>" >&2
+    exit 1
+  fi
+  PROJECT="${PROJECTS[0]}"
+else
   echo "Error: spec ID argument is required." >&2
-  echo "Usage: scripts/archive-spec.sh <spec-id>" >&2
+  echo "Usage: scripts/archive-spec.sh <project> <spec-id>" >&2
   exit 1
 fi
 
-# Find the spec file in specs/finished/ matching the given ID prefix.
+# Find the spec file in specs/<project>/finished/ matching the given ID prefix.
 SPEC_FILE=""
-if [[ -d "specs/finished" ]]; then
-  for f in specs/finished/"${SPEC_ID}"-*.md; do
+if [[ -d "specs/${PROJECT}/finished" ]]; then
+  for f in specs/"${PROJECT}"/finished/"${SPEC_ID}"-*.md; do
     if [[ -f "$f" ]]; then
       SPEC_FILE="$f"
       break
@@ -35,7 +49,7 @@ if [[ -d "specs/finished" ]]; then
 fi
 
 if [[ -z "$SPEC_FILE" ]]; then
-  echo "Error: spec '${SPEC_ID}' not found in specs/finished/." >&2
+  echo "Error: spec '${SPEC_ID}' not found in specs/${PROJECT}/finished/." >&2
   exit 1
 fi
 

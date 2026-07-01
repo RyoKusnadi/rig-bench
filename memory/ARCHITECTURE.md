@@ -7,36 +7,44 @@
 ## Major Modules / Directories
 
 ### `specs/`
-The central artifact store. Every unit of work is represented as a Markdown file with YAML frontmatter living in one of the lifecycle subdirectories. The spec file is the source of truth for a feature — it defines requirements, acceptance criteria, implementation plan, and a concrete verification step. Specs move through directories as their status changes; the directory name is the status.
+The central artifact store, scoped per project. `specs/spec-template.md` is the canonical
+spec shape (single source of truth); every project gets its own `specs/<project_name>/` with
+a full set of lifecycle subdirectories and its own ID sequence — `specs/template/` for this
+harness itself, `specs/<name>/` for a project under `projects/<name>/`. Every unit of work is
+represented as a Markdown file with YAML frontmatter living in one of the lifecycle
+subdirectories within its project's folder. The spec file is the source of truth for a
+feature — it defines requirements, acceptance criteria, implementation notes, and a concrete
+verification step. Specs move through directories as their status changes; the directory name
+is the status.
 
-Lifecycle subdirectories:
-- `specs/draft/` — in-progress authoring; may contain `[NEEDS CLARIFICATION]` markers
-- `specs/ready/` — fully specified; ready to be picked up by the workflow
-- `specs/in_progress/` — actively being implemented by an operator agent
-- `specs/waiting_verification/` — implemented; awaiting inspector verification
-- `specs/finished/` — shipped (merged PR is the permanent record)
-- `specs/blocked/` — waiting on an unresolved dependency or external decision
-- `specs/abandoned/` — will not be implemented; kept for reference
+Lifecycle subdirectories (repeated under each `specs/<project_name>/`):
+- `draft/` — in-progress authoring; may contain `[NEEDS CLARIFICATION]` markers
+- `ready/` — fully specified; ready to be picked up by the workflow
+- `in_progress/` — actively being implemented by an operator agent
+- `waiting_verification/` — implemented; awaiting inspector verification
+- `finished/` — shipped (merged PR is the permanent record)
+- `blocked/` — waiting on an unresolved dependency or external decision
+- `abandoned/` — will not be implemented; kept for reference
 
 ### `workflows/`
 JavaScript ES-module scripts that define multi-phase orchestration pipelines. The runtime is the Claude Code `Workflow` tool. Each workflow exports a `meta` object (name, description, phases array) and then uses top-level `await` with `agent()`, `pipeline()`, `phase()`, and `log()` primitives provided by the harness.
 
-- `workflows/operator.js` — the primary execution pipeline: Discover → PreFlight → Execute → Verify → Retry → Merge → Report. Reads `specs/ready/`, builds a dependency wave graph, fans out one operator agent per spec into an isolated git worktree, verifies each with an inspector agent, retries once on failure, and opens a draft PR via the shipper agent.
+- `workflows/operator.js` — the primary execution pipeline: Discover → PreFlight → Execute → Verify → Retry → Merge → Report. Reads `specs/<project_name>/ready/` for the resolved project, builds a dependency wave graph, fans out one operator agent per spec into an isolated git worktree, verifies each with an inspector agent, retries once on failure, and opens a draft PR via the shipper agent.
 - `workflows/bootstrap-memory.js` — one-shot semantic memory generation: spawns an Architect Agent to write `memory/ARCHITECTURE.md` and `memory/RULES.md`, then a Reviewer Agent to fact-check and correct them.
 
 ### `.claude/agents/`
 Subagent persona definitions (Markdown with YAML frontmatter). Each file defines the agent's name, model tier, allowed tools, isolation mode, and detailed behavioral instructions. The harness injects the matching agent file when a workflow calls `agent(..., { agentType: 'operator' })`.
 
-- `.claude/agents/operator.md` — implements specs. Two modes: (1) Plan mode (interactive, drafts specs with user), (2) Implement mode (spawned by workflow, runs in a git worktree). Handles both rig-bench specs (changes in the harness worktree) and project specs (changes inside a standalone repo under `projects/`).
+- `.claude/agents/operator.md` — implements specs. Two modes: (1) Plan mode (interactive, drafts specs with user, same workflow as the `spec-plan` skill), (2) Implement mode (spawned by workflow, runs in a git worktree). Handles both harness specs (`specs/template/`, changes in the rig-bench worktree) and project specs (`specs/<name>/`, changes inside a standalone repo under `projects/<name>/`).
 - `.claude/agents/inspector.md` — read-only verifier. Checks out the feature branch, reads the spec's acceptance criteria, validates each criterion against the implementation diff, runs the spec's Verification step, and returns a structured PASS/FAIL verdict. Also performs drift detection: if the implementation introduces a major architectural shift not reflected in `memory/ARCHITECTURE.md` or `memory/RULES.md`, it emits a `MEMORY_DRIFT_WARNING:` line that the operator workflow intercepts.
-- `.claude/agents/shipper.md` — ships a verified branch. Pushes the branch, opens a PR (draft for rig-bench specs, merge-ready for project specs), squash-merges it, and calls `scripts/archive-spec.sh` to record the spec under `memory/archive/`.
+- `.claude/agents/shipper.md` — ships a verified branch. Pushes the branch, opens a PR (draft for harness specs, merge-ready for project specs), squash-merges it, and calls `scripts/archive-spec.sh <project> <id>` to record the spec under `memory/archive/`.
 
-### `.claude/commands/`
-Slash-command definitions invoked directly in the Claude Code REPL.
+### `.claude/commands/` and `.claude/skills/`
+Slash-command definitions invoked directly in the Claude Code REPL, plus Skills that trigger implicitly from conversation.
 
-- `.claude/commands/plan.md` — `/plan <task>`: collaborative intent-capture and spec-drafting session. Enters plan mode, asks clarifying questions, drafts one or more specs with full frontmatter, and writes them to `specs/ready/` after user approval.
-- `.claude/commands/execute.md` — `/execute [all | <id> ...]`: discovers ready specs and invokes `workflows/operator.js` for concurrent execution.
-- `.claude/commands/verify.md` — `/verify [all | <id> ...]`: runs inspector agents against specs in `waiting_verification/`.
+- `.claude/skills/spec-plan/` — the planning workflow: resolves the target project, captures intent via `AskUserQuestion`, runs a considerations scan for non-trivial specs, drafts one or more specs with full frontmatter, and writes them to `specs/<project_name>/ready/` after user approval. Triggers from natural conversation ("let's plan X"), not just an explicit invocation.
+- `.claude/commands/execute.md` — `/execute [project] [all | <id> ...]`: resolves the project, discovers ready specs, and invokes `workflows/operator.js` for concurrent execution.
+- `.claude/commands/verify.md` — `/verify [project] [all | <id> ...]`: resolves the project, runs inspector agents against specs in `waiting_verification/`.
 
 ### `scripts/`
 Bash and Node helper scripts used by agents at runtime.
@@ -45,7 +53,7 @@ Bash and Node helper scripts used by agents at runtime.
 - `scripts/search-structure.sh` — queries `memory/structure.json` for case-insensitive substring matches across file paths, exports, and imports; returns the top 5 hits. Exits with error code 1 if the index is missing or empty.
 - `scripts/bootstrap-git-history.sh` — extracts the last 50 commits (SHA, date, message, comma-separated changed files) and writes them to `memory/archive/git/index.json`. Uses Node.js for safe JSON construction.
 - `scripts/search-git-history.sh` — searches `memory/archive/git/index.json` for commits matching a query string; provides a cache-friendly way to find recent commit context.
-- `scripts/archive-spec.sh` — copies a finished spec from `specs/finished/` to `memory/archive/<id>/spec.md`, records the commit SHA to `memory/archive/<id>/commit.sha`, extracts id/title/tags from YAML frontmatter, and appends/updates an entry in `memory/archive/index.json`. Uses Node.js for safe JSON manipulation.
+- `scripts/archive-spec.sh` — copies a finished spec from `specs/<project_name>/finished/` to `memory/archive/<id>/spec.md`, records the commit SHA to `memory/archive/<id>/commit.sha`, extracts id/title/tags from YAML frontmatter, and appends/updates an entry in `memory/archive/index.json`. Uses Node.js for safe JSON manipulation. Usage: `scripts/archive-spec.sh <project> <spec-id>` (project can be omitted if exactly one `specs/<project_name>/` folder exists).
 - `scripts/read-worktree-diff.sh` — prints the diff between the current branch and `main` (falls back to the previous commit if `main` does not exist), truncated to 10,000 lines. Used by the inspector as a cheap first pass before opening whole files.
 - `scripts/read-file-summary.sh` — returns a cached file summary from `memory/archive/summaries/`, or falls back to raw file content on cache miss or stale hash.
 - `scripts/write-file-summary.sh` — saves a file summary and current git blob hash to `memory/archive/summaries/`.
@@ -69,15 +77,15 @@ Currently placeholder directories (`.gitkeep` only). All prior implementations h
 
 A spec moves through the harness via the operator workflow in this sequence:
 
-1. **Discovery** — the workflow reads every `.md` in `specs/ready/`, parses YAML frontmatter, and builds a dependency wave graph using `depends_on` fields. Specs with no unsatisfied dependencies form the first wave; specs that depend only on first-wave specs form the second wave, and so on.
+1. **Discovery** — the workflow reads every `.md` in `specs/<project_name>/ready/` for the resolved project, parses YAML frontmatter, and builds a dependency wave graph using `depends_on` fields. Specs with no unsatisfied dependencies form the first wave; specs that depend only on first-wave specs form the second wave, and so on.
 
 2. **PreFlight** — before any spec runs, the workflow invokes `scripts/build-structure-index.sh` to refresh `memory/structure.json` so agents navigate a current map.
 
-3. **Execute** — each spec in a wave is assigned to an operator agent running in an isolated git worktree. The operator creates a feature branch, moves the spec to `specs/in_progress/`, implements all acceptance criteria, stages files explicitly, commits, moves the spec to `specs/waiting_verification/`, and returns a structured result. Complex specs (complexity: high, or touching 3+ files) receive `memory/RULES.md` and `memory/ARCHITECTURE.md` as context before execution.
+3. **Execute** — each spec in a wave is assigned to an operator agent running in an isolated git worktree. The operator creates a feature branch, moves the spec to `specs/<project_name>/in_progress/`, implements all acceptance criteria, stages files explicitly, commits, moves the spec to `specs/<project_name>/waiting_verification/`, and returns a structured result. Complex specs (complexity: high, or touching 3+ files) receive `memory/RULES.md` and `memory/ARCHITECTURE.md` as context before execution.
 
 4. **Checkpoint detection** — if the operator wrote `PROGRESS.md` to its branch (a context-exhaustion signal), the workflow spawns a fresh operator to resume from the `## Next` section, up to 3 times. On the third resume failure, the spec is marked failed.
 
-5. **Verify** — an inspector agent checks out the feature branch, reads the spec from `specs/waiting_verification/`, validates each acceptance criterion against the implementation (first via `scripts/read-worktree-diff.sh`, then reading individual files if needed for clarity), runs the spec's Verification step, and checks for memory drift. Returns PASS or FAIL with per-criterion detail.
+5. **Verify** — an inspector agent checks out the feature branch, reads the spec from `specs/<project_name>/waiting_verification/`, validates each acceptance criterion against the implementation (first via `scripts/read-worktree-diff.sh`, then reading individual files if needed for clarity), runs the spec's Verification step, and checks for memory drift. Returns PASS or FAIL with per-criterion detail.
 
 6. **Retry** — on a first FAIL, the workflow re-executes the spec from scratch on a new branch (named `{id}-retry`) and runs a second verification pass. A second FAIL marks the spec blocked.
 
@@ -87,7 +95,7 @@ A spec moves through the harness via the operator workflow in this sequence:
 
 9. **Drift resolution** — if the inspector emitted a `MEMORY_DRIFT_WARNING:` line (detected via regex in the summary field), the workflow appends it to `memory/PENDING_UPDATES.md` and spawns a Maintenance Agent to rewrite the affected memory file sections and remove the entry.
 
-Spec authoring (the `/plan` command) is separate: it runs via the operator agent in plan mode (not spawned by the workflow), captures user intent, drafts specs with EARS-style acceptance criteria, performs file-conflict scanning, and writes approved specs to `specs/ready/` for the workflow to execute.
+Spec authoring (the `spec-plan` skill, or the operator agent's plan mode for autonomous runs) is separate: it resolves the target project, captures user intent, drafts specs with EARS-style acceptance criteria, performs file-conflict scanning, and writes approved specs to `specs/<project_name>/ready/` for the workflow to execute.
 
 ## External Integrations
 
@@ -106,10 +114,11 @@ Spec authoring (the `/plan` command) is separate: it runs via the operator agent
 | `.claude/agents/operator.md` | Operator agent persona and implementation instructions |
 | `.claude/agents/inspector.md` | Inspector agent persona and verification + drift-detection instructions |
 | `.claude/agents/shipper.md` | Shipper agent persona and PR/merge instructions |
-| `.claude/commands/plan.md` | `/plan` slash-command: collaborative spec authoring |
+| `.claude/skills/spec-plan/SKILL.md` | Planning skill: collaborative spec authoring, triggers from conversation |
 | `.claude/commands/execute.md` | `/execute` slash-command: trigger operator workflow |
 | `.claude/commands/verify.md` | `/verify` slash-command: trigger inspector workflow |
-| `specs/README.md` | Canonical spec format, lifecycle rules, frontmatter schema, EARS criteria guide |
+| `specs/README.md` | Canonical lifecycle rules, per-project structure, frontmatter schema, EARS criteria guide |
+| `specs/spec-template.md` | Canonical spec shape — single source of truth for sections/frontmatter |
 | `scripts/build-structure-index.sh` | Generates `memory/structure.json` structural index |
 | `scripts/archive-spec.sh` | Archives a finished spec into `memory/archive/` |
 | `scripts/read-worktree-diff.sh` | Cheap branch diff for inspector verification |

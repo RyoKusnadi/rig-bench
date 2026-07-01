@@ -6,11 +6,13 @@ Verify specs for: $ARGUMENTS
 
 ## Step 0 — Resolve the project
 
-Specs live under `specs/<project_name>/` (see `specs/README.md`). Determine which project
-this run targets:
+Specs live under `specs/<project_name>/` (see `specs/README.md`). `template` is a real, valid
+project, not a special case — don't exclude it. Determine which project this run targets by
+listing directories only (not `specs/README.md` or `specs/spec-template.md`, which `ls` would
+otherwise include):
 
 ```bash
-ls specs/ 2>/dev/null | grep -v '^template$'
+find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
 ```
 
 - If the first token in `$ARGUMENTS` matches one of these project folders, that's the
@@ -103,7 +105,7 @@ status: finished
 
 Then commit:
 ```bash
-git add specs/<project>/finished/<filename>
+git add -f specs/<project>/finished/<filename>
 git commit -m "spec(<id>): mark <slug> as finished"
 ```
 

@@ -7,11 +7,13 @@ Execute specs for: $ARGUMENTS
 ## Step 0 — Resolve the project
 
 Specs live under `specs/<project_name>/` (see `specs/README.md`) — `specs/template/`
-for the harness itself, or `specs/<name>/` for a project under `projects/`. Determine which
-project this run targets:
+for the harness itself, or `specs/<name>/` for a project under `projects/`. `template` is a
+real, valid project, not a special case — don't exclude it. Determine which project this
+run targets by listing directories only (not `specs/README.md` or `specs/spec-template.md`,
+which `ls` would otherwise include):
 
 ```bash
-ls specs/ 2>/dev/null | grep -v '^template$'
+find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
 ```
 
 - If the first token in `$ARGUMENTS` matches one of these project folders, that's the
@@ -56,13 +58,13 @@ Parse the remainder of `$ARGUMENTS` (after the project token was stripped in Ste
 ## Step 3 — Validate dependencies
 
 For each selected spec, check that every entry in its `depends_on` array is either:
-- An ID present in `specs/finished/` (already satisfied), OR
+- An ID present in `specs/<project>/finished/` (already satisfied), OR
 - Also in the selected set (will be run in this batch)
 
 If any dependency is unsatisfied, **stop** and report clearly:
 ```
 ERROR: Spec 0003 depends on spec 0001, but 0001 is not finished and was not selected.
-Either add 0001 to the selection or ensure it is in specs/finished/.
+Either add 0001 to the selection or ensure it is in specs/<project>/finished/.
 ```
 
 Do not proceed until all dependencies are satisfied.
