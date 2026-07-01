@@ -13,8 +13,6 @@ A clean-slate multi-agent harness for Claude Code. Spec-driven development with 
 3. **Verify** — confirm implementation matches requirements before marking as finished
 4. **Remember** — structural index, git history, and AI-generated docs persist across runs so agents start informed
 
-The `operator` agent is the core execution primitive. It runs inside an isolated git worktree per spec, creates a feature branch, implements, commits, and advances the spec through the lifecycle — all without touching any other spec's work.
-
 ---
 
 ## Skills

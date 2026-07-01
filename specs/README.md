@@ -39,8 +39,8 @@ touch specs/<project_name>/{draft,ready,in_progress,waiting_verification,finishe
 
 ## Resolving the target project
 
-Every entry point into the spec workflow (`spec-plan` skill, `spec-exec` skill, `/verify`, the
-`operator` agent) needs to know which project it's operating on before doing anything else.
+Every entry point into the spec workflow (`spec-plan` skill, `spec-exec` skill, `/verify`)
+needs to know which project it's operating on before doing anything else.
 This is the one canonical procedure — implementations should point here rather than
 re-describing it, so the logic can't drift out of sync across callers the way it did before
 (see git history on this file around the per-project restructuring for what that drift cost).

@@ -1,6 +1,6 @@
 ---
 name: spec-exec
-description: Implement one or more approved specs from a project's ready/ (or in_progress/, when resuming) folder, in dependency order, each in its own feature branch and PR, following this repo's spec-driven lifecycle in specs/<project>/. Use whenever the user asks to execute, implement, build, run, or ship an approved spec — "let's execute 0001", "implement the ready specs", "run all specs for template", "resume 0003", or "let's build X" when a matching spec already exists in ready/ or in_progress/. Not for designing a spec that doesn't exist yet (that's spec-plan) or for verifying already-implemented work — see the skill body for the full boundary.
+description: Implements approved specs already sitting in a project's ready/ or in_progress/ folder under specs/<project>/, following this repo's spec-driven lifecycle. Use whenever the user asks to execute, implement, build, run, ship, kick off, or resume an approved spec — phrases like "let's execute 0001", "implement the ready specs", "run all specs for template", "resume 0003", "kick off the specs", "pick up where we left off on 0004", or "let's build X" when a spec for X already exists in ready/ or in_progress/. Does not apply to designing a spec that doesn't exist yet (use spec-plan for that) or to confirming already-implemented work meets its acceptance criteria (verification is a separate phase) — see the skill body for the full boundary.
 ---
 
 # Spec Execution
@@ -20,7 +20,7 @@ separate phase).
 ## Phase 0 — Resolve the project
 
 Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
-by this skill, `/verify`, the `spec-plan` skill, and the `operator` agent. Match a named
+by this skill, `/verify`, and the `spec-plan` skill. Match a named
 project against the candidate list from the user's request; if none is named, apply the
 resolution order described there rather than guessing.
 
@@ -99,3 +99,8 @@ whose dependencies just completed within this run. For each spec:
 | "run all specs for template" | Execute every spec in `specs/template/ready/` |
 | "execute 0001 and 0003 in template" | Execute only those two specs |
 | "resume 0002" | Pick up a spec already sitting in `in_progress/` rather than moving it there again |
+
+## Gotchas
+
+None recorded yet. Add entries here as real failure modes surface in practice — this section
+is more valuable filled in from actual mistakes than speculated in advance.
