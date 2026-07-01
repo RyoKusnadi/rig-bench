@@ -113,6 +113,18 @@ move the spec file into the folder that matches its current status:
 | `specs/<project>/blocked/` | Waiting on a dependency or decision |
 | `specs/<project>/abandoned/` | Won't do; kept for reference |
 
+**What "permanent record" means:** the merged PR (and git history via `git log --follow` on
+the spec file) is the actual permanent record — not the file's continued presence in
+`finished/`. `specs/template/finished/` intentionally started empty when this per-project
+structure was introduced (the 4 pre-existing finished specs were removed from the working
+tree, not from history — `git log -- specs/rig-bench/finished/` still finds them under the
+old path). Treat `finished/` as a working-set convenience (what shipped recently, quick to
+scan) rather than an archive; `scripts/archive-spec.sh` exists precisely because the working
+tree isn't meant to be the long-term store — it copies a finished spec into
+`memory/archive/<id>/` for that purpose. If you want `finished/` to also double as a full
+historical archive for some project, that's a valid choice, but say so explicitly for that
+project rather than assuming it by default — it wasn't the choice made for `template`.
+
 **Ambiguity gate:** a spec may contain inline `[NEEDS CLARIFICATION: ...]`
 markers while in `draft`. It cannot move to `ready` while any marker remains
 unresolved — resolve each one (edit the spec to answer it, or ask the human)
@@ -127,6 +139,15 @@ The canonical spec shape — frontmatter and section list — lives in
 a new spec rather than retyping the structure from memory; that file is the
 single source of truth for what a spec contains, so update it (not this
 README) if the shape changes.
+
+**The `source:` frontmatter field is relative to the project the spec belongs to, not
+always this repo's root `todo.md`.** For `specs/template/` (this harness), `source` points
+into this repo's root `todo.md` as the template shows. A project under `projects/<name>/` is
+its own standalone git repo (see `.claude/agents/operator.md`'s "Project spec path"); if it
+has an equivalent long-form rationale doc, `source` should point there instead
+(`projects/<name>/todo.md#anchor`, or whatever that project actually uses) — it doesn't have
+to be this repo's `todo.md`, and if the project has no such doc yet, leave `source` blank
+rather than pointing it at something that doesn't apply.
 
 ### Acceptance Criteria format
 

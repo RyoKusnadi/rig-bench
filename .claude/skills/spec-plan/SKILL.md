@@ -64,6 +64,12 @@ user first:
 If the task is ambiguous on any of these, ask rather than assume. A wrong guess here costs
 much more than the question would have.
 
+**Check every spec, regardless of size, against `CLAUDE.md`'s "Non-negotiables" section** —
+the repo's short list of hard constraints (destructive git ops, auth/secrets handling, branch
+discipline). Unlike the considerations scan below, this doesn't get skipped for trivial
+specs: a one-line fix can still touch a secret or need a force-push. If a spec's
+Implementation Notes would violate one, that's a blocker to flag before drafting continues.
+
 ### Considerations scan (skip for trivial specs)
 
 For anything with real surface area — new UI, new service, new integration, anything
