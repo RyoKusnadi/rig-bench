@@ -27,7 +27,7 @@ one-line fixes that don't warrant a spec at all.
 ## Phase 0 — Resolve the project
 
 Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
-by the `spec-exec` skill, `/verify`, and this skill. If the task clearly names or
+by every entry point into the spec workflow. If the task clearly names or
 implies a project (e.g. it's about something under `projects/<name>/`), use that project;
 otherwise apply the resolution order described there.
 

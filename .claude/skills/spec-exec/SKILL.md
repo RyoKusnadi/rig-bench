@@ -20,7 +20,7 @@ separate phase).
 ## Phase 0 — Resolve the project
 
 Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
-by this skill, `/verify`, and the `spec-plan` skill. Match a named
+by every entry point into the spec workflow. Match a named
 project against the candidate list from the user's request; if none is named, apply the
 resolution order described there rather than guessing.
 
