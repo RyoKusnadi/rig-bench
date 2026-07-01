@@ -1,6 +1,6 @@
 ---
 name: spec-plan
-description: Run a collaborative planning session that produces a docs-level spec *before* any code is written, following the spec-driven lifecycle used in this repo's specs/<project>/ folders. Use this whenever the user wants to plan, design, or scope a feature, task, hook, script, or schema change — phrases like "let's plan X", "help me design a spec for Y", or "I want to think this through before coding", or any request to add work to a project's specs pipeline. Also use it proactively when a user jumps straight to "let's build X" for anything nontrivial (more than a one-line change) and no spec for X exists yet — pause and offer to plan first rather than writing code against an unstated design. Do not use this for executing an already-approved spec (that's a separate implementation phase) or for trivial one-line fixes that don't warrant a spec.
+description: Run a collaborative planning session that produces a docs-level spec before any code is written, following this repo's spec-driven lifecycle in specs/<project>/. Use for requests to plan, design, or scope a feature, task, hook, or script ("let's plan X", "help me design a spec for Y", "let's build X" for anything nontrivial when no spec exists yet). Not for executing an already-approved spec or trivial one-line fixes — see the skill body for the full boundary.
 ---
 
 # Spec Planning
@@ -16,6 +16,13 @@ tools include a plan-mode primitive (e.g. `EnterPlanMode`/`ExitPlanMode`), use i
 everything in plan mode and only write to disk after explicit approval. If no such primitive
 is available, simulate the same discipline — present the full spec content in your response
 and wait for a clear go-ahead before creating any file.
+
+**When this applies:** any request to plan, design, or scope work destined for a project's
+specs pipeline — including proactively, when a user jumps straight to "let's build X" for
+anything nontrivial (more than a one-line change) and no spec for X exists yet. Pause and
+offer to plan first rather than writing code against an unstated design. This does *not*
+apply to executing an already-approved spec (a separate implementation phase) or to trivial
+one-line fixes that don't warrant a spec at all.
 
 ## Phase 0 — Resolve the project
 
