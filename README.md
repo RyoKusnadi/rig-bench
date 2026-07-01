@@ -25,14 +25,16 @@ rig-bench/
 │   ├── agents/
 │   │   ├── operator.md       # Plan + implement (orchestrator or per-spec worker)
 │   │   ├── inspector.md      # Verification + drift detection (worktree-isolated, read-only)
-│   │   └── shipper.md        # PR creation (worktree-isolated, push+PR)
+│   │   └── shipper.md        # Push, PR, squash-merge (worktree-isolated)
 │   ├── commands/
 │   │   ├── plan.md           # /plan    — interactive spec authoring
 │   │   ├── execute.md        # /execute — execute one or more ready specs
 │   │   └── verify.md         # /verify  — verify waiting specs against their criteria
 │   └── settings.json         # Permissions
 ├── workflows/
-│   ├── operator.js           # Concurrent execution workflow (pipeline + worktrees)
+│   ├── operator.js           # Orchestrator: Discover/PreFlight/Execute; delegates Verify + Ship
+│   ├── inspector.js          # Verify-only sub-workflow (called by operator.js)
+│   ├── ship.js               # Ship-only sub-workflow (called by operator.js)
 │   └── bootstrap-memory.js   # One-shot AI memory generation (Architect + Reviewer agents)
 ├── scripts/
 │   ├── bootstrap-git-history.sh   # Index last 50 commits → memory/archive/git/index.json
@@ -77,7 +79,7 @@ Three agents, each with a focused role:
 |---|---|---|---|---|
 | `operator` | `.claude/agents/operator.md` | Plans and implements specs — orchestrator when invoked top-level, implementer when spawned per-spec | Sonnet | worktree |
 | `inspector` | `.claude/agents/inspector.md` | Verifies implementation against acceptance criteria (read-only) | Sonnet | worktree |
-| `shipper` | `.claude/agents/shipper.md` | Pushes the verified branch and opens a draft PR | Haiku | worktree |
+| `shipper` | `.claude/agents/shipper.md` | Pushes the verified branch, opens a PR, and squash-merges it | Haiku | worktree |
 
 ### operator
 
@@ -105,68 +107,137 @@ Two modes, one agent:
 
 ### shipper
 
-1. Checks out the feature branch in its worktree
-2. Reads the spec to extract title and acceptance criteria
-3. Pushes the branch: `git push origin {branch}`
-4. Opens a draft PR: `gh pr create --draft` with spec criteria as the body
-5. Returns: `spec_id`, `status`, `pr_url`, `branch`
+Only runs after the inspector has already returned `PASS` — never implements or re-verifies anything itself. Ships one of two ways, decided by reading "Files / Interfaces Touched" in the spec:
+
+**Rig-bench spec** (changes live in the rig-bench worktree):
+1. Checks out the feature branch, commits any pending changes
+2. Pushes the branch: `git push origin {branch}`
+3. Opens a PR: `gh pr create` with spec criteria as the body
+4. Squash-merges it: `gh pr merge --squash --delete-branch`
+5. Returns to `main`, pulls, and calls `scripts/archive-spec.sh {id}` once the spec lands in `specs/finished/`
+
+**Project spec** (files under `projects/{name}/` — its own standalone git repo):
+1. `cd projects/{name}`; `git init` on first ship if no repo exists yet
+2. Commits any pending changes, pushes (creating the GitHub remote via `gh repo create` on first ship)
+3. Opens and squash-merges a PR against the project's own `main`
+
+Returns: `spec_id`, `status` (shipped/failed), `pr_url`, `branch` or `repo_url`, `summary`.
 
 ---
 
-## The Operator Workflow
+## The Execution Pipeline (`workflows/operator.js` + `inspector.js` + `ship.js`)
 
-`workflows/operator.js` orchestrates the full pipeline. Each spec flows through three stages concurrently within a dependency wave:
+Three agents, three jobs, no overlap — and now three separate workflow files to match: **operator** only implements, **inspector** only verifies, **shipper** only ships.
 
-```
-Discover
-  ↓ read specs/ready/, build dependency graph, classify each spec simple/complex
+- `workflows/operator.js` is the orchestrator. It discovers specs, refreshes the structural index, and implements each spec itself (`agentType: operator`) — but it never verifies or ships a spec. For those it calls a sub-workflow via the `workflow()` primitive and waits for a result.
+- `workflows/inspector.js` is called by `workflows/operator.js` as `workflow({ scriptPath: 'workflows/inspector.js' }, { id, title, filename, branch })`. It runs the inspector agent, handles drift detection, and returns one verdict. It never re-executes or re-verifies.
+- `workflows/ship.js` is called the same way, only after `workflows/inspector.js` returns `PASS`. It runs the shipper agent and returns. It never implements or verifies.
 
-PreFlight
-  ↓ run build-structure-index.sh to refresh memory/structure.json
+The `Workflow` tool only allows **one level** of sub-workflow nesting — a script invoked via `workflow()` can't itself call `workflow()`. That's why the retry-on-FAIL loop (re-execute once, then re-verify) lives in `workflows/operator.js` rather than inside `workflows/inspector.js`: the orchestrator calls `workflow()` for inspector, gets a FAIL, re-executes inline (`agent()` with `agentType: operator`, not a nested `workflow()` call), then calls `workflow()` for inspector a second time. Each of those calls is depth 1 from the orchestrator's point of view.
 
-Wave N (all specs in this wave run concurrently via pipeline())
-  ↓
-  Stage 1 — Execute (operator, worktree)
-    classify complexity → inject memory context if complex (RULES.md + ARCHITECTURE.md)
-    create branch → implement → commit → move spec to waiting_verification/
-    checkpoint: if context fills, write PROGRESS.md and resume (up to 3×)
-  ↓
-  Stage 2 — Verify (inspector, worktree)
-    read diff first (read-worktree-diff.sh) → check criteria → run verification step
-    drift check: compare diff against ARCHITECTURE.md/RULES.md
-      drift found → emit MEMORY_DRIFT_WARNING → maintenance agent updates memory files
-      PASS → continue
-      FAIL → retry: re-execute (operator) → re-verify (inspector)
-               PASS → continue
-               FAIL → status=blocked, skip Stage 3
+Specs with no dependency relationship run **concurrently** in the same wave; later waves start only after the previous wave fully completes. Set `depends_on` in spec frontmatter to control ordering.
 
-  Stage 3 — Merge (shipper, worktree)
-    checkout branch → git push → gh pr create --draft
+### Overview — six stages, one spec's journey
 
-Report
-  ↓ shipped (PR open) / blocked (verify failed) / stuck (unresolvable deps)
+```mermaid
+flowchart LR
+    A["① Discover"] --> B["② PreFlight"] --> C["③ Execute\noperator"] --> D["④ Verify\ninspector"] --> E["⑤ Ship\nshipper"] --> F["⑥ Report"]
 ```
 
-Specs with no dependency relationship run **concurrently** in the same wave. Specs in later waves start only after all specs in the previous wave complete. Set `depends_on` in spec frontmatter to control ordering.
+### ① Discover — `workflows/operator.js`
+
+Reads `specs/ready/`, reads frontmatter (`id`, `depends_on`, `complexity`), and collects already-`finished` IDs to build the dependency-wave graph. No worktree, no implementation — just inventory.
+
+```mermaid
+flowchart LR
+    READY["specs/ready/*.md"] --> DISC["Discover"]
+    FIN["specs/finished/ ids"] --> DISC
+    DISC --> WAVES["dependency waves\n(specs with no shared deps run concurrently)"]
+```
+
+### ② PreFlight — `workflows/operator.js`
+
+Runs once per workflow invocation, before any wave starts, so every agent in every wave sees the same up-to-date map.
+
+```mermaid
+flowchart LR
+    PF["PreFlight"] -->|"build-structure-index.sh"| STRUCT["memory/structure.json refreshed"]
+```
+
+### ③ Execute — `workflows/operator.js`, `agentType: operator`
+
+```mermaid
+flowchart TD
+    SPEC["spec moved to in_progress/"] --> CLS{"complexity?"}
+    CLS -->|simple| IMPL["create branch → implement → commit"]
+    CLS -->|complex| CTX["load ARCHITECTURE.md + RULES.md\ninto the prompt"] --> IMPL
+    IMPL --> FULL{"context filling up?"}
+    FULL -->|"yes — write PROGRESS.md, resume\n(capped at 3 attempts)"| IMPL
+    FULL -->|no| DONE["spec moved to waiting_verification/"]
+```
+
+### ④ Verify — `workflows/inspector.js`, `agentType: inspector` (read-only — never edits code)
+
+Called by `workflows/operator.js` via `workflow()`. Returns one verdict and is done — the retry loop below is the *caller's* job, not this file's.
+
+```mermaid
+flowchart TD
+    WV["waiting_verification/{spec}"] --> CHK["check each acceptance criterion\n+ run the Verification step"]
+    CHK --> DRIFT{"diff shows a major\narchitectural shift?"}
+    DRIFT -->|yes| WARN["emit MEMORY_DRIFT_WARNING\n→ maintenance agent updates the vault"]
+    DRIFT -->|no| VERDICT
+    WARN --> VERDICT{"verdict?"}
+    VERDICT -->|PASS| RET1["return to operator.js"]
+    VERDICT -->|FAIL| RET2["return to operator.js"]
+```
+
+```mermaid
+flowchart TD
+    V1["workflows/operator.js calls\nworkflow(inspector.js) once"] --> R1{"verdict?"}
+    R1 -->|PASS| SHIP["→ Ship stage"]
+    R1 -->|"FAIL (1st time)"| RETRY["operator.js re-executes inline\n(agent() with agentType: operator —\nnot a nested workflow() call)"]
+    RETRY --> V2["workflows/operator.js calls\nworkflow(inspector.js) again"]
+    V2 --> R2{"verdict?"}
+    R2 -->|PASS| SHIP
+    R2 -->|FAIL| BLOCKED["status: blocked — Ship stage skipped"]
+```
+
+### ⑤ Ship — `workflows/ship.js`, `agentType: shipper` (only ever called after a PASS)
+
+```mermaid
+flowchart LR
+    PASS["operator.js calls\nworkflow(ship.js)"] --> PUSH["push branch"] --> PR["open PR"] --> MERGE["squash-merge\n+ delete branch"] --> ARC["archive-spec.sh"]
+```
+
+### ⑥ Report — `workflows/operator.js`
+
+```mermaid
+flowchart LR
+    R["Report"] --> S["shipped\n(PR merged)"]
+    R --> BL["blocked\n(verify failed twice)"]
+    R --> ST["stuck\n(unresolvable depends_on)"]
+```
 
 ---
 
 ## Commands
 
-| Command | What it does |
+`/plan`, `/execute`, and `/verify` are registered slash commands (`.claude/commands/*.md`). The full plan→execute pipeline isn't a slash command yet — it's the `operator` agent's **orchestrator mode**, invoked by asking Claude Code to use the `operator` agent (e.g. via the `Agent` tool with `subagent_type: operator`) with a task description and no spec assigned.
+
+| Invocation | What it does |
 |---|---|
-| `/operator <task>` | Plan once (interactive), then execute all generated specs concurrently with worktree isolation |
+| `operator` agent, task description, no spec | Plan once (interactive), then execute all generated specs concurrently with worktree isolation |
 | `/plan <task>` | Collaborative planning session — design a spec before any code is written |
 | `/execute [all \| <id> ...]` | Execute one or more ready specs (sequential, no worktrees) |
 | `/verify [all \| <id> ...]` | Verify implementation matches requirements; move passing specs to finished |
 
-### `/operator` — full pipeline
+### `operator` agent — full pipeline
 
 ```
-/operator add user authentication with JWT
+Use the operator agent: add user authentication with JWT
 ```
 
-Runs Phase 1 (plan, interactive, user approves specs) then Phase 2 (Workflow tool, concurrent worktree execution). Ends with specs in `waiting_verification/` and branches ready to review.
+Runs the Plan phase (interactive, user approves specs) then the Execute phase (`Workflow` tool, concurrent worktree execution). Ends with specs in `waiting_verification/` and branches ready to review.
 
 ### `/execute` — direct execution
 
@@ -225,70 +296,58 @@ If you have gitignored files that should be available in worktrees (e.g. `.env`)
 
 ## Memory
 
-The memory system gives every agent codebase context without re-reading files on each run. It has four layers that serve different purposes:
+The memory system gives every agent codebase context without re-reading files on each run. It has four layers that serve different purposes, and the system moves through four distinct moments in time — read top to bottom for the full story.
+
+### Overview — four moments in a spec's life
 
 ```mermaid
-flowchart TD
-    subgraph Vault["📁 memory/  (vault)"]
-        direction TB
-        ARCH["ARCHITECTURE.md\n─────────────\nModules · data flow\nkey files · integrations\n(semantic)"]
-        RULES["RULES.md\n─────────────\nNaming · error handling\nlifecycle rules · constraints\n(semantic)"]
-        STRUCT["structure.json\n─────────────\nEvery source file:\npath · type · exports · imports\n(structural)"]
-        PENDING["PENDING_UPDATES.md\n─────────────\nDrift alerts awaiting\nresolution\n(live)"]
-        subgraph Archive["archive/"]
-            GIT["git/index.json\n50 commits\nsha · date · message · files"]
-            SUMS["summaries/\nhash-invalidated\nper-file summaries"]
-            SIDX["index.json\nfinished spec index"]
-        end
-    end
-
-    subgraph Bootstrap["🔧 Bootstrap  (run once)"]
-        BM["workflows/bootstrap-memory.js\nArchitect agent → ARCHITECTURE.md + RULES.md\nReviewer agent → fact-checks + corrects"]
-        BGH["scripts/bootstrap-git-history.sh\ngit log -50 → git/index.json"]
-    end
-
-    subgraph Workflow["⚙️ workflows/operator.js"]
-        PF["PreFlight\nbuild-structure-index.sh"]
-        CX["Complexity check\nsimple → minimal ctx\ncomplex → full ctx"]
-        EXEC["Execute\noperator agent"]
-        VFY["Verify\ninspector agent"]
-        MA["Maintenance agent\nupdates ARCHITECTURE.md\nor RULES.md"]
-    end
-
-    subgraph Tools["🛠 Memory Tools  (bash scripts)"]
-        SS["search-structure.sh\nquery structure.json"]
-        SGH["search-git-history.sh\nquery git index\n+ LEGACY tagging"]
-        RFS["read-file-summary.sh\ncached summary or\nraw fallback"]
-        WFS["write-file-summary.sh\nsave summary + hash"]
-        AS["archive-spec.sh\nspec → memory/archive/"]
-    end
-
-    BM -->|generates| ARCH
-    BM -->|generates| RULES
-    BGH -->|populates| GIT
-    PF -->|refreshes| STRUCT
-
-    STRUCT -->|queried by| SS
-    GIT -->|queried by| SGH
-    SUMS <-->|read/write| RFS
-    RFS --- WFS
-
-    CX -->|complex: injects| ARCH
-    CX -->|complex: injects| RULES
-    EXEC -->|calls| SS
-    EXEC -->|calls| SGH
-    EXEC -->|calls| RFS
-    EXEC -->|calls| WFS
-
-    VFY -->|reads for drift check| ARCH
-    VFY -->|reads for drift check| RULES
-    VFY -->|MEMORY_DRIFT_WARNING →| MA
-    MA -->|rewrites outdated sections| ARCH
-    MA -->|rewrites outdated sections| RULES
-    MA -->|logs to| PENDING
-
-    AS -->|indexes| SIDX
+flowchart LR
+    A["① Bootstrap\n(once per repo)"] --> B["memory/ vault"]
+    B --> C["② Every workflow run\nreads it + refreshes structure.json"]
+    C -->|drift found| D["③ Drift feedback\nrewrites the vault"]
+    C -->|spec ships| E["④ Spec-finish feedback\narchives into the vault"]
 ```
+
+### ① Bootstrap — once per repo
+
+Run after cloning, or after a major architecture change. Fills the vault for the first time; nothing else in the system can run usefully before this.
+
+```mermaid
+flowchart LR
+    BM["bootstrap-memory.js\n(Architect + Reviewer agents)"] --> ARCH["ARCHITECTURE.md + RULES.md"]
+    BGH["bootstrap-git-history.sh\n(last 50 commits)"] --> GITIDX["archive/git/index.json"]
+```
+
+### ② Every workflow run — reads the vault, refreshes the structural index
+
+```mermaid
+flowchart LR
+    PF["PreFlight"] -->|rebuilds| STRUCT["structure.json"]
+    ARCH["ARCHITECTURE.md + RULES.md"] -->|"complex specs only"| EXEC["Execute — operator"]
+    STRUCT -->|"search-structure.sh"| EXEC
+    GITIDX["archive/git/index.json"] -->|"search-git-history.sh"| EXEC
+    EXEC --> VFY["Verify — inspector"]
+    ARCH -->|"drift check"| VFY
+```
+
+### ③ Drift feedback — inspector finds the vault is stale
+
+```mermaid
+flowchart LR
+    VFY["inspector detects a major\narchitectural shift"] -->|"MEMORY_DRIFT_WARNING"| MA["Maintenance agent\n(haiku)"]
+    MA -->|rewrites the outdated section| ARCH["ARCHITECTURE.md / RULES.md"]
+    MA -->|logs, then clears| PEND["PENDING_UPDATES.md"]
+```
+
+### ④ Spec-finish feedback — a shipped spec becomes history
+
+```mermaid
+flowchart LR
+    SHIP["shipper squash-merges\nthe spec's PR"] --> AS["archive-spec.sh"]
+    AS -->|appends| GITIDX["archive/git/index.json"]
+```
+
+Agents never call these vault files directly — `search-structure.sh`, `search-git-history.sh`, and `read-file-summary.sh`/`write-file-summary.sh` are the query/write interface in front of `structure.json`, the git index, and the per-file summary cache, respectively. See the table below for exactly which script owns which file.
 
 ### Memory layers
 
@@ -337,7 +396,9 @@ The inspector reads `ARCHITECTURE.md` and `RULES.md` during every verification p
 
 ## What's Planned
 
-See `REMOVED.md` for the full inventory of systems stripped during the clean-slate reset, and their intended re-implementations:
+The memory system (above) and the operator/inspector/shipper agents have already been re-implemented since the clean-slate reset. Still outstanding — see `REMOVED.md` for the full inventory and reasoning:
 
-- Hook system (safety, telemetry, lifecycle)
-- Token telemetry
+- **Hook system** — safety (`pre-bash-safety`, `pre-tool-gatekeeper`, `pre-webfetch-security`), lifecycle (`auto-run-tests`), all currently `hooks/.gitkeep`
+- **Telemetry system** — token usage tracking and reporting
+- **Research system** — questionnaire-driven multi-iteration web research workflow
+- **Shared lib / config schemas / test harness** — `lib/`, `config/schemas/`, `tests/` are still placeholders
