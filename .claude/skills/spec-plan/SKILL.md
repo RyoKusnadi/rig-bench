@@ -1,6 +1,6 @@
 ---
 name: spec-plan
-description: Run a collaborative planning session that produces a docs-level spec *before* any code is written, following the spec-driven lifecycle used in this repo's specs/ folder. Use this whenever the user wants to plan, design, or scope a feature, task, hook, script, or schema change — phrases like "let's plan X", "help me design a spec for Y", or "I want to think this through before coding", or any request to add work to the specs/ pipeline. Also use it proactively when a user jumps straight to "let's build X" for anything nontrivial (more than a one-line change) and no spec for X exists yet in specs/ — pause and offer to plan first rather than writing code against an unstated design. Do not use this for executing an already-approved spec (that's a separate implementation phase) or for trivial one-line fixes that don't warrant a spec.
+description: Run a collaborative planning session that produces a docs-level spec *before* any code is written, following the spec-driven lifecycle used in this repo's specs/<project>/ folders. Use this whenever the user wants to plan, design, or scope a feature, task, hook, script, or schema change — phrases like "let's plan X", "help me design a spec for Y", or "I want to think this through before coding", or any request to add work to a project's specs pipeline. Also use it proactively when a user jumps straight to "let's build X" for anything nontrivial (more than a one-line change) and no spec for X exists yet — pause and offer to plan first rather than writing code against an unstated design. Do not use this for executing an already-approved spec (that's a separate implementation phase) or for trivial one-line fixes that don't warrant a spec.
 ---
 
 # Spec Planning
@@ -17,16 +17,38 @@ everything in plan mode and only write to disk after explicit approval. If no su
 is available, simulate the same discipline — present the full spec content in your response
 and wait for a clear go-ahead before creating any file.
 
+## Phase 0 — Resolve the project
+
+Specs are scoped per project under `specs/<project_name>/` (see `specs/README.md`) —
+`specs/rig-bench/` for the harness itself, or `specs/<name>/` for a project under
+`projects/`. Before anything else, figure out which project this planning session is for:
+
+```bash
+ls specs/ 2>/dev/null | grep -v '^template$'
+```
+
+- If the task clearly names or implies a project (e.g. it's about something under
+  `projects/<name>/`), use that project.
+- If only one project folder exists, use it without asking.
+- If multiple project folders exist and it's not obvious which one, ask rather than guess.
+- If the target project's `specs/<project_name>/` folder doesn't exist yet, create the full
+  lifecycle skeleton before drafting (see "Starting a new project's specs folder" in
+  `specs/README.md`) rather than writing into a partial structure.
+
 ## Phase 1 — Orient
 
 1. Read `specs/README.md` for this repo's frontmatter and lifecycle conventions (don't assume
    — conventions like status names and folder structure can drift from what's described here).
-2. Find the highest existing spec `id` across all lifecycle folders:
+2. Read `specs/template/spec-template.md` — this is the canonical spec shape. Don't
+   reconstruct the section list from memory; that file is the single source of truth and may
+   have changed since this skill was last updated.
+3. Find the highest existing spec `id` within the resolved project:
    ```bash
-   find specs -name "[0-9]*.md" | sort | tail -1
+   find specs/<project_name> -name "[0-9]*.md" | sort | tail -1
    ```
    Allocate every `id` this session will need from this single read. Re-scanning mid-session
-   is how two specs in the same planning pass end up with the same id.
+   is how two specs in the same planning pass end up with the same id. IDs are per-project —
+   don't carry a number over from a different project's sequence.
 
 ## Phase 2 — Capture intent before drafting anything
 
@@ -37,8 +59,9 @@ user first:
   changes for the person who asked for this.
 - **What would the docs say if this shipped?** Draft this mentally; it becomes the `Problem`
   and `Acceptance Criteria` sections.
-- **What are the key decisions that must be made?** These get captured explicitly in
-  `Decisions` so the reasoning survives past this conversation.
+- **What are the key decisions that must be made?** Significant ones are worth surfacing
+  explicitly with the user even though the template doesn't have a dedicated section for
+  them — fold the reasoning into `Problem` or `Implementation Notes` so it isn't lost.
 - **What's explicitly out of scope?** Say so now — an agent implementing later will guess,
   and guesses drift from what was actually meant.
 
@@ -58,33 +81,32 @@ much more than the question would have.
   `depends_on` id doesn't exist yet and isn't a sibling being drafted in this same pass, ask
   rather than write a dangling reference.
 
-The template below applies to each spec, whether drafting one or several. The plan must
-contain the literal file content for every spec, not a description of what it would contain.
-Default `status: ready` — an approved spec goes straight to `specs/ready/`, skipping `draft/`.
+Follow `specs/template/spec-template.md` for each spec, whether drafting one or several. The
+plan must contain the literal file content for every spec, not a description of what it would
+contain. Default `status: ready` — an approved spec goes straight to
+`specs/<project_name>/ready/`, skipping `draft/`.
 
-Spec sections, in order:
+As a quick reference, the template's sections are:
 
 1. **Problem** — current state, and why it's insufficient.
 2. **Acceptance Criteria** — EARS-style behavioral sentences, one behavior per sentence.
-3. **Interface / Docs Preview** — write this as if it's the README or inline docs for the
-   finished feature. CLI command → example invocations. API → the contract. Hook → event
-   shape and response format. This is the "spec = basically the docs" step; if you can't
-   write this section concretely, the design isn't settled yet.
-4. **Decisions** — 2–5 bullets capturing *why* behind the key design choices, ADR-style
-   ("We chose X over Y because Z"). This is what keeps the reasoning from evaporating once
-   the session ends.
-5. **Out of Scope** — explicit exclusions.
-6. **Files / Interfaces Touched** — concrete files, functions, schemas. Required — a spec
+3. **Out of Scope** — explicit exclusions.
+4. **Files/Interfaces Touched** — concrete files, functions, schemas. Required — a spec
    that can't name these isn't actually ready to implement.
-7. **Implementation Plan** — ordered task list, one task per line, each small enough to be
-   its own implementation step.
-8. **Verification** — one end-to-end check that proves the spec is done: a test name, a
+5. **Implementation Notes** — enough detail for an implementer to start without
+   re-deriving the design: key data structures, edge cases, the approach for anything
+   non-obvious.
+6. **Verification** — one end-to-end check that proves the spec is done: a test name, a
    command with expected output, or a manual step.
+
+Always check the actual template file rather than trusting this list — it's a convenience
+summary, not the source of truth.
 
 ## Phase 4 — Get approval, then write
 
 1. Present the full drafted spec content for review (via plan-mode exit, or directly in your
    response if no plan-mode primitive exists).
-2. After approval, write each spec to `specs/ready/{id}-{kebab-slug}.md` with `status: ready`,
-   exactly as approved — no additions, removals, or reordering slipped in during the write.
+2. After approval, write each spec to `specs/<project_name>/ready/{id}-{kebab-slug}.md` with
+   `status: ready`, exactly as approved — no additions, removals, or reordering slipped in
+   during the write.
 3. Report the file path(s) and id(s) back to the user.
