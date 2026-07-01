@@ -55,10 +55,35 @@ does ask, it comes with a suggestion, not a blank question.
 
 ---
 
+### `/spec-exec`
+
+> Also just a shorthand name — it kicks in when you ask to execute, implement, build, or ship
+> a spec that's already been planned and approved, like "let's execute 0001" or "implement the
+> ready specs."
+
+Once a plan exists, this is what turns it into working code. It picks up specs from the
+`ready/` folder (or `in_progress/`, if you're resuming something), checks that anything they
+depend on is already finished, and then implements them one at a time — each on its own
+feature branch, each landing as its own PR.
+
+```mermaid
+flowchart TD
+    A[You ask to run a spec<br/>or specs] --> B[It lists what's ready<br/>and checks dependencies]
+    B --> C{Dependencies<br/>satisfied?}
+    C -->|No| D[Stops and tells you<br/>what's missing]
+    C -->|Yes| E[Implements each spec:<br/>branch, code, commit, PR]
+    E --> F[Moves the spec to<br/>awaiting verification]
+```
+
+If two specs you're running at the same time touch the same file, it'll give you a heads-up —
+but it won't stop you, since that gate already ran when the specs were approved.
+
+---
+
 ## How to Use This Repo
 
-For now, this covers planning — execution and verification will follow the same pattern once
-their own docs are written here.
+This covers planning and execution — verification will follow the same pattern once its own
+docs are written here.
 
 **Planning a new feature or task:**
 
@@ -82,6 +107,24 @@ skill triggering proactively, not a command you have to remember to invoke.
 **What you'll see:** the full drafted spec(s), plus — for anything with real surface area — a
 short batch of genuinely open questions (each with a researched recommendation attached)
 before drafting finishes. Nothing is written to `specs/<project>/ready/` until you approve it.
+
+**Executing an approved spec:**
+
+Once a spec is sitting in `ready/`, just ask for it:
+
+```
+let's execute 0001 for template
+```
+```
+implement all the ready specs
+```
+```
+resume 0003, it got interrupted last time
+```
+
+If you don't name specific spec IDs, you'll be shown what's available and asked which to run.
+Anything with an unfinished dependency gets blocked with a clear message rather than run
+out of order.
 
 ---
 
