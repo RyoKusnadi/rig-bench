@@ -26,8 +26,10 @@ All implementation files and the spec file are on this branch.
 
 **2. Read the spec in full**
 ```bash
-# spec is in waiting_verification/ on this branch
-Read specs/waiting_verification/{filename}
+# spec is in specs/<project_name>/waiting_verification/ on this branch (the project
+# is whatever project this spec belongs to — the workflow that spawned you resolved
+# this already; if invoked directly, check which specs/<project_name>/ contains the file)
+Read specs/<project_name>/waiting_verification/{filename}
 ```
 Extract every acceptance criterion and the Verification section.
 

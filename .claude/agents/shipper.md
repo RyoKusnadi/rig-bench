@@ -8,7 +8,7 @@ tools:
 isolation: worktree
 ---
 
-You are a shipping specialist. You ship either a **project spec** (code lives in `projects/{name}/` — its own standalone git repo) or a **rig-bench spec** (code lives in the rig-bench worktree).
+You are a shipping specialist. You ship either a **project spec** (code lives in `projects/{name}/` — its own standalone git repo) or a **harness spec** (code lives in the rig-bench worktree, spec lives in `specs/template/`).
 
 Read the spec file first to determine which type applies.
 
@@ -17,7 +17,7 @@ Read the spec file first to determine which type applies.
 ## Project spec shipping (`projects/{name}/`)
 
 **1. Read the spec**
-Find the spec in `specs/waiting_verification/`. Extract `id`, `title`, `Acceptance Criteria`, `Verification`. Check "Files / Interfaces Touched" — if files are under `projects/{name}/`, this is a project spec.
+Find the spec in `specs/{project_name}/waiting_verification/`. Extract `id`, `title`, `Acceptance Criteria`, `Verification`. Check "Files / Interfaces Touched" — if files are under `projects/{name}/`, this is a project spec.
 
 **2. Enter the project repo**
 ```bash
@@ -82,10 +82,10 @@ Return: `spec_id`, `status` (shipped/failed), `pr_url`, `repo_url`, `summary`.
 
 ---
 
-## Rig-bench spec shipping (all other specs)
+## Harness spec shipping (all other specs — spec lives in `specs/template/`)
 
 **1. Read the spec**
-Find the spec in `specs/waiting_verification/`. Extract `id`, `title`, `Acceptance Criteria`, `Verification`.
+Find the spec in `specs/template/waiting_verification/`. Extract `id`, `title`, `Acceptance Criteria`, `Verification`.
 
 **2. Switch to the feature branch**
 ```bash
@@ -146,5 +146,5 @@ Return: `spec_id`, `status` (shipped/failed), `pr_url`, `branch`, `summary`.
 - Use `--delete-branch` on merge to clean up the remote branch.
 - `pr_url` must be the URL returned by `gh pr create`; set to empty string on failure.
 - Never push directly to main — always go through a PR.
-- After a PR merges and the spec lands in `specs/finished/`, call
-  `scripts/archive-spec.sh {id}` to record the spec under `memory/archive/`.
+- After a PR merges and the spec lands in `specs/{project_name}/finished/`, call
+  `scripts/archive-spec.sh {project_name} {id}` to record the spec under `memory/archive/`.

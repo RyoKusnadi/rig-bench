@@ -31,7 +31,7 @@ Archived specs live at `memory/archive/{id}/spec.md` (the spec file) and `memory
 ## File Organization Rules
 
 ### Where New Specs Go
-New specs are always written to `specs/ready/{id}-{slug}.md` after user approval. The `specs/draft/` folder is the correct destination only for specs that still contain `[NEEDS CLARIFICATION]` markers or otherwise are not yet approved. Specs must never be written before the user approves the plan.
+New specs are always written to `specs/<project_name>/ready/{id}-{slug}.md` after user approval — `specs/template/` for this harness itself, `specs/<name>/` for a project under `projects/<name>/`. The `specs/<project_name>/draft/` folder is the correct destination only for specs that still contain `[NEEDS CLARIFICATION]` markers or otherwise are not yet approved. Specs must never be written before the user approves the plan.
 
 ### Where New Workflows Go
 New orchestration scripts go in `workflows/` as ES-module `.js` files. Each must export a `meta` object with `name`, `description`, and a `phases` array. The file should use only the `agent()`, `pipeline()`, `phase()`, and `log()` primitives provided by the Claude Code harness.

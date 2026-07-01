@@ -24,11 +24,19 @@ Read the prompt carefully to determine which mode applies.
 
 ## Plan phase
 
-Follow the `/plan` command logic.
+Same workflow as the `spec-plan` skill (`.claude/skills/spec-plan/SKILL.md`) — consult it
+for the full reasoning; this is the condensed version for autonomous operation.
+
+**0. Resolve the project**
+Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
+by `/execute`, `/verify`, the `spec-plan` skill, and this agent.
 
 **1. Orient**
-Read `specs/README.md` for the frontmatter/lifecycle and template convention.
-Run `find specs -name "[0-9]*.md" | sort | tail -1` to find the next available ID. Allocate all IDs for this session from this single read — never re-scan mid-pass.
+Read `specs/README.md` for the frontmatter/lifecycle convention and `specs/spec-template.md`
+for the canonical section list — don't reconstruct either from memory.
+Run `find specs/{project_name} -name "[0-9]*.md" | sort | tail -1` to find the next available
+ID within that project. Allocate all IDs for this session from this single read — never
+re-scan mid-pass. IDs are per-project; don't carry a number over from a different project.
 
 **2. Capture intent**
 Before drafting any spec content, reason through these with the user:
@@ -39,11 +47,16 @@ Before drafting any spec content, reason through these with the user:
 
 Use `AskUserQuestion` to resolve any ambiguity. Never guess on scope.
 
+For nontrivial specs (new UI, new service, new integration — not one-line fixes), also run the
+considerations scan described in the `spec-plan` skill: check the repo's own config/conventions
+first, only surface genuinely open, design-changing questions, cap at ~5 batched into one ask,
+and pair each with a researched recommendation rather than an open prompt.
+
 **3. Draft specs**
 One deliverable → one spec. Multiple unrelated deliverables → split into separate specs, wire `depends_on` now.
 
-Use the template from `specs/README.md`:
-`Problem` → `Acceptance Criteria` → `Interface / Docs Preview` → `Decisions` → `Out of Scope` → `Files / Interfaces Touched` → `Implementation Plan` → `Verification`
+Use the template from `specs/spec-template.md`:
+`Problem` → `Acceptance Criteria` → `Out of Scope` → `Files/Interfaces Touched` → `Implementation Notes` → `Verification`
 
 Default `status: ready`.
 
@@ -58,7 +71,7 @@ Common shared files to watch for in this repo:
 Present the dependency graph alongside the drafted specs so serialization is visible to the user before approval.
 
 **5. Get approval and write**
-Present drafted specs (with conflict-scan dependency graph) to the user. After approval, write each to `specs/ready/{id}-{kebab-slug}.md` exactly as approved.
+Present drafted specs (with conflict-scan dependency graph) to the user. After approval, write each to `specs/{project_name}/ready/{id}-{kebab-slug}.md` exactly as approved.
 Report the file paths and IDs created.
 
 ---
@@ -67,17 +80,19 @@ Report the file paths and IDs created.
 
 Run immediately after the Plan phase (same session, no user prompt needed).
 
-Follow the `/execute` command logic.
+Same workflow as `.claude/commands/execute.md` — consult it for the full reasoning; this is
+the condensed version for autonomous operation. All paths below are relative to the project
+resolved in the Plan phase's Step 0.
 
 **1. Discover specs**
 ```bash
-ls specs/ready/ 2>/dev/null | grep '\.md$'
-ls specs/finished/ 2>/dev/null | grep '\.md$' | sed 's/-.*//'
+ls specs/{project_name}/ready/ 2>/dev/null | grep '\.md$'
+ls specs/{project_name}/finished/ 2>/dev/null | grep '\.md$' | sed 's/-.*//'
 ```
 Read frontmatter of each ready spec: `id`, `title`, `status`, `depends_on`.
 
 **2. Validate dependencies**
-For each spec, every entry in `depends_on` must be either in `specs/finished/` or in the selected set.
+For each spec, every entry in `depends_on` must be either in `specs/{project_name}/finished/` or in the selected set.
 If any dependency is unsatisfied, stop and report clearly before proceeding.
 
 **3. Invoke the workflow for concurrent execution**
@@ -91,7 +106,7 @@ After the workflow completes, report to the user:
 - Which specs shipped (PR URLs)
 - Which specs are blocked (verify failed after retry)
 - Any specs stuck on unresolvable dependencies
-- Next step: review and merge the draft PRs; move specs to `specs/finished/` after merge
+- Next step: review and merge the draft PRs; move specs to `specs/{project_name}/finished/` after merge
 
 ---
 
@@ -100,13 +115,14 @@ After the workflow completes, report to the user:
 You were spawned by the operator workflow to implement one specific spec.
 
 **1. Read the spec in full**
-Read `specs/in_progress/{filename}` — every section, every acceptance criterion.
+Read `specs/{project_name}/in_progress/{filename}` (the workflow passes you the full path,
+including which project's spec this is) — every section, every acceptance criterion.
 
 **2. Determine spec type**
 
 Check the "Files / Interfaces Touched" section:
 - If files are under `projects/{name}/` → **Project spec** (new standalone repo)
-- Otherwise → **Rig-bench spec** (changes live in the rig-bench worktree)
+- Otherwise → **Harness spec** (changes live in the rig-bench worktree, spec lives in `specs/template/`)
 
 ---
 
@@ -116,7 +132,7 @@ Each `projects/{name}/` directory is its own independent git repository, separat
 
 **2a. Move spec to in_progress**
 ```bash
-mv specs/ready/{filename} specs/in_progress/{filename}
+mv specs/{project_name}/ready/{filename} specs/{project_name}/in_progress/{filename}
 # edit status field: ready → in_progress
 ```
 
@@ -147,7 +163,7 @@ git commit -m "feat({id}): {title}"
 **2f. Move spec to waiting_verification (back in the rig-bench worktree root)**
 ```bash
 cd ../..   # return to rig-bench worktree root
-mv specs/in_progress/{filename} specs/waiting_verification/{filename}
+mv specs/{project_name}/in_progress/{filename} specs/{project_name}/waiting_verification/{filename}
 # edit status field: in_progress → waiting_verification
 ```
 
@@ -156,7 +172,7 @@ Return: `spec_id`, `status` (completed/failed), `project_dir` (`projects/{name}`
 
 ---
 
-### Rig-bench spec path (all other specs)
+### Harness spec path (all other specs — project_name is `template`)
 
 **2a. Create a feature branch in the rig-bench worktree**
 ```bash
@@ -165,7 +181,7 @@ git checkout -b {spec_id}-{slug}
 
 **2b. Move spec to in_progress**
 ```bash
-mv specs/ready/{filename} specs/in_progress/{filename}
+mv specs/template/ready/{filename} specs/template/in_progress/{filename}
 # edit status field: ready → in_progress
 ```
 
@@ -178,7 +194,7 @@ git commit -m "feat({id}): {title}"
 
 **2d. Move spec to waiting_verification**
 ```bash
-mv specs/in_progress/{filename} specs/waiting_verification/{filename}
+mv specs/template/in_progress/{filename} specs/template/waiting_verification/{filename}
 # edit status field: in_progress → waiting_verification
 ```
 
@@ -251,7 +267,7 @@ Saves the summary and current git blob hash to `memory/archive/summaries/`.
 ## Hard Rules
 
 - **Project specs**: the project repo (`projects/{name}/`) is its own git repo — never commit project files into the rig-bench worktree.
-- **Rig-bench specs**: never commit to the worktree's default branch — always create a feature branch first.
+- **Harness specs**: never commit to the worktree's default branch — always create a feature branch first.
 - In both paths: one spec only, stage files explicitly, commit after each logical step.
 - In Plan phase: never write spec files before the user approves the plan.
 - Your structured return value is machine-read — never omit a field.

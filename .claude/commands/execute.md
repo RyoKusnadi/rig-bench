@@ -1,18 +1,28 @@
 ---
-description: Execute one or more ready specs with dependency ordering. Usage: /execute [all | <id> <id> ...] [--resume]
+description: Execute one or more ready specs with dependency ordering. Usage: /execute [project] [all | <id> <id> ...] [--resume]
 ---
 
-Execute specs from `specs/ready/` (and `specs/in_progress/` if `--resume` is present) for: $ARGUMENTS
+Execute specs for: $ARGUMENTS
+
+## Step 0 — Resolve the project
+
+Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
+by `/execute`, `/verify`, the `spec-plan` skill, and the `operator` agent. Match the first
+token of `$ARGUMENTS` against the candidate list; if it matches, strip it from `$ARGUMENTS`
+before continuing to Step 1.
+
+All `specs/...` paths below are relative to `specs/<project>/` — e.g. "`ready/`" means
+`specs/<project>/ready/`.
 
 ## Step 1 — Discover specs
 
 Use Bash to list available spec files:
 ```bash
-ls specs/ready/ 2>/dev/null | grep '\.md$'
+ls specs/<project>/ready/ 2>/dev/null | grep '\.md$'
 ```
 If `--resume` is in `$ARGUMENTS`, also list:
 ```bash
-ls specs/in_progress/ 2>/dev/null | grep '\.md$'
+ls specs/<project>/in_progress/ 2>/dev/null | grep '\.md$'
 ```
 
 Read the frontmatter of each file (use `Read` on each path) and extract:
@@ -21,29 +31,29 @@ Read the frontmatter of each file (use `Read` on each path) and extract:
 - `status` — should be `ready` or `in_progress`
 - `depends_on` — array of spec IDs this spec depends on (may be empty)
 
-Also collect the IDs of all specs in `specs/finished/` (they count as pre-satisfied dependencies):
+Also collect the IDs of all specs in `specs/<project>/finished/` (they count as pre-satisfied dependencies):
 ```bash
-ls specs/finished/ 2>/dev/null | grep '\.md$' | sed 's/-.*//' | head -100
+ls specs/<project>/finished/ 2>/dev/null | grep '\.md$' | sed 's/-.*//' | head -100
 ```
 
 ## Step 2 — Determine which specs to run
 
-Parse `$ARGUMENTS` (ignoring `--resume`):
+Parse the remainder of `$ARGUMENTS` (after the project token was stripped in Step 0, ignoring `--resume`):
 
 - **Empty**: Use `AskUserQuestion` to present the discovered specs as options and let the user choose. Show each as `{id} — {title}` with its `depends_on` listed. Include an "All ready specs" option.
 - **`all`**: Select all discovered specs.
-- **Space-separated IDs** (e.g. `0001 0003`): Select only those IDs. If any ID is not found in `specs/ready/` (or `specs/in_progress/` with `--resume`), stop and report the missing ID.
+- **Space-separated IDs** (e.g. `0001 0003`): Select only those IDs. If any ID is not found in `specs/<project>/ready/` (or `specs/<project>/in_progress/` with `--resume`), stop and report the missing ID.
 
 ## Step 3 — Validate dependencies
 
 For each selected spec, check that every entry in its `depends_on` array is either:
-- An ID present in `specs/finished/` (already satisfied), OR
+- An ID present in `specs/<project>/finished/` (already satisfied), OR
 - Also in the selected set (will be run in this batch)
 
 If any dependency is unsatisfied, **stop** and report clearly:
 ```
 ERROR: Spec 0003 depends on spec 0001, but 0001 is not finished and was not selected.
-Either add 0001 to the selection or ensure it is in specs/finished/.
+Either add 0001 to the selection or ensure it is in specs/<project>/finished/.
 ```
 
 Do not proceed until all dependencies are satisfied.
@@ -65,9 +75,9 @@ whose dependencies have just completed). For each spec:
 
 **5a. Move to in_progress**
 ```bash
-git mv specs/ready/<filename> specs/in_progress/<filename>
+git mv specs/<project>/ready/<filename> specs/<project>/in_progress/<filename>
 ```
-(If `--resume` and the file is already in `specs/in_progress/`, skip this move.)
+(If `--resume` and the file is already in `specs/<project>/in_progress/`, skip this move.)
 
 **5b. Implement the spec**
 
@@ -77,7 +87,7 @@ a draft PR.
 
 **5c. Move to waiting_verification**
 ```bash
-git mv specs/in_progress/<filename> specs/waiting_verification/<filename>
+git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>
 ```
 
 Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
@@ -86,7 +96,8 @@ Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 
 | Invocation | Behaviour |
 |---|---|
-| `/execute` | Interactive: lists specs and asks which to run |
-| `/execute all` | Execute all specs in `specs/ready/` |
-| `/execute 0001 0003` | Execute only specs 0001 and 0003 |
-| `/execute all --resume` | Include specs already in `specs/in_progress/` |
+| `/execute` | Interactive: resolves project (asking if ambiguous), lists specs, asks which to run |
+| `/execute template all` | Execute all specs in `specs/template/ready/` |
+| `/execute template 0001 0003` | Execute only specs 0001 and 0003 in the `template` project |
+| `/execute template all --resume` | Include specs already in `specs/template/in_progress/` |
+| `/execute all` | Same as above, but only valid when exactly one project folder exists |

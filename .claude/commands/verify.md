@@ -1,14 +1,23 @@
 ---
-description: Verify that a spec's implementation matches its requirements, then move it to finished. Usage: /verify [all | <id> <id> ...]
+description: Verify that a spec's implementation matches its requirements, then move it to finished. Usage: /verify [project] [all | <id> <id> ...]
 ---
 
-Verify specs from `specs/waiting_verification/` for: $ARGUMENTS
+Verify specs for: $ARGUMENTS
+
+## Step 0 — Resolve the project
+
+Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
+by `/execute`, `/verify`, the `spec-plan` skill, and the `operator` agent. Match the first
+token of `$ARGUMENTS` against the candidate list; if it matches, strip it from `$ARGUMENTS`
+before continuing to Step 1.
+
+All `specs/...` paths below are relative to `specs/<project>/`.
 
 ## Step 1 — Discover specs
 
 List specs awaiting verification:
 ```bash
-ls specs/waiting_verification/ 2>/dev/null | grep '\.md$'
+ls specs/<project>/waiting_verification/ 2>/dev/null | grep '\.md$'
 ```
 
 Read the frontmatter of each file and extract:
@@ -24,11 +33,11 @@ If the folder is empty, report "No specs are waiting verification." and stop.
 
 ## Step 2 — Determine which specs to verify
 
-Parse `$ARGUMENTS` (after trimming whitespace):
+Parse the remainder of `$ARGUMENTS` (after the project token was stripped in Step 0, trimming whitespace):
 
 - **Empty**: Use `AskUserQuestion` to present the discovered specs as options and let the user choose. Show each as `{id} — {title}`. Include an "All waiting specs" option.
 - **`all`**: Select all discovered specs.
-- **Space-separated IDs** (e.g. `0001 0003`): Select only those IDs. If any ID is not found in `specs/waiting_verification/`, stop and report the missing ID.
+- **Space-separated IDs** (e.g. `0001 0003`): Select only those IDs. If any ID is not found in `specs/<project>/waiting_verification/`, stop and report the missing ID.
 
 ## Step 3 — Verify each spec
 
@@ -70,7 +79,7 @@ Overall: PASS / FAIL
 For every spec where **all** criteria and the verification step passed:
 
 ```bash
-git mv specs/waiting_verification/<filename> specs/finished/<filename>
+git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
 ```
 
 Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`:
@@ -86,7 +95,7 @@ status: finished
 
 Then commit:
 ```bash
-git add specs/finished/<filename>
+git add -f specs/<project>/finished/<filename>
 git commit -m "spec(<id>): mark <slug> as finished"
 ```
 
@@ -96,7 +105,7 @@ Report: `Spec {id} — {title}: verified and moved to finished.`
 
 For every spec where **any** criterion or the verification step failed:
 
-- Leave the file in `specs/waiting_verification/` — do not move it.
+- Leave the file in `specs/<project>/waiting_verification/` — do not move it.
 - Report all failures clearly so the implementer knows exactly what to fix.
 - Do **not** commit anything for failing specs.
 
@@ -106,6 +115,7 @@ Report: `Spec {id} — {title}: verification FAILED — see above for details.`
 
 | Invocation | Behaviour |
 |---|---|
-| `/verify` | Interactive: lists waiting specs and asks which to verify |
-| `/verify all` | Verify all specs in `specs/waiting_verification/` |
-| `/verify 0001 0003` | Verify only specs 0001 and 0003 |
+| `/verify` | Interactive: resolves project (asking if ambiguous), lists waiting specs, asks which to verify |
+| `/verify template all` | Verify all specs in `specs/template/waiting_verification/` |
+| `/verify template 0001 0003` | Verify only specs 0001 and 0003 in the `template` project |
+| `/verify all` | Same as above, but only valid when exactly one project folder exists |
