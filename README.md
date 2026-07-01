@@ -76,6 +76,30 @@ but it won't stop you, since that gate already ran when the specs were approved.
 
 ---
 
+### `/spec-verify`
+
+> It kicks in when you ask to verify, check, or confirm a spec, like "verify 0001" or "is the
+> waiting stuff ready to ship."
+
+Once a spec has been implemented, this is what checks the work actually matches what was
+asked for. It reads each spec's Acceptance Criteria and Verification step, checks the code
+against them one by one, and only moves a spec to `finished/` if everything passes.
+
+```mermaid
+flowchart TD
+    A[You ask to verify a spec<br/>or specs] --> B[It lists what's<br/>waiting on verification]
+    B --> C[Checks each Acceptance<br/>Criterion against the code]
+    C --> D[Runs the Verification<br/>step and records the result]
+    D --> E{All checks<br/>passed?}
+    E -->|Yes| F[Moves the spec<br/>to finished]
+    E -->|No| G[Leaves it in place,<br/>reports what's missing]
+```
+
+Nothing gets marked finished on a partial pass — if even one criterion fails, the spec stays
+put and you get a clear list of what still needs fixing.
+
+---
+
 ## How to Use This Repo
 
 This covers planning and execution — verification will follow the same pattern once its own
