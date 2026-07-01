@@ -11,7 +11,7 @@ A clean-slate harness skeleton for Claude Code. All subsystems (hooks, workflows
 | Directory | Contents |
 |---|---|
 | `specs/` | Spec lifecycle folders (`draft/`, `ready/`, `in_progress/`, etc.) |
-| `.claude/skills/spec-workflow/` | Skill covering the plan/execute/verify spec lifecycle (see `.claude/commands/` for the equivalent slash commands) |
+| `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle (see `.claude/commands/` for the execute/verify slash commands) |
 | `workflows/` | Placeholder (`.gitkeep`) |
 | `hooks/` | Placeholder (`.gitkeep`) |
 | `lib/` | Placeholder (`.gitkeep`) |
