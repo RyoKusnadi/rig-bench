@@ -141,6 +141,15 @@ project selection).
 sits in. `scripts/check-specs.sh` checks this automatically — a mismatch (e.g. `status: ready`
 sitting in `in_progress/`) is a bug, not a valid intermediate state, however it happened.
 
+**Machine-readable mirror:** `workflows/state.yaml` carries the same state/folder/transition
+facts plus the `MAX_VERIFY_ATTEMPTS` constant below, as pure data — no orchestration code, per
+`improvement-plan.md`'s Phase 2. It's for future tooling to read instead of parsing this
+table. **Known gap:** nothing currently enforces the two stay in sync — if you edit one, edit
+the other by hand. `scripts/check-specs.sh`'s own `VALID_STATES` array is a third, separately
+hand-maintained copy for the same reason (no YAML parser dependency has been added to keep
+that script dependency-free). Collapsing these into one enforced source is a candidate for a
+future pass, not solved here.
+
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
 | `draft` | `draft/` | `spec-plan`, drafting | `ready` |
@@ -157,7 +166,8 @@ un-blocking it.
 
 ### Retry contract: `spec-verify` failure → `spec-exec` fix
 
-`MAX_VERIFY_ATTEMPTS = 2`. Each spec's frontmatter carries a `verify_attempts` field
+`MAX_VERIFY_ATTEMPTS = 2` (also mirrored in `workflows/state.yaml`'s `retry.max_verify_attempts`
+— see the "Machine-readable mirror" note above). Each spec's frontmatter carries a `verify_attempts` field
 (default `0`, see `spec-template.md`) that `spec-verify` — and only `spec-verify` — increments.
 
 When `spec-verify` finds a spec fails (any Acceptance Criterion or the Verification step):

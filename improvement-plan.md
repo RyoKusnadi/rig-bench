@@ -44,26 +44,24 @@ written with that distinction in mind.
 
 ## Phase 2 — only once Phase 1 has run for real (not speculative)
 
-**Status: deliberately not started.** This phase was scoped to begin only after Phase 1's
-retry/blocked logic had been exercised by an actual spec going through the lifecycle — not
-merely merged. That hasn't happened yet, so Phase 2 is on hold rather than in progress.
+**Status: split.** The two halves have meaningfully different risk profiles, so they're being
+tracked and shipped separately rather than as one bundled change — the data file is
+uncontroversial; subagent dispatch deserves its own explicit go-ahead given the history in
+`REMOVED.md`.
 
-When it does start, it has two halves with meaningfully different risk profiles:
-
-1. **A `workflows/` file that's genuinely just data** — the state table from Phase 1, in one
-   canonical machine-readable place (e.g. YAML) that skills read instead of re-describing. Not
-   code, not agent-coupled. Low risk, and doesn't touch the part of this repo's history that's
-   failed twice.
-2. **Concurrent dispatch for `spec-exec`/`spec-verify` as real subagents.** This is the part
-   with the two-strikes history — `workflows/` coupled to agent definitions that didn't have a
-   settled design. Should not start before Phase 1's retry/blocked-state logic has actually
-   been exercised: dispatching failures into a void concurrently is worse than doing it
-   serially, and there's no evidence yet that the retry/blocked logic behaves correctly under
-   real use.
-
-If and when Phase 2 starts, treat these as two separate decisions (and likely two separate
-PRs) rather than one bundled change — the data file alone is uncontroversial; the subagent
-dispatch piece deserves its own explicit go-ahead given the history in `REMOVED.md`.
+1. **A `workflows/` file that's genuinely just data.** **Done.** `workflows/state.yaml` — the
+   state table from Phase 1 plus the `MAX_VERIFY_ATTEMPTS` constant, as pure data. Not code,
+   not agent-coupled. `specs/README.md`'s "State Transitions" section remains the canonical
+   prose explanation; the YAML is a machine-readable mirror for future tooling, with a known
+   (documented, not solved) gap that nothing yet enforces the two — plus
+   `scripts/check-specs.sh`'s own hand-maintained `VALID_STATES` array — stay in sync.
+2. **Concurrent dispatch for `spec-exec`/`spec-verify` as real subagents.** **Not started —
+   still gated.** This is the part with the two-strikes history — `workflows/` coupled to
+   agent definitions that didn't have a settled design. Should not start before Phase 1's
+   retry/blocked-state logic has actually been exercised by a real spec (not just merged code):
+   dispatching failures into a void concurrently is worse than doing it serially, and there's
+   no evidence yet the retry/blocked logic behaves correctly under real use — `specs/template/`
+   is still empty as of this writing. This item stays on hold until that changes.
 
 ## Stopping point
 
