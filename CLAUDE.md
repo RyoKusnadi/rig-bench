@@ -33,7 +33,7 @@ here rather than duplicating it into the skill, so there's one place to change i
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
 | `.claude/agents/` | Placeholder (`.gitkeep`) |
-| `workflows/` | Placeholder (`.gitkeep`) |
+| `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
 | `hooks/` | Placeholder (`.gitkeep`) |
 | `lib/` | Placeholder (`.gitkeep`) |
 | `scripts/` | Utility scripts (spec consistency checking) |

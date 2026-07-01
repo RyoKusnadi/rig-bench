@@ -1,0 +1,54 @@
+# Canonical spec-lifecycle state table — DATA ONLY.
+#
+# This is not orchestration code and does not run anything. It's the machine-readable
+# form of the table in specs/README.md's "State Transitions" section, so a future tool
+# (or a human) can read the states/folders/transitions from one place without re-parsing
+# prose. This is Phase 2's first half from improvement-plan.md — deliberately just data,
+# not agent-coupled, kept separate from any dispatch/orchestration decision.
+#
+# specs/README.md remains the canonical *prose* explanation (the retry contract, the
+# un-blocking procedure, the reasoning) — this file only carries the structural facts:
+# state names, folders, who transitions a spec into that state, and valid next states.
+# If you change one, change the other; nothing currently enforces they stay in sync
+# (see the "Known gap" note in specs/README.md's State Transitions section).
+
+retry:
+  max_verify_attempts: 2
+  attempts_field: verify_attempts
+  failure_section_header: "## Verification Failures"
+
+states:
+  - name: draft
+    folder: draft
+    entered_by: [spec-plan]
+    valid_next: [ready]
+
+  - name: ready
+    folder: ready
+    entered_by: [spec-plan, human]
+    valid_next: [in_progress]
+
+  - name: in_progress
+    folder: in_progress
+    entered_by: [spec-exec]
+    valid_next: [waiting_verification]
+
+  - name: waiting_verification
+    folder: waiting_verification
+    entered_by: [spec-exec]
+    valid_next: [finished, blocked]
+
+  - name: finished
+    folder: finished
+    entered_by: [spec-verify]
+    valid_next: []
+
+  - name: blocked
+    folder: blocked
+    entered_by: [spec-verify, human]
+    valid_next: [ready, in_progress]
+
+  - name: abandoned
+    folder: abandoned
+    entered_by: [human]
+    valid_next: []
