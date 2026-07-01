@@ -39,8 +39,8 @@ touch specs/<project_name>/{draft,ready,in_progress,waiting_verification,finishe
 
 ## Resolving the target project
 
-Every entry point into the spec workflow (`spec-plan` skill, `/execute`, `/verify`, the
-`operator` agent) needs to know which project it's operating on before doing anything else.
+Every entry point into the spec workflow (`spec-plan` skill, `spec-exec` skill, `/verify`)
+needs to know which project it's operating on before doing anything else.
 This is the one canonical procedure — implementations should point here rather than
 re-describing it, so the logic can't drift out of sync across callers the way it did before
 (see git history on this file around the per-project restructuring for what that drift cost).
@@ -119,11 +119,8 @@ the spec file) is the actual permanent record — not the file's continued prese
 structure was introduced (the 4 pre-existing finished specs were removed from the working
 tree, not from history — `git log -- specs/rig-bench/finished/` still finds them under the
 old path). Treat `finished/` as a working-set convenience (what shipped recently, quick to
-scan) rather than an archive; `scripts/archive-spec.sh` exists precisely because the working
-tree isn't meant to be the long-term store — it copies a finished spec into
-`memory/archive/<id>/` for that purpose. If you want `finished/` to also double as a full
-historical archive for some project, that's a valid choice, but say so explicitly for that
-project rather than assuming it by default — it wasn't the choice made for `template`.
+scan) rather than an archive. There is currently no separate long-term archive mechanism —
+git history is it, for now.
 
 **Ambiguity gate:** a spec may contain inline `[NEEDS CLARIFICATION: ...]`
 markers while in `draft`. It cannot move to `ready` while any marker remains
@@ -143,7 +140,7 @@ README) if the shape changes.
 **The `source:` frontmatter field is relative to the project the spec belongs to, not
 always this repo's root `todo.md`.** For `specs/template/` (this harness), `source` points
 into this repo's root `todo.md` as the template shows. A project under `projects/<name>/` is
-its own standalone git repo (see `.claude/agents/operator.md`'s "Project spec path"); if it
+its own standalone git repo; if it
 has an equivalent long-form rationale doc, `source` should point there instead
 (`projects/<name>/todo.md#anchor`, or whatever that project actually uses) — it doesn't have
 to be this repo's `todo.md`, and if the project has no such doc yet, leave `source` blank
@@ -186,13 +183,9 @@ Or manually: for each file in `## Files/Interfaces Touched`, check if any
 other spec in the batch lists the same file. If yes, add `depends_on`.
 
 **Common shared files to watch for** in `specs/template/` (the harness
-itself):
-- `.claude/agents/operator.md` — touched by any spec that adds operator
-  instructions or memory tools
-- `workflows/operator.js` — touched by any spec that changes workflow
-  behaviour (preflight hooks, checkpoint logic, drift handling, etc.)
-- `memory/*.md` or `memory/*.json` — touched by any spec that writes to
-  the memory vault at bootstrap time
+itself): there are currently no standing examples (the operator/memory system that used to
+anchor this list was removed — see `REMOVED.md`), so treat this as a reminder to actually run
+the scan above rather than pattern-match against a fixed list.
 
 A spec that cannot yet name its files in `## Files/Interfaces Touched` is
 not ready — mark it `draft` and add a `[NEEDS CLARIFICATION]` marker.

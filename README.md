@@ -1,6 +1,6 @@
 # rig-bench
 
-A clean-slate multi-agent harness for Claude Code. Spec-driven development with a plan→execute pipeline, concurrent worktree-isolated execution, a structured lifecycle for every deliverable, and a persistent memory system that gives every agent codebase context without re-reading files.
+A clean-slate multi-agent harness for Claude Code. Spec-driven development with a plan→execute pipeline, concurrent worktree-isolated execution, and a structured lifecycle for every deliverable.
 
 ---
 
@@ -11,9 +11,6 @@ A clean-slate multi-agent harness for Claude Code. Spec-driven development with 
 1. **Plan** — design a spec interactively before any code is written
 2. **Execute** — implement specs concurrently, each agent in its own git worktree
 3. **Verify** — confirm implementation matches requirements before marking as finished
-4. **Remember** — structural index, git history, and AI-generated docs persist across runs so agents start informed
-
-The `operator` agent is the core execution primitive. It runs inside an isolated git worktree per spec, creates a feature branch, implements, commits, and advances the spec through the lifecycle — all without touching any other spec's work.
 
 ---
 
@@ -21,8 +18,8 @@ The `operator` agent is the core execution primitive. It runs inside an isolated
 
 ### `/spec-plan`
 
-> Just a shorthand name — you don't type `/spec-plan`. It kicks in automatically when you
-> ask to plan or design something, like saying "let's plan X" or "help me build Y."
+> You don't type `/spec-plan` — it kicks in automatically when you ask to plan or design
+> something, like saying "let's plan X" or "help me build Y."
 
 Think of it as a thinking partner before any code gets written. Instead of jumping straight
 into building, it helps turn your idea into a clear, written-down plan first — then only
@@ -55,10 +52,34 @@ does ask, it comes with a suggestion, not a blank question.
 
 ---
 
+### `/spec-exec`
+
+> It kicks in when you ask to execute, implement, build, or ship a spec that's already been
+> planned and approved, like "let's execute 0001" or "implement the ready specs."
+
+Once a plan exists, this is what turns it into working code. It picks up specs from the
+`ready/` folder (or `in_progress/`, if you're resuming something), checks that anything they
+depend on is already finished, and then implements them one at a time — each on its own
+feature branch, each landing as its own PR.
+
+```mermaid
+flowchart TD
+    A[You ask to run a spec<br/>or specs] --> B[It lists what's ready<br/>and checks dependencies]
+    B --> C{Dependencies<br/>satisfied?}
+    C -->|No| D[Stops and tells you<br/>what's missing]
+    C -->|Yes| E[Implements each spec:<br/>branch, code, commit, PR]
+    E --> F[Moves the spec to<br/>awaiting verification]
+```
+
+If two specs you're running at the same time touch the same file, it'll give you a heads-up —
+but it won't stop you, since that gate already ran when the specs were approved.
+
+---
+
 ## How to Use This Repo
 
-For now, this covers planning — execution and verification will follow the same pattern once
-their own docs are written here.
+This covers planning and execution — verification will follow the same pattern once its own
+docs are written here.
 
 **Planning a new feature or task:**
 
@@ -83,6 +104,24 @@ skill triggering proactively, not a command you have to remember to invoke.
 short batch of genuinely open questions (each with a researched recommendation attached)
 before drafting finishes. Nothing is written to `specs/<project>/ready/` until you approve it.
 
+**Executing an approved spec:**
+
+Once a spec is sitting in `ready/`, just ask for it:
+
+```
+let's execute 0001 for template
+```
+```
+implement all the ready specs
+```
+```
+resume 0003, it got interrupted last time
+```
+
+If you don't name specific spec IDs, you'll be shown what's available and asked which to run.
+Anything with an unfinished dependency gets blocked with a clear message rather than run
+out of order.
+
 ---
 
 ## Design Principles
@@ -94,4 +133,3 @@ before drafting finishes. Nothing is written to `specs/<project>/ready/` until y
 - **Worktree isolation** — concurrent agents never share a working directory
 - **Structured output** — every agent call returns a typed schema, not prose
 - **State, not transcripts** — the workflow passes structured data between phases, never raw text
-- **Memory over re-reading** — structural index, git history, and AI-generated docs are queried at task time; agents never cold-start without codebase context

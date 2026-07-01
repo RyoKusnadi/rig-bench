@@ -29,11 +29,13 @@ here rather than duplicating it into the skill, so there's one place to change i
 |---|---|
 | `specs/spec-template.md` | Canonical spec template |
 | `specs/<project_name>/` | Per-project spec lifecycle folders (`draft/`, `ready/`, `in_progress/`, etc.) — `specs/template/` is this harness's own specs |
-| `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle (see `.claude/commands/` for the execute/verify slash commands) |
-| `workflows/` | Orchestration pipelines (`operator.js`, `bootstrap-memory.js`) |
+| `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |
+| `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
+| `.claude/agents/` | Placeholder (`.gitkeep`) |
+| `workflows/` | Placeholder (`.gitkeep`) |
 | `hooks/` | Placeholder (`.gitkeep`) |
 | `lib/` | Placeholder (`.gitkeep`) |
-| `scripts/` | Utility scripts (spec archiving/checking, memory bootstrap, structure/history indexing) |
+| `scripts/` | Utility scripts (spec consistency checking) |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
 | `tests/` | Placeholder (`.gitkeep`) |
 | `projects/` | Placeholder (`.gitkeep`) |
