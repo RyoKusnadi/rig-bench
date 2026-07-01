@@ -1,6 +1,6 @@
 ---
 name: spec-plan
-description: Run a collaborative planning session that produces a docs-level spec *before* any code is written, following the spec-driven lifecycle used in this repo's specs/ folder. Use this whenever the user wants to plan, design, or scope a feature, task, hook, script, or schema change — phrases like "let's plan X", "help me design a spec for Y", "I want to think this through before coding", "start from /plan", or any request to add work to the specs/ pipeline. Also use it proactively when a user jumps straight to "let's build X" for anything nontrivial (more than a one-line change) and no spec for X exists yet in specs/ — pause and offer to plan first rather than writing code against an unstated design. Do not use this for executing an already-approved spec (that's a separate implementation phase) or for trivial one-line fixes that don't warrant a spec.
+description: Run a collaborative planning session that produces a docs-level spec *before* any code is written, following the spec-driven lifecycle used in this repo's specs/ folder. Use this whenever the user wants to plan, design, or scope a feature, task, hook, script, or schema change — phrases like "let's plan X", "help me design a spec for Y", or "I want to think this through before coding", or any request to add work to the specs/ pipeline. Also use it proactively when a user jumps straight to "let's build X" for anything nontrivial (more than a one-line change) and no spec for X exists yet in specs/ — pause and offer to plan first rather than writing code against an unstated design. Do not use this for executing an already-approved spec (that's a separate implementation phase) or for trivial one-line fixes that don't warrant a spec.
 ---
 
 # Spec Planning
@@ -88,12 +88,3 @@ Spec sections, in order:
 2. After approval, write each spec to `specs/ready/{id}-{kebab-slug}.md` with `status: ready`,
    exactly as approved — no additions, removals, or reordering slipped in during the write.
 3. Report the file path(s) and id(s) back to the user.
-
-## Relationship to the /plan command
-
-This repo also has a `/plan` slash command (`.claude/commands/plan.md`) that runs the same
-workflow explicitly. This skill exists so the same planning discipline also triggers
-naturally in conversation — when a user asks to plan something without invoking the slash
-command directly, or when you notice a nontrivial task is about to be implemented without a
-spec. Prefer this skill's phrasing and structure over improvising a different planning
-process; consistency here is what makes specs interchangeable across a session.
