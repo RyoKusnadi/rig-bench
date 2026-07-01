@@ -84,6 +84,22 @@ Capture and record the output. Mark **PASS** if the output matches what the spec
 If the `Verification` section specifies a manual step that requires human confirmation, ask
 the user to confirm that the verification step passed before continuing.
 
+### Concurrent dispatch (multiple independent specs)
+
+When more than one selected spec is independent, Phase 3's checking work (3a–3c) can be
+dispatched to `spec-verify-worker` subagents in parallel instead of done inline, one spec at a
+time. Follow "Concurrent dispatch" in `specs/README.md` for the full mechanism — the canonical
+description, not repeated here.
+
+In short: dispatch a `spec-verify-worker` per spec via the Task tool, passing it the branch to
+check — read the spec's `branch` frontmatter field if present, otherwise tell the worker to
+check the current checkout. Wait for all to report back before continuing to Phase 4; each
+worker's report gives you the same PASS/FAIL-per-criterion detail Phase 3 would have produced
+inline, so Phases 4–6 proceed exactly as documented, serially, using those reports.
+
+Only dispatch concurrently when there's more than one independent spec to check — a single
+spec is simpler done inline, without worktree overhead.
+
 ## Phase 4 — Report results
 
 After checking all selected specs, print a summary table:

@@ -112,6 +112,23 @@ whose dependencies just completed within this run. For each spec:
 3. **Move to waiting_verification.** `git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 
+### Concurrent dispatch (multiple independent specs)
+
+When more than one spec in the batch has no unfinished dependency on the others and passes
+the file-conflict gate ("File-conflict gate" in `specs/README.md` — no two specs in the batch
+touch the same file), step 2 ("Implement") can be dispatched to `spec-exec-worker` subagents
+in parallel instead of done inline, one spec at a time. Follow "Concurrent dispatch" in
+`specs/README.md` for the full mechanism — the canonical description, not repeated here.
+
+In short: do step 1 for every spec in the batch yourself, serially, first. Then dispatch a
+`spec-exec-worker` per spec via the Task tool, wait for all to report back, and do steps 3–4
+yourself, serially, using each worker's report — including recording the `branch:` field in
+frontmatter per the "Concurrent dispatch" section. If a worker reports it couldn't complete
+the spec, don't do step 3 for it — report the failure and leave it in `in_progress/`.
+
+Only dispatch concurrently when there's more than one independent spec to run — a single spec
+is simpler done inline, without worktree overhead.
+
 ## Quick reference
 
 | Request | Behavior |

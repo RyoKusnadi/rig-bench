@@ -55,17 +55,35 @@ uncontroversial; subagent dispatch deserves its own explicit go-ahead given the 
    prose explanation; the YAML is a machine-readable mirror for future tooling, with a known
    (documented, not solved) gap that nothing yet enforces the two — plus
    `scripts/check-specs.sh`'s own hand-maintained `VALID_STATES` array — stay in sync.
-2. **Concurrent dispatch for `spec-exec`/`spec-verify` as real subagents.** **Not started —
-   still gated.** This is the part with the two-strikes history — `workflows/` coupled to
-   agent definitions that didn't have a settled design. Should not start before Phase 1's
-   retry/blocked-state logic has actually been exercised by a real spec (not just merged code):
-   dispatching failures into a void concurrently is worse than doing it serially, and there's
-   no evidence yet the retry/blocked logic behaves correctly under real use — `specs/template/`
-   is still empty as of this writing. This item stays on hold until that changes.
+2. **Concurrent dispatch for `spec-exec`/`spec-verify` as real subagents.** **Built, gate
+   explicitly waived.** `.claude/agents/spec-exec-worker.md` and
+   `.claude/agents/spec-verify-worker.md`, plus a "Concurrent dispatch" phase in each skill
+   (mechanism documented canonically in `specs/README.md`). This is the part with the
+   two-strikes history — `workflows/` coupled to agent definitions that didn't have a settled
+   design — and the original plan said it shouldn't start before Phase 1's retry/blocked logic
+   had actually been exercised by a real spec, not just merged code. That gate was **not met**
+   when this was built: `specs/template/` had no real spec that had gone through the
+   lifecycle, let alone the retry/blocked path, at the time of writing. The decision to build
+   anyway was made explicitly, not silently.
+
+   **Design choice made to reduce (not eliminate) that risk:** rather than a separate coded
+   orchestration layer calling agents (the exact shape that failed twice), dispatch logic
+   lives as prose inside `spec-exec`/`spec-verify` themselves, and the workers are
+   self-contained single-spec units unaware of any calling script. Shared mutable state
+   (`specs/<project>/` folder moves, frontmatter) stays serial and is handled by the
+   orchestrating skill, not the workers — only the isolated code-writing/verification-running
+   work is dispatched concurrently, each in its own git worktree.
+
+   **What this does NOT change:** this mechanism is unvalidated in practice. No concurrent
+   dispatch has actually been run end-to-end against a real spec as of this being written.
+   Treat it as reviewed-but-unexercised, not proven.
 
 ## Stopping point
 
-This plan deliberately stops at the two phases above rather than speculating further about
-agent definitions — that's exactly the part with a two-strikes history, and it's not needed
-to solve the actual orchestration gap Phase 1 closed. Any future phase 3+ should get the same
-treatment: write it down here first, with an explicit gate, before building it.
+This plan deliberately stops at the two phases above rather than speculating further —
+`spec-exec-worker` and `spec-verify-worker` are narrow, single-spec worker agents scoped
+exactly to Phase 2 item 2 above, not a return to a general-purpose agent roster
+(operator/inspector/scout or operator/inspector/shipper) with its own settled design still to
+work out. That's exactly the part with a two-strikes history, and nothing here reopens it. Any
+future phase 3+ should get the same treatment: write it down here first, with an explicit gate,
+before building it.

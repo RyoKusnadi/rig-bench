@@ -32,7 +32,8 @@ here rather than duplicating it into the skill, so there's one place to change i
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
-| `.claude/agents/` | Placeholder (`.gitkeep`) |
+| `.claude/agents/spec-exec-worker.md` | Subagent: implements one spec in an isolated git worktree, dispatched by `spec-exec`'s concurrent-dispatch phase |
+| `.claude/agents/spec-verify-worker.md` | Subagent: verifies one spec in an isolated git worktree, dispatched by `spec-verify`'s concurrent-dispatch phase |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
 | `hooks/` | Placeholder (`.gitkeep`) |
 | `lib/` | Placeholder (`.gitkeep`) |

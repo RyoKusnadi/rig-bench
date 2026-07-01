@@ -201,6 +201,49 @@ the `## Verification Failures` section before moving the file to `finished/` —
 spec's file shouldn't carry stale failure history; the git history of the file is where that
 record actually lives (`git log --follow` on the spec path).
 
+## Concurrent dispatch
+
+`spec-exec` and `spec-verify` can each dispatch more than one independent spec at once, using
+the `spec-exec-worker` and `spec-verify-worker` subagents in `.claude/agents/`, instead of
+processing specs one at a time in the same turn. This section is the canonical explanation —
+both skills' "Concurrent dispatch" phases point here rather than re-describing it.
+
+**This was built with the "run Phase 1 for real first" gate explicitly waived** (see
+`improvement-plan.md`) — as of this being written, no real spec has ever gone through the
+retry/blocked path live. Treat this mechanism as unvalidated in practice until it has actually
+been exercised, not just reviewed.
+
+**The core rule: shared state stays serial, isolated work goes concurrent.** A spec's file
+under `specs/<project>/` (which folder it's in, its frontmatter) is shared mutable state — two
+things writing to it at once is exactly the kind of race this repo can't safely absorb.
+Writing code, on the other hand, is safe to parallelize as long as each spec's changes land in
+their own isolated git worktree and branch. So the split is:
+
+- **Orchestrator (you, in the shared checkout) does, serially:** every `specs/<project>/`
+  folder move, every frontmatter edit, every commit that touches a spec's tracking file. This
+  is unchanged from the serial Phases already documented in `spec-exec`/`spec-verify` — nothing
+  about those phases' logic changes for concurrent dispatch, only *when* they run (right after
+  a worker reports back, instead of inline).
+- **Workers (dispatched via the Task tool, one per spec) do, in parallel, each in their own
+  `git worktree`:** the actual implementation work (`spec-exec-worker`) or the actual
+  criteria-checking and Verification-step-running (`spec-verify-worker`). Neither worker
+  touches `specs/<project>/` folder structure — they report back, and the orchestrator acts on
+  that report using the same Phase logic as the serial path.
+
+**The `branch` field:** when `spec-exec`'s orchestrator moves a spec to `waiting_verification/`
+after a worker reports success, it records that worker's branch name in the spec's frontmatter
+as `branch: spec/<id>-<slug>`. This is how `spec-verify` (or a `spec-verify-worker` it
+dispatches) knows which branch actually holds the implementation to check, since concurrent
+work never lands on the shared checkout directly. This field is not part of the base
+`spec-template.md` — it only exists on specs that went through concurrent dispatch at least
+once, and its absence just means "check the current checkout," matching the serial default.
+
+**Why this design, not a `workflows/*.js` file:** the failure mode recorded in `REMOVED.md`
+was a *separate coded orchestration layer* becoming dead weight when the agent definitions it
+depended on changed shape. Keeping the dispatch logic as prose inside the skills — and keeping
+the workers self-contained, single-spec, and unaware of any calling script — means there's no
+equivalent coupling here for a future agent redesign to break.
+
 ## Template
 
 The canonical spec shape — frontmatter and section list — lives in
