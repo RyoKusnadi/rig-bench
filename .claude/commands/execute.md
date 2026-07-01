@@ -6,21 +6,10 @@ Execute specs for: $ARGUMENTS
 
 ## Step 0 — Resolve the project
 
-Specs live under `specs/<project_name>/` (see `specs/README.md`) — `specs/template/`
-for the harness itself, or `specs/<name>/` for a project under `projects/`. `template` is a
-real, valid project, not a special case — don't exclude it. Determine which project this
-run targets by listing directories only (not `specs/README.md` or `specs/spec-template.md`,
-which `ls` would otherwise include):
-
-```bash
-find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
-```
-
-- If the first token in `$ARGUMENTS` matches one of these project folders, that's the
-  project — strip it from `$ARGUMENTS` before continuing to Step 1.
-- If `$ARGUMENTS` has no matching project token and only one project folder exists, use it.
-- If multiple project folders exist and none was named, use `AskUserQuestion` to ask which
-  project before doing anything else.
+Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
+by `/execute`, `/verify`, the `spec-plan` skill, and the `operator` agent. Match the first
+token of `$ARGUMENTS` against the candidate list; if it matches, strip it from `$ARGUMENTS`
+before continuing to Step 1.
 
 All `specs/...` paths below are relative to `specs/<project>/` — e.g. "`ready/`" means
 `specs/<project>/ready/`.

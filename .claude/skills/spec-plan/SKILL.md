@@ -26,24 +26,10 @@ one-line fixes that don't warrant a spec at all.
 
 ## Phase 0 — Resolve the project
 
-Specs are scoped per project under `specs/<project_name>/` (see `specs/README.md`) —
-`specs/template/` for the harness itself, or `specs/<name>/` for a project under
-`projects/`. `template` is a real, valid project, not a special case — don't exclude it.
-Before anything else, figure out which project this planning session is for by listing
-directories only (not `specs/README.md` or `specs/spec-template.md`, which `ls` would
-otherwise include):
-
-```bash
-find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
-```
-
-- If the task clearly names or implies a project (e.g. it's about something under
-  `projects/<name>/`), use that project.
-- If only one project folder exists, use it without asking.
-- If multiple project folders exist and it's not obvious which one, ask rather than guess.
-- If the target project's `specs/<project_name>/` folder doesn't exist yet, create the full
-  lifecycle skeleton before drafting (see "Starting a new project's specs folder" in
-  `specs/README.md`) rather than writing into a partial structure.
+Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
+by `/execute`, `/verify`, this skill, and the `operator` agent. If the task clearly names or
+implies a project (e.g. it's about something under `projects/<name>/`), use that project;
+otherwise apply the resolution order described there.
 
 ## Phase 1 — Orient
 
@@ -169,4 +155,7 @@ summary, not the source of truth.
 2. After approval, write each spec to `specs/<project_name>/ready/{id}-{kebab-slug}.md` with
    `status: ready`, exactly as approved — no additions, removals, or reordering slipped in
    during the write.
-3. Report the file path(s) and id(s) back to the user.
+3. Run `scripts/check-specs.sh <project_name>` — catches duplicate IDs, dangling
+   `depends_on`, and specs that have grown past the one-deliverable sizing rule. If it
+   reports issues, fix them before reporting success; don't leave a broken batch behind.
+4. Report the file path(s) and id(s) back to the user.

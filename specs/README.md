@@ -37,6 +37,30 @@ mkdir -p specs/<project_name>/{draft,ready,in_progress,waiting_verification,fini
 touch specs/<project_name>/{draft,ready,in_progress,waiting_verification,finished,blocked,abandoned}/.gitkeep
 ```
 
+## Resolving the target project
+
+Every entry point into the spec workflow (`spec-plan` skill, `/execute`, `/verify`, the
+`operator` agent) needs to know which project it's operating on before doing anything else.
+This is the one canonical procedure — implementations should point here rather than
+re-describing it, so the logic can't drift out of sync across callers the way it did before
+(see git history on this file around the per-project restructuring for what that drift cost).
+
+**List candidate projects — directories only:**
+```bash
+find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
+```
+Plain `ls specs/` is wrong here — it also returns `spec-template.md`, which isn't a project.
+
+**Resolution order:**
+1. If the caller's arguments/task explicitly name a project matching one of the candidates,
+   use it. `template` is a real, valid project like any other — never special-cased or
+   excluded from the candidate list.
+2. Else if exactly one project folder exists, use it without asking.
+3. Else if multiple exist and none was named, ask which one before doing anything else —
+   never guess.
+4. If the target project's `specs/<project_name>/` doesn't exist yet, create the full
+   lifecycle skeleton (above) before drafting into it.
+
 ## Rule
 
 One spec = one deliverable, sized to fit a single `new-feature.js`/`bug-fix.js`/
@@ -151,6 +175,26 @@ itself):
 
 A spec that cannot yet name its files in `## Files/Interfaces Touched` is
 not ready — mark it `draft` and add a `[NEEDS CLARIFICATION]` marker.
+
+## Scripted consistency check
+
+The manual scan above catches file-overlap conflicts; `scripts/check-specs.sh <project>`
+extends the same grep-based approach to catch three more things automatically, all of them
+bugs found by hand while reviewing an earlier PR — a reminder that these are worth checking
+by script rather than by eye:
+
+- **Duplicate spec IDs** within a project.
+- **Dangling `depends_on`** — a referenced ID that doesn't resolve to any spec in the project.
+- **Sizing drift** — a spec whose `Files/Interfaces Touched` list has grown past the "one
+  deliverable" `Rule` above (default threshold: 5 files; override with `SIZING_THRESHOLD`).
+
+```bash
+scripts/check-specs.sh template   # or scripts/check-specs.sh, if only one project exists
+```
+
+Advisory, like the manual scan — it reports issues and exits non-zero, but nothing currently
+blocks on it automatically. Run it before moving a batch of specs to `ready`, the same point
+the manual file-conflict scan above is meant to run.
 
 ## Workflow
 

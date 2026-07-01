@@ -28,12 +28,8 @@ Same workflow as the `spec-plan` skill (`.claude/skills/spec-plan/SKILL.md`) —
 for the full reasoning; this is the condensed version for autonomous operation.
 
 **0. Resolve the project**
-Specs live under `specs/{project_name}/` — `specs/template/` for the harness itself, or
-`specs/{name}/` for a project under `projects/`. `template` is a real, valid project, not a
-special case. If the task doesn't name a project and more than one project folder exists, ask
-before proceeding (`find specs -mindepth 1 -maxdepth 1 -type d -exec basename {} \;` to see
-candidates — directories only, since `ls` would also list `specs/README.md` and
-`specs/spec-template.md`).
+Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
+by `/execute`, `/verify`, the `spec-plan` skill, and this agent.
 
 **1. Orient**
 Read `specs/README.md` for the frontmatter/lifecycle convention and `specs/spec-template.md`
