@@ -57,9 +57,8 @@ does ask, it comes with a suggestion, not a blank question.
 
 ### `/spec-exec`
 
-> Also just a shorthand name — it kicks in when you ask to execute, implement, build, or ship
-> a spec that's already been planned and approved, like "let's execute 0001" or "implement the
-> ready specs."
+> It kicks in when you ask to execute, implement, build, or ship a spec that's already been
+> planned and approved, like "let's execute 0001" or "implement the ready specs."
 
 Once a plan exists, this is what turns it into working code. It picks up specs from the
 `ready/` folder (or `in_progress/`, if you're resuming something), checks that anything they
