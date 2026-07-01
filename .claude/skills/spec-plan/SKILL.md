@@ -68,6 +68,56 @@ user first:
 If the task is ambiguous on any of these, ask rather than assume. A wrong guess here costs
 much more than the question would have.
 
+### Considerations scan (skip for trivial specs)
+
+For anything with real surface area — new UI, new service, new integration, anything
+touching data or auth — there's a second layer beyond scope: dimensions the user didn't
+mention but that materially change the design if the answer isn't the default. A frontend
+task might turn out to need responsive layout, or a specific deploy target, or accessibility
+compliance; a backend task might turn out to need rate limiting, or a specific auth model.
+None of these are guessable from silence, and guessing wrong here is expensive to unwind
+after code exists. Skip this whole scan for one-line fixes or specs where nothing about the
+task suggests hidden surface area — it's not free, so don't run it reflexively.
+
+**Don't keep a fixed per-domain checklist.** A hardcoded "frontend needs responsive+security
++deploy" list will always miss whatever domain it wasn't written for, and worse, it creates
+false confidence — once a box is ticked, it's easy to stop actually thinking about it. Instead
+scan these generic dimensions and judge, for *this specific task*, whether each is
+**Clear** (obvious from the task or the repo's existing conventions), **Not applicable**, or
+**Genuinely open** (the deliverable's design meaningfully changes depending on the answer):
+
+- **Non-functional attributes** — performance, security, accessibility, responsiveness,
+  scale — whatever's relevant to what's being built.
+- **Integration & dependencies** — what this touches or depends on that isn't obvious from
+  the task description alone.
+- **Operational surface** — how this gets deployed, run, or rolled back, if that's not
+  already fixed by the repo's existing setup.
+- **Edge cases & failure handling** — what happens when the happy path doesn't hold.
+
+Before asking about any dimension, check whether the repo already answers it — read
+`package.json`/config files/existing deploy setup/CLAUDE.md conventions first. A dimension
+answered by the codebase isn't a question, it's a fact to state in the spec. Only dimensions
+that are both **Genuinely open** *and* would change the Implementation Plan depending on the
+answer become questions — this mirrors why Spec Kit's own clarify step caps itself at a
+handful of high-impact questions rather than working through every category exhaustively:
+asking about something whose answer doesn't change the design is pure ceremony, and burns
+the user's patience for the question that actually matters.
+
+**Asking:** batch the surviving questions into one `AskUserQuestion` call (or present them
+together in your response if that tool isn't available) rather than a back-and-forth
+volley — the user reviews the whole set of genuinely open points once, not one at a time.
+Keep it to the handful that clear the bar above; five is a reasonable ceiling before it stops
+feeling like a short check-in and starts feeling like an interrogation.
+
+**Recommending, not just asking:** don't hand back an open-ended "what do you want for X?" —
+that pushes research the agent is better positioned to do back onto the user. For anything
+where current best practice or the project's existing stack determines a sensible default
+(a deploy target, a common library choice, a standard pattern for this kind of feature),
+web-search it and propose that default with a one-line reason, so the question becomes
+"here's what I'd do and why — confirm or override" instead of a blank prompt. Reserve open
+questions for genuine product/design calls that research can't answer (e.g. "should this be
+mobile-first or desktop-first for your users").
+
 ## Phase 3 — Draft the spec(s)
 
 **Assess scope first.** Count the distinct deliverables in the task:
