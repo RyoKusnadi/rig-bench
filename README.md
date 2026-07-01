@@ -1,6 +1,6 @@
 # rig-bench
 
-A clean-slate multi-agent harness for Claude Code. Spec-driven development with a plan→execute pipeline, concurrent worktree-isolated execution, a structured lifecycle for every deliverable, and a persistent memory system that gives every agent codebase context without re-reading files.
+A clean-slate multi-agent harness for Claude Code. Spec-driven development with a plan→execute pipeline, concurrent worktree-isolated execution, and a structured lifecycle for every deliverable.
 
 ---
 
@@ -11,7 +11,6 @@ A clean-slate multi-agent harness for Claude Code. Spec-driven development with 
 1. **Plan** — design a spec interactively before any code is written
 2. **Execute** — implement specs concurrently, each agent in its own git worktree
 3. **Verify** — confirm implementation matches requirements before marking as finished
-4. **Remember** — structural index, git history, and AI-generated docs persist across runs so agents start informed
 
 ---
 
@@ -134,4 +133,3 @@ out of order.
 - **Worktree isolation** — concurrent agents never share a working directory
 - **Structured output** — every agent call returns a typed schema, not prose
 - **State, not transcripts** — the workflow passes structured data between phases, never raw text
-- **Memory over re-reading** — structural index, git history, and AI-generated docs are queried at task time; agents never cold-start without codebase context

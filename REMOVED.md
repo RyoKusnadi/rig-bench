@@ -143,3 +143,18 @@ All of these are planned for re-implementation in the future.
 | PreCompact | `pre-compact.mjs` | Fed session-start; orphaned by its removal |
 
 **Active hooks:** `pre-tool-gatekeeper.mjs`, `pre-bash-safety.mjs`, `pre-webfetch-security.mjs`, `post-bash-processor.mjs`, `auto-run-tests.mjs`
+
+---
+
+## Memory system, operator/inspector/shipper agents, and their supporting scripts *(2026-07-01)*
+
+**What was removed:**
+- `.claude/agents/operator.md`, `.claude/agents/inspector.md`, `.claude/agents/shipper.md` — replaced by `.claude/agents/.gitkeep`
+- `workflows/operator.js`, `workflows/bootstrap-memory.js`
+- `memory/` — `RULES.md`, `PENDING_UPDATES.md`, `ARCHITECTURE.md`, `structure.json`, `archive/`
+- `memory.md` (top-level)
+- `scripts/archive-spec.sh`, `scripts/bootstrap-git-history.sh`, `scripts/build-structure-index.sh`, `scripts/read-file-summary.sh`, `scripts/read-worktree-diff.sh`, `scripts/search-git-history.sh`, `scripts/search-structure.sh`, `scripts/write-file-summary.sh`
+- Doc references in `CLAUDE.md`, `README.md`, and `specs/README.md` — structure table, "Remember" step, "Memory over re-reading" design principle, and the canonical-caller/shared-file examples that pointed at these files
+- `.claude/skills/spec-plan/SKILL.md` and `.claude/skills/spec-exec/SKILL.md`'s project-resolution pointers no longer name the `operator` agent as a caller
+
+**Why:** This system (specs 0001–0015, PRs #37–#55) had grown substantial — real structural indexing, git-history search, file-summary caching, drift detection, and a checkpoint-driven operator loop — but was reverted back toward the clean-slate state this file's intro already describes, to give the next iteration of the design a genuinely fresh start rather than building `spec-exec` on top of a partially-organic system. **Note:** this is a bigger reversion than the other passes above — undoing ~1,100 lines of previously merged, reviewed work, not stub cleanup. Re-implementation should treat this as a deliberate reset, not an accident to quietly restore.
