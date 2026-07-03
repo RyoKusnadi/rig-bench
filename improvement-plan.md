@@ -127,6 +127,12 @@ dead weight. Therefore:
 prose of their own, or a code orchestration layer starts looking necessary, stop and bring
 it back to this plan — that is the exact failure signature of the two removed attempts.
 
+**Status: done (2026-07-03).** Specs 0008 (agents, PR #83) and 0009 (dispatch procedure +
+limit-as-data + sync enforcement, PR #84) shipped and verified through the lifecycle.
+`workflows/` still contains only `state.yaml` — the constraint held. Not yet exercised: an
+actual multi-spec concurrent dispatch run; the first real batch should be observed against
+the kill criterion.
+
 ## Stopping point
 
 This plan deliberately stops at the two phases above rather than speculating further about
