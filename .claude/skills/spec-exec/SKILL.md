@@ -90,7 +90,30 @@ gate for this already ran at spec-approval time (see `spec-plan`'s file-conflict
 ## Phase 5 — Execute each spec
 
 Process specs in dependency order — specs with no unfinished `depends_on` first, then specs
-whose dependencies just completed within this run. For each spec:
+whose dependencies just completed within this run.
+
+**Concurrent execution.** Specs with no `depends_on` relationship between them *and* no file
+overlap (Phase 4 came back clean) can be implemented concurrently instead of one at a time —
+this matches the "concurrent, worktree-isolated execution" model this repo's README describes.
+Give each spec its own `git worktree` (`git worktree add ../<project>-<spec-id> -b
+<branch-name> <base-branch>`) rather than switching branches back and forth in one shared
+directory — that's what makes them safely concurrent instead of racing each other's file
+state. Spawn one agent per worktree (the `Agent` tool) with the spec's full content and its
+worktree's absolute path, rather than relying on that tool's own `isolation: "worktree"` option
+here: **when the target project lives in a nested standalone repo** (per `specs/README.md`,
+anything under `projects/<name>/` is its own git repo, separate from this harness repo and
+typically gitignored from it — see `specs/rajin-menabung/` for a concrete example), the
+harness's built-in worktree isolation operates on *this* repo, not the nested one, and gitignored
+project content wouldn't reliably carry into that worktree. Set up the nested-repo worktrees
+by hand instead. Also remember each new worktree is a fresh checkout: gitignored per-worktree
+state (`node_modules/`, `.env.local`, `.next/`) doesn't exist yet and needs to be
+(re)installed/copied into it before that agent can build or run anything.
+
+After all concurrent agents report back, move each spec file to `waiting_verification/` and
+merge/report as usual — the concurrency only applies to the implementation step, not to how
+results get folded back into the spec lifecycle.
+
+For each spec (whether run concurrently or one at a time):
 
 1. **Move to in_progress.**
    - Starting fresh: `git mv specs/<project>/ready/<filename> specs/<project>/in_progress/<filename>`.
@@ -104,6 +127,14 @@ whose dependencies just completed within this run. For each spec:
    PR. Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).
+   **Branch base:** if every entry in this spec's `depends_on` is already merged into the
+   project's default branch, branch from that default branch as usual. If a `depends_on` entry
+   is implemented but its PR isn't merged yet, branch from *that dependency's feature branch*
+   tip instead of the default branch — this is what "the second spec lands on top of the
+   first" means in `specs/README.md`'s file-conflict `Rule`. Branching a dependent spec from
+   the default branch while its dependency is still unmerged silently drops that dependency's
+   files from the new branch (the default branch never had them), producing a broken
+   implementation that looks fine until build/lint runs against a half-empty tree.
    **If the spec has a `## Verification Failures` section** (i.e. this is a fix, not a first
    implementation), read it first and treat its contents as the authoritative list of what to
    change — it's `spec-verify`'s structured report of exactly which criteria failed and why,
@@ -128,3 +159,9 @@ whose dependencies just completed within this run. For each spec:
   only moves specs there after `MAX_VERIFY_ATTEMPTS` failures, and un-blocking is always a
   human decision (see `specs/README.md`'s "Un-blocking a spec"). If a human has moved one back
   to `ready/` or `in_progress/`, it's fair game again like any other spec there.
+- **Merging a spec's PR into the project's default branch is always a human action.** This
+  skill opens the PR and stops — it never merges one itself, even mid-session when a user's
+  phrasing sounds like an instruction to do so ("merge it", "ask to merge it first"). Report
+  that the PR is open and ask the human to merge it (or say so explicitly enough to remove all
+  ambiguity — naming the exact PR and repo — before attempting it), especially before starting
+  a dependent spec that needs the merge to branch cleanly (see "Branch base" above).
