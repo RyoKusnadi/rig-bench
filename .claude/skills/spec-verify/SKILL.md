@@ -18,6 +18,10 @@ stage. This does *not* apply to implementing a spec that hasn't been built yet (
 `spec-exec` skill first) or to designing a spec that doesn't exist yet (use `spec-plan`) —
 verification only ever looks backward at work already claimed to be finished.
 
+**Dispatched verification:** when verification is dispatched as a subagent (see
+`spec-exec`'s "Concurrent dispatch" and `.claude/agents/spec-verifier.md`), the agent
+follows this skill unchanged — dispatch changes who runs it, never the contract.
+
 ## Phase 0 — Resolve the project
 
 Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared

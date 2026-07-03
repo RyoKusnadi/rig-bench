@@ -1,7 +1,7 @@
 ---
 id: "0009"
 title: Concurrent dispatch procedure with worktree isolation and a data-backed limit
-status: in_progress
+status: waiting_verification
 depends_on: ["0008"]
 verify_attempts: 0
 source: improvement-plan.md#phase-4

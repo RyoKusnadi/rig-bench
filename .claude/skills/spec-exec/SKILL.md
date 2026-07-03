@@ -87,6 +87,33 @@ proceeding — e.g. "0001 and 0002 both touch lib/foo.mjs; running them concurre
 merge conflict between their PRs" — but continue anyway. This is a heads-up, not a gate; the
 gate for this already ran at spec-approval time (see `spec-plan`'s file-conflict scan).
 
+## Phase 4b — Concurrent dispatch (opt-in; serial remains the default)
+
+When the user asks for multiple specs and the batch has **no dependency edges between its
+members**, the specs may be dispatched concurrently instead of processed serially. Serial is
+the default — dispatch only when the batch shape allows it and concurrency actually buys
+something (two independent one-file specs aren't worth the worktree overhead).
+
+Procedure, per Phase 4 of `improvement-plan.md` (prose + data only, no orchestration code):
+
+1. **Re-check the file-conflict scan** (Phase 4 above) across exactly the batch being
+   dispatched. Overlapping specs drop back to serial order; they are not dispatched together.
+2. **Cap the batch** at `MAX_CONCURRENT_DISPATCH` (canonical value stated in
+   `specs/README.md`'s State Transitions section, mirrored as `dispatch.max_concurrent` in
+   `workflows/state.yaml`). More specs than the cap → dispatch in waves, next wave only
+   after the previous wave's results are collected.
+3. **One worktree per spec**: `git worktree add ../<repo>-wt-<spec-id> -b spec-<id>-<slug>`
+   from the current main. The main checkout is never an executor's working directory.
+4. **One `spec-executor` agent per worktree**, handed exactly one spec id + project. The
+   agent follows this skill for its spec; the dispatcher does not micromanage past that.
+5. **Collect results**: each executor reports branch, PR, and resulting lifecycle state.
+   Failures or blockers are surfaced to the user as they arrive — never silently retried.
+6. **Clean up**: `git worktree remove ../<repo>-wt-<spec-id>` once that spec's PR has
+   landed (or the run is abandoned).
+
+Verification of dispatched specs goes through the `spec-verifier` agent under the identical
+`spec-verify` contract — dispatch changes who runs the skill, never what the skill does.
+
 ## Phase 5 — Execute each spec
 
 Process specs in dependency order — specs with no unfinished `depends_on` first, then specs
