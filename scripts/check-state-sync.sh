@@ -82,6 +82,20 @@ elif [[ "$YAML_MAX" != "$README_MAX" ]]; then
   ISSUES=$((ISSUES + 1))
 fi
 
+# ── Compare dispatch constant (spec 0009) ────────────────────────────────────
+YAML_DISPATCH="$(awk '/^[[:space:]]*max_concurrent:/ { print $NF; exit }' "$STATE_YAML")"
+README_DISPATCH="$(grep -Eo 'MAX_CONCURRENT_DISPATCH = [0-9]+' "$README" | head -1 | grep -Eo '[0-9]+' || true)"
+if [[ -z "$YAML_DISPATCH" ]]; then
+  echo "ISSUE [dispatch-drift]: $STATE_YAML has no dispatch.max_concurrent value."
+  ISSUES=$((ISSUES + 1))
+elif [[ -z "$README_DISPATCH" ]]; then
+  echo "ISSUE [dispatch-drift]: $README does not state 'MAX_CONCURRENT_DISPATCH = <n>' anywhere."
+  ISSUES=$((ISSUES + 1))
+elif [[ "$YAML_DISPATCH" != "$README_DISPATCH" ]]; then
+  echo "ISSUE [dispatch-drift]: max_concurrent is $YAML_DISPATCH in $STATE_YAML but MAX_CONCURRENT_DISPATCH = $README_DISPATCH in $README."
+  ISSUES=$((ISSUES + 1))
+fi
+
 echo ""
 if [[ "$ISSUES" -eq 0 ]]; then
   echo "State facts in sync across $STATE_YAML and $README."

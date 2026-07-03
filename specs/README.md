@@ -163,6 +163,11 @@ Nothing transitions a spec directly from `waiting_verification` back to `ready` 
 `in_progress` on its own — that only happens via the retry contract below, or a human
 un-blocking it.
 
+**Concurrent dispatch:** `MAX_CONCURRENT_DISPATCH = 3` — the cap on simultaneously
+dispatched spec-executor agents (mirrored as `dispatch.max_concurrent` in
+`workflows/state.yaml`, enforced in sync by `scripts/check-state-sync.sh`). See `spec-exec`'s
+"Concurrent dispatch" section for the procedure; serial execution remains the default.
+
 ### Retry contract: `spec-verify` failure → `spec-exec` fix
 
 `MAX_VERIFY_ATTEMPTS = 2` (also mirrored in `workflows/state.yaml`'s `retry.max_verify_attempts`
