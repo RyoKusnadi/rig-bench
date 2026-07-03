@@ -144,11 +144,10 @@ sitting in `in_progress/`) is a bug, not a valid intermediate state, however it 
 **Machine-readable mirror:** `workflows/state.yaml` carries the same state/folder/transition
 facts plus the `MAX_VERIFY_ATTEMPTS` constant below, as pure data — no orchestration code, per
 `improvement-plan.md`'s Phase 2. It's for future tooling to read instead of parsing this
-table. **Known gap:** nothing currently enforces the two stay in sync — if you edit one, edit
-the other by hand. `scripts/check-specs.sh`'s own `VALID_STATES` array is a third, separately
-hand-maintained copy for the same reason (no YAML parser dependency has been added to keep
-that script dependency-free). Collapsing these into one enforced source is a candidate for a
-future pass, not solved here.
+table. **Sync enforcement:** `scripts/check-state-sync.sh` (also run by `make check`) verifies
+the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, exiting 1 on
+drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
+is no third hand-maintained copy.
 
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
@@ -163,6 +162,11 @@ future pass, not solved here.
 Nothing transitions a spec directly from `waiting_verification` back to `ready` or
 `in_progress` on its own — that only happens via the retry contract below, or a human
 un-blocking it.
+
+**Concurrent dispatch:** `MAX_CONCURRENT_DISPATCH = 3` — the cap on simultaneously
+dispatched spec-executor agents (mirrored as `dispatch.max_concurrent` in
+`workflows/state.yaml`, enforced in sync by `scripts/check-state-sync.sh`). See `spec-exec`'s
+"Concurrent dispatch" section for the procedure; serial execution remains the default.
 
 ### Retry contract: `spec-verify` failure → `spec-exec` fix
 

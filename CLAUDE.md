@@ -23,6 +23,13 @@ here rather than duplicating it into the skill, so there's one place to change i
   feature branch and a PR, even for one-line fixes — this repo's whole model depends on PRs
   being the reviewable unit.
 
+## Memory
+
+`memory/` holds this repo's durable memory — `decisions.md`, `gotchas.md`, `lessons.md`,
+conventions in `memory/README.md`. Read it (or `grep -ri <term> memory/`) before planning or
+debugging; write back per its entry format when something is decided, discovered, or learned.
+Plain markdown, no tooling — grep is the query engine by design.
+
 ## Structure
 
 | Directory | Contents |
@@ -32,17 +39,21 @@ here rather than duplicating it into the skill, so there's one place to change i
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
-| `.claude/agents/` | Placeholder (`.gitkeep`) |
+| `.claude/agents/` | `spec-executor.md`, `spec-verifier.md` — thin dispatch entry points into the skills |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
-| `hooks/` | Placeholder (`.gitkeep`) |
+| `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
+| `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
 | `lib/` | Placeholder (`.gitkeep`) |
-| `scripts/` | Utility scripts (spec consistency checking) |
+| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`) |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
-| `tests/` | Placeholder (`.gitkeep`) |
+| `tests/` | `node --test` suites (run via `npm test`) |
 | `projects/` | Placeholder (`.gitkeep`) |
 
 ## Commands
 
 ```bash
 make clean   # git clean -fdX
+make check   # state-table sync check + per-spec consistency checks (incl. dep-graph)
+make status  # per-state spec counts + attention items (failed attempts, blocked)
+npm test     # node --test suites (hooks)
 ```

@@ -18,6 +18,10 @@ stage. This does *not* apply to implementing a spec that hasn't been built yet (
 `spec-exec` skill first) or to designing a spec that doesn't exist yet (use `spec-plan`) —
 verification only ever looks backward at work already claimed to be finished.
 
+**Dispatched verification:** when verification is dispatched as a subagent (see
+`spec-exec`'s "Concurrent dispatch" and `.claude/agents/spec-verifier.md`), the agent
+follows this skill unchanged — dispatch changes who runs it, never the contract.
+
 ## Phase 0 — Resolve the project
 
 Follow "Resolving the target project" in `specs/README.md` — the canonical procedure, shared
@@ -146,6 +150,11 @@ canonical description; the steps below are just this skill's execution of it.
    ```
    Only list what actually failed — passing criteria don't need an entry here (Phase 4's
    report already covers those).
+3. Append a distilled entry to `memory/lessons.md` (format per `memory/README.md`, provenance
+   tag required): not a copy of the failure list, but the transferable part — what class of
+   mistake this was and what a future spec or implementation should do differently. If the
+   failure is purely local (a typo-grade miss with nothing transferable), a one-line entry
+   is still written; deciding it teaches nothing is itself worth recording once.
 
 **6b. Stay in place, or escalate to blocked**
 
@@ -176,6 +185,15 @@ here — if it ever changes, that's the one place to change it).
   `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked/.
   This needs human review before another attempt; see specs/README.md's "Un-blocking a spec"
   for how to bring it back.`
+
+  A blocked spec always gets a `memory/lessons.md` entry (in addition to the failure-time
+  entry from 6a): escalations are exactly the events the notebook exists for.
+
+**6c. Passing specs and memory (optional, not routine)**
+
+A pass that revealed something durable — a verification technique worth reusing, a criterion
+pattern that made checking easy or hard — may also get a `memory/lessons.md` entry. Routine
+passes don't; a notebook padded with "it worked" entries stops being read.
 
 Do not auto-retry within the same run — one verify pass per spec per invocation, same as a
 passing spec only moves once.

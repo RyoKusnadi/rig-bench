@@ -3,6 +3,14 @@
 This file records what was stripped from the harness on 2026-06-28, and why.
 All of these are planned for re-implementation in the future.
 
+> **Re-implementation status (2026-07-03):** the memory system has been re-added as
+> file-based markdown (`memory/`, specs 0002–0003 — deliberately smaller than the removed
+> TF-IDF/SQLite design); `pre-bash-safety` and a new post-spec-edit check are the restored
+> hooks (specs 0004, 0007); dependency-graph validation returned as in-script checks (spec
+> 0005); and concurrent dispatch returned as prose + data + thin agents — explicitly NOT as
+> `workflows/*.js` (specs 0008–0009, improvement-plan.md Phase 4). The workflow-code shape
+> itself remains removed by design.
+
 ---
 
 ## Hooks, lib, and scripts *(third pass)*
