@@ -3,6 +3,11 @@
 This file records what was stripped from the harness on 2026-06-28, and why.
 All of these are planned for re-implementation in the future.
 
+> **Re-implementation status (2026-07-03):** the memory system has been re-added as
+> file-based markdown (`memory/`, specs 0002–0003 — deliberately smaller than the removed
+> TF-IDF/SQLite design), and `pre-bash-safety` has been re-added as the single restored hook
+> (spec 0004). Everything else below remains removed.
+
 ---
 
 ## Hooks, lib, and scripts *(third pass)*

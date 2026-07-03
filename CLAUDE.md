@@ -42,15 +42,17 @@ Plain markdown, no tooling — grep is the query engine by design.
 | `.claude/agents/` | Placeholder (`.gitkeep`) |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
 | `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
-| `hooks/` | Placeholder (`.gitkeep`) |
+| `hooks/` | `pre-bash-safety.mjs` — PreToolUse confirmation gate for destructive git ops |
 | `lib/` | Placeholder (`.gitkeep`) |
-| `scripts/` | Utility scripts (spec consistency checking) |
+| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`) |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
-| `tests/` | Placeholder (`.gitkeep`) |
+| `tests/` | `node --test` suites (run via `npm test`) |
 | `projects/` | Placeholder (`.gitkeep`) |
 
 ## Commands
 
 ```bash
 make clean   # git clean -fdX
+make check   # state-table sync check + per-spec consistency checks
+npm test     # node --test suites (hooks)
 ```
