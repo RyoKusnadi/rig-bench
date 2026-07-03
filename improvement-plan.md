@@ -91,6 +91,42 @@ uncontroversial; subagent dispatch deserves its own explicit go-ahead given the 
 Phase 2's second half (concurrent subagent dispatch) remains not started — its gate is now
 met, but starting it is still an explicit go/no-go decision, not a default.
 
+## Phase 4 — concurrent dispatch, designed against the autopsy (go-ahead 2026-07-03)
+
+**Gate status: met and explicitly approved.** Phase 1's machinery has been exercised for
+real (specs 0001–0007, including a genuine fail→fail→blocked→un-block traversal), and the
+human gave the explicit go-ahead. Per this plan's own rule, the design is recorded here
+before anything is built.
+
+**Why the last two attempts died, restated as constraints:**
+`workflows/*.js` died twice because a code orchestration layer was coupled to agent
+definitions that had no settled design — when the agents were reverted, the workflows became
+dead weight. Therefore:
+
+1. **No orchestration code.** Dispatch lives in prose (the `spec-exec`/`spec-verify`
+   skills) + data (`workflows/state.yaml`) + thin agent definitions. There is no
+   `workflows/*.js` in this design at all.
+2. **Agents are entry points, not owners.** `.claude/agents/spec-executor.md` and
+   `spec-verifier.md` delegate to the existing skills — they contain routing and isolation
+   rules, never a copy of lifecycle prose. Decoupling test: deleting an agent file must
+   break nothing but the ability to dispatch it.
+3. **Serial stays the default.** Concurrency is opt-in per request, only for specs with no
+   dependency edges between them, after the file-conflict gate — one worktree per spec, one
+   PR per spec, exactly the existing model run N-wide.
+4. **The dispatch limit is data.** `dispatch.max_concurrent` lives in `state.yaml`, mirrored
+   in prose as `MAX_CONCURRENT_DISPATCH` in `specs/README.md`, enforced by
+   `check-state-sync.sh` like the retry constant.
+
+**Deliverables (as specs through the lifecycle):**
+- Spec 0008 — the two thin agent definitions.
+- Spec 0009 — the concurrent-dispatch procedure in `spec-exec` (worktree per spec,
+  dispatch-limit, result collection), the verifier handoff note in `spec-verify`, the
+  `dispatch.max_concurrent` constant, and the sync-check extension.
+
+**Kill criterion, stated up front:** if the agent definitions start accumulating lifecycle
+prose of their own, or a code orchestration layer starts looking necessary, stop and bring
+it back to this plan — that is the exact failure signature of the two removed attempts.
+
 ## Stopping point
 
 This plan deliberately stops at the two phases above rather than speculating further about
