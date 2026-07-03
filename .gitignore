@@ -18,3 +18,4 @@ specs/*/*/*.md
 research/
 projects/*
 !projects/.gitkeep
+specs/*/*/.gitkeep
