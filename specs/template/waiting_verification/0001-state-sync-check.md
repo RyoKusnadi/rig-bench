@@ -1,7 +1,7 @@
 ---
 id: "0001"
 title: Enforce sync between state.yaml, README state table, and check-specs.sh
-status: in_progress
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
 source: improvement-plan.md#phase-2

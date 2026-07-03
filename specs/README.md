@@ -144,11 +144,11 @@ sitting in `in_progress/`) is a bug, not a valid intermediate state, however it 
 **Machine-readable mirror:** `workflows/state.yaml` carries the same state/folder/transition
 facts plus the `MAX_VERIFY_ATTEMPTS` constant below, as pure data — no orchestration code, per
 `improvement-plan.md`'s Phase 2. It's for future tooling to read instead of parsing this
-table. **Known gap:** nothing currently enforces the two stay in sync — if you edit one, edit
-the other by hand. `scripts/check-specs.sh`'s own `VALID_STATES` array is a third, separately
-hand-maintained copy for the same reason (no YAML parser dependency has been added to keep
-that script dependency-free). Collapsing these into one enforced source is a candidate for a
-future pass, not solved here.
+table. **Sync enforcement:** `scripts/check-state-sync.sh` (also run by `make check`) verifies
+the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, exiting 1 on
+drift. `scripts/check-specs.sh`'s own `VALID_STATES` array remains a third, separately
+hand-maintained copy (no YAML parser dependency has been added to keep that script
+dependency-free).
 
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
