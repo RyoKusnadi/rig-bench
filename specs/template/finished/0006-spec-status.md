@@ -1,7 +1,7 @@
 ---
 id: "0006"
 title: make status — per-state spec counts and attention items
-status: waiting_verification
+status: finished
 depends_on: []
 verify_attempts: 0
 source: improvement-plan.md#phase-3
