@@ -42,7 +42,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 | `.claude/agents/` | Placeholder (`.gitkeep`) |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
 | `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
-| `hooks/` | `pre-bash-safety.mjs` — PreToolUse confirmation gate for destructive git ops |
+| `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
 | `lib/` | Placeholder (`.gitkeep`) |
 | `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`) |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
@@ -53,6 +53,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 
 ```bash
 make clean   # git clean -fdX
-make check   # state-table sync check + per-spec consistency checks
+make check   # state-table sync check + per-spec consistency checks (incl. dep-graph)
+make status  # per-state spec counts + attention items (failed attempts, blocked)
 npm test     # node --test suites (hooks)
 ```
