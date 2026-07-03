@@ -1,7 +1,7 @@
 ---
 id: "0005"
 title: Detect depends_on cycles and finished-depends-on-unfinished in check-specs.sh
-status: waiting_verification
+status: finished
 depends_on: ["0001"]
 verify_attempts: 0
 source: REMOVED.md#workflows-output-schemas-and-shared-lib-utilities-second-pass

@@ -13,3 +13,12 @@ contract works as written; `verify_attempts` surviving in the finished spec's fr
 a useful permanent trace that the retry path ran; and the failure-section format was precise
 enough to fix from without re-reading the original conversation — which is the property that
 matters. This satisfies improvement-plan.md Phase 1's "run for real" gate.
+
+## 2026-07-03 — Verification steps must describe the tree at verification time (spec 0006, PR #74)
+
+Spec 0006's Verification step asserted exact per-state counts ("finished ≥ 5 and zero counts
+elsewhere") — a state that can't exist while the spec itself is still sitting in
+waiting_verification/. First genuine (non-controlled) verification failure in this repo.
+Rule going forward: author Verification steps as invariants that hold at verification time
+(structure, sums, fixture-driven behaviors), never as snapshots of expected future tree
+state. Spec-plan should check for this when reviewing a draft's Verification section.
