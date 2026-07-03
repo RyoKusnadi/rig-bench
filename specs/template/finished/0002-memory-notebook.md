@@ -1,7 +1,7 @@
 ---
 id: "0002"
 title: File-based memory notebook (decisions, gotchas, lessons)
-status: waiting_verification
+status: finished
 depends_on: []
 verify_attempts: 0
 source: REMOVED.md#memory-system
