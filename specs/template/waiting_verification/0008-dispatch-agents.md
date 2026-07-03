@@ -1,7 +1,7 @@
 ---
 id: "0008"
 title: Thin spec-executor and spec-verifier agent definitions
-status: in_progress
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
 source: improvement-plan.md#phase-4
