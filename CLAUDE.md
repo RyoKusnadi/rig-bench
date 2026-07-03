@@ -39,7 +39,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
-| `.claude/agents/` | Placeholder (`.gitkeep`) |
+| `.claude/agents/` | `spec-executor.md`, `spec-verifier.md` — thin dispatch entry points into the skills |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
 | `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
 | `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
