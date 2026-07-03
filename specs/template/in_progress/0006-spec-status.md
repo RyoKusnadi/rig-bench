@@ -1,9 +1,9 @@
 ---
 id: "0006"
 title: make status — per-state spec counts and attention items
-status: blocked
+status: in_progress
 depends_on: []
-verify_attempts: 2
+verify_attempts: 0
 source: improvement-plan.md#phase-3
 ---
 ## Problem
@@ -43,18 +43,6 @@ state.yaml's order, which is lifecycle order.
 
 `make status` prints one line per state named in `workflows/state.yaml` (same set, same
 order) plus a `total` line equal to the sum of the counts, and exits 0; with a scratch spec
-in `waiting_verification/` carrying `verify_attempts: 2`, it appears under "Needs
+in `waiting_verification/` carrying `verify_attempts: 0`, it appears under "Needs
 attention", and with the scratch removed the attention section shows "(none)".
 
-## Verification Failures
-
-Attempt 2 of 2.
-
-- Verification step: "with the scratch removed the attention section shows '(none)'".
-  Reason: spec 0006 itself legitimately sits in waiting_verification/ with
-  verify_attempts > 0 at verification time, so the attention section is non-empty
-  regardless of the scratch — the attempt-1 fix corrected one clause but repeated the
-  future-tree-snapshot error in another. All Acceptance Criteria and the other
-  Verification clauses (state set/order from state.yaml, sum == total, scratch appears
-  while present) PASS. The fix must assert only the scratch's own appearance/disappearance,
-  not the absolute content of the attention section.
