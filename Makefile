@@ -1,4 +1,4 @@
-.PHONY: clean check
+.PHONY: clean check status
 
 # Remove all files/directories ignored by .gitignore
 clean:
@@ -8,3 +8,7 @@ clean:
 check:
 	scripts/check-state-sync.sh
 	scripts/check-specs.sh template
+
+# Read-only lifecycle view: per-state counts + attention items
+status:
+	@scripts/spec-status.sh template
