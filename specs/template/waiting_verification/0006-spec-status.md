@@ -41,10 +41,10 @@ state.yaml's order, which is lifecycle order.
 
 ## Verification
 
-`make status` on the current tree prints all seven states with finished ≥ 5 and zero
-counts elsewhere, and an empty attention section; with a scratch spec in
-`waiting_verification/` carrying `verify_attempts: 1`, it appears under attention (scratch
-removed afterwards).
+`make status` prints one line per state named in `workflows/state.yaml` (same set, same
+order) plus a `total` line equal to the sum of the counts, and exits 0; with a scratch spec
+in `waiting_verification/` carrying `verify_attempts: 1`, it appears under "Needs
+attention", and with the scratch removed the attention section shows "(none)".
 
 ## Verification Failures
 
