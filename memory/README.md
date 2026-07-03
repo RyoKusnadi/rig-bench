@@ -40,6 +40,18 @@ Superseded entries are **struck through, not deleted**, with a pointer to what r
 Git history is not the pruning mechanism — the working tree should show what was once
 believed and why it changed, without archaeology.
 
+## The lifecycle loop
+
+These notebooks are wired into the spec lifecycle (spec 0003), not just available to it:
+
+- **Write:** `spec-verify` appends a distilled `lessons.md` entry on every failed
+  verification and every blocked escalation (and optionally on a pass that taught something
+  durable) — see its Phase 6.
+- **Read:** `spec-plan` consults `memory/` alongside the Non-negotiables check before
+  drafting, folding relevant hits into the new spec's Implementation Notes.
+
+That closes the loop: failures become lessons, lessons reach the next plan.
+
 ## Querying
 
 `grep -ri <term> memory/` — that's the whole search system, on purpose. If these files ever
