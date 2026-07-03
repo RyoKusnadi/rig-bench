@@ -22,3 +22,13 @@ waiting_verification/. First genuine (non-controlled) verification failure in th
 Rule going forward: author Verification steps as invariants that hold at verification time
 (structure, sums, fixture-driven behaviors), never as snapshots of expected future tree
 state. Spec-plan should check for this when reviewing a draft's Verification section.
+
+## 2026-07-03 — First blocked escalation: fix passes must re-check every clause (spec 0006, PR #77)
+
+Spec 0006 hit MAX_VERIFY_ATTEMPTS and moved to blocked/ — the first spec to exercise the
+escalation path. The attempt-1 fix corrected the flagged Verification clause but left the
+same error class (asserting absolute tree state) in a neighboring clause, which failed
+attempt 2. Two rules: (1) a fix pass reviews the whole section it's editing against the
+failure's *class*, not just the quoted clause; (2) fixture-based verification must assert
+the fixture's own delta (appears/disappears), never the absolute state around it. The
+blocked → un-block → fresh-budget path (specs/README.md) worked as designed.
