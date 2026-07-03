@@ -37,10 +37,12 @@ failed — deliberately smaller than what got torn down before, not a rebuild of
    that section as the authoritative fix list, rather than relying on a human to relay the
    failure report by hand.
 
-**Caveat worth being honest about:** Phase 1 is merged, but as of this writing no real spec
-has actually been drafted, executed, and run through the retry/blocked path — `specs/template/`
-is currently empty. "Merged" and "run for real" are different things, and the gate below was
-written with that distinction in mind.
+**Caveat — resolved 2026-07-03:** Phase 1 has now been exercised for real. Spec 0001 ran
+the full lifecycle including the retry path (verification attempt 1 failed and was recorded
+per the contract, spec-exec fixed from the `## Verification Failures` section, attempt 2
+passed — PRs #63–#66); specs 0002–0004 followed (PRs #67–#71). See
+`memory/lessons.md`'s 2026-07-03 entry for the findings. The Phase 2 gate condition below
+is met.
 
 ## Phase 2 — only once Phase 1 has run for real (not speculative)
 
@@ -62,6 +64,22 @@ uncontroversial; subagent dispatch deserves its own explicit go-ahead given the 
    dispatching failures into a void concurrently is worse than doing it serially, and there's
    no evidence yet the retry/blocked logic behaves correctly under real use — `specs/template/`
    is still empty as of this writing. This item stays on hold until that changes.
+
+## Phase 3 — memory and one hook, re-added smaller (2026-07-03)
+
+**Status: done.** Executed as specs 0002–0004 through the lifecycle itself:
+
+1. **File-based memory** (spec 0002, PR #67): `memory/{README,decisions,gotchas,lessons}.md`
+   — plain markdown, grep as the query engine, provenance tags, strike-through pruning.
+   Deliberately what the removed TF-IDF/SQLite system should have been at this scale.
+2. **Write-back loop** (spec 0003, PR #68): `spec-verify` writes distilled lessons on
+   failure/block; `spec-plan` consults `memory/` next to the Non-negotiables check. Prose in
+   skills — consistent with what has survived here versus what died twice.
+3. **Pre-bash safety hook** (spec 0004, PR #70): the one removed hook re-added, scoped to
+   the destructive-git non-negotiable; `ask` not `deny`, fail-open, tested.
+
+Phase 2's second half (concurrent subagent dispatch) remains not started — its gate is now
+met, but starting it is still an explicit go/no-go decision, not a default.
 
 ## Stopping point
 
