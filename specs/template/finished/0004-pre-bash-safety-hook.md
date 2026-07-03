@@ -1,7 +1,7 @@
 ---
 id: "0004"
 title: Pre-bash safety hook enforcing the destructive-git non-negotiable
-status: waiting_verification
+status: finished
 depends_on: []
 verify_attempts: 0
 source: REMOVED.md#hooks-lib-and-scripts-third-pass
