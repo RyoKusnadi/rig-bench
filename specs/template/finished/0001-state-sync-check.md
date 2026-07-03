@@ -1,7 +1,7 @@
 ---
 id: "0001"
 title: Enforce sync between state.yaml, README state table, and check-specs.sh
-status: waiting_verification
+status: finished
 depends_on: []
 verify_attempts: 1
 source: improvement-plan.md#phase-2
@@ -63,18 +63,3 @@ copy must not reintroduce a YAML-parser dependency).
 missing README row and exits 1 (edit reverted afterwards). `scripts/check-specs.sh template`
 still passes and no longer contains a literal hand-maintained `VALID_STATES=(...)` array.
 
-## Verification Failures
-
-Attempt 1 of 2.
-
-- Criterion: `scripts/check-specs.sh` shall derive its valid-state list from
-  `workflows/state.yaml` instead of a hand-maintained array.
-  Reason: check-specs.sh still contains the literal `VALID_STATES=(draft ready ...)` array
-  and never reads workflows/state.yaml.
-- Criterion: If `workflows/state.yaml` is missing or yields no states, then each script
-  shall exit 1 with an error naming the file.
-  Reason: satisfied by check-state-sync.sh only — check-specs.sh does not read state.yaml,
-  so the "each script" requirement fails.
-- Verification step: grep for a literal hand-maintained VALID_STATES array in
-  scripts/check-specs.sh.
-  Reason: array is still present (expected absent).
