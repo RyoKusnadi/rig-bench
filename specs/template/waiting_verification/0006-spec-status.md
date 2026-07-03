@@ -3,7 +3,7 @@ id: "0006"
 title: make status — per-state spec counts and attention items
 status: waiting_verification
 depends_on: []
-verify_attempts: 0
+verify_attempts: 1
 source: improvement-plan.md#phase-3
 ---
 ## Problem
@@ -45,3 +45,16 @@ state.yaml's order, which is lifecycle order.
 counts elsewhere, and an empty attention section; with a scratch spec in
 `waiting_verification/` carrying `verify_attempts: 1`, it appears under attention (scratch
 removed afterwards).
+
+## Verification Failures
+
+Attempt 1 of 2.
+
+- Verification step: `make status` on the current tree, expected "all seven states with
+  finished ≥ 5 and zero counts elsewhere, and an empty attention section".
+  Reason: the tree at verification time necessarily has this spec (and its batch peers) in
+  waiting_verification/, so "zero counts elsewhere" cannot hold — the step was authored
+  against a post-verification tree state. All Acceptance Criteria pass; the failure is in
+  the spec's own Verification wording, which needs correcting to describe checks that can
+  hold at verification time (state names from state.yaml present, counts sum to total,
+  attention behavior via scratch fixture).
