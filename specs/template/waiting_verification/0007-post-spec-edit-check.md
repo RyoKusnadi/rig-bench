@@ -1,7 +1,7 @@
 ---
 id: "0007"
 title: PostToolUse hook auto-running check-specs.sh on spec file edits
-status: in_progress
+status: waiting_verification
 depends_on: ["0004", "0005"]
 verify_attempts: 0
 source: REMOVED.md#hooks-lib-and-scripts-third-pass
