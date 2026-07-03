@@ -70,6 +70,13 @@ discipline). Unlike the considerations scan below, this doesn't get skipped for 
 specs: a one-line fix can still touch a secret or need a force-push. If a spec's
 Implementation Notes would violate one, that's a blocker to flag before drafting continues.
 
+**Consult `memory/` at the same moment** — `grep -ri <key terms> memory/` (or read the three
+notebooks directly; they're short). Past decisions, gotchas, and lessons that touch this
+spec's area go into its `Implementation Notes` with their provenance tag, so the implementer
+inherits them instead of rediscovering them. A memory hit that *contradicts* the spec's
+direction is worth surfacing to the user before drafting continues — the point of
+`memory/decisions.md` is that overturning one should be a choice, not an accident.
+
 ### Considerations scan (skip for trivial specs)
 
 For anything with real surface area — new UI, new service, new integration, anything

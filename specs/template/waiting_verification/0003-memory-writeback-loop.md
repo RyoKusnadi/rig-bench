@@ -1,7 +1,7 @@
 ---
 id: "0003"
 title: Wire the memory write-back loop into spec-verify and spec-plan
-status: in_progress
+status: waiting_verification
 depends_on: ["0002"]
 verify_attempts: 0
 source: REMOVED.md#memory-system
