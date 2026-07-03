@@ -77,6 +77,16 @@ uncontroversial; subagent dispatch deserves its own explicit go-ahead given the 
    skills — consistent with what has survived here versus what died twice.
 3. **Pre-bash safety hook** (spec 0004, PR #70): the one removed hook re-added, scoped to
    the destructive-git non-negotiable; `ask` not `deny`, fail-open, tested.
+4. **Dependency-graph validation** (spec 0005, PR #73): depends_on cycle detection and
+   finished-depends-on-unfinished checks folded into `check-specs.sh` — the essential half
+   of the removed `spec-graph.mjs`, as checks rather than a library.
+5. **Lifecycle status view** (spec 0006, PRs #74–#80): `make status` — per-state counts
+   from `state.yaml` plus attention items. This spec also became the first to traverse the
+   full escalation machinery for real: two genuine verification failures → `blocked/` →
+   human un-block with fresh budget → pass. `memory/lessons.md`'s 2026-07-03 entries record
+   what that taught about authoring Verification sections.
+6. **Post-spec-edit auto-check hook** (spec 0007, PR #75): PostToolUse hook running
+   `check-specs.sh` on spec edits, surfacing drift at write time.
 
 Phase 2's second half (concurrent subagent dispatch) remains not started — its gate is now
 met, but starting it is still an explicit go/no-go decision, not a default.
