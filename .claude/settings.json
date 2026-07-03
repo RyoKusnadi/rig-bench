@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node hooks/post-spec-edit-check.mjs"
+          }
+        ]
+      }
     ]
   },
   "permissions": {
