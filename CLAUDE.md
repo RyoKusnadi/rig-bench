@@ -23,6 +23,13 @@ here rather than duplicating it into the skill, so there's one place to change i
   feature branch and a PR, even for one-line fixes — this repo's whole model depends on PRs
   being the reviewable unit.
 
+## Memory
+
+`memory/` holds this repo's durable memory — `decisions.md`, `gotchas.md`, `lessons.md`,
+conventions in `memory/README.md`. Read it (or `grep -ri <term> memory/`) before planning or
+debugging; write back per its entry format when something is decided, discovered, or learned.
+Plain markdown, no tooling — grep is the query engine by design.
+
 ## Structure
 
 | Directory | Contents |
@@ -34,6 +41,7 @@ here rather than duplicating it into the skill, so there's one place to change i
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
 | `.claude/agents/` | Placeholder (`.gitkeep`) |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
+| `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
 | `hooks/` | Placeholder (`.gitkeep`) |
 | `lib/` | Placeholder (`.gitkeep`) |
 | `scripts/` | Utility scripts (spec consistency checking) |
