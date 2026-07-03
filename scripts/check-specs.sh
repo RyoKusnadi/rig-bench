@@ -123,7 +123,22 @@ for f in "${SPEC_FILES[@]}"; do
 done
 
 # ── Status/folder mismatch: frontmatter status must match the lifecycle folder ──
-VALID_STATES=(draft ready in_progress waiting_verification finished blocked abandoned)
+# Valid states are derived from workflows/state.yaml (the machine-readable state
+# table) rather than hand-maintained here — spec 0001 removed the third copy.
+# Parsing stays line-oriented (awk only) to keep this script dependency-free.
+STATE_YAML="workflows/state.yaml"
+if [[ ! -f "$STATE_YAML" ]]; then
+  echo "Error: $STATE_YAML is missing — it is the source of the valid state list." >&2
+  exit 1
+fi
+VALID_STATES=()
+while IFS= read -r s; do
+  VALID_STATES+=("$s")
+done < <(awk '/^[[:space:]]*-[[:space:]]*name:/ { print $NF }' "$STATE_YAML")
+if [[ ${#VALID_STATES[@]} -eq 0 ]]; then
+  echo "Error: no states parsed from $STATE_YAML — file present but yields no '- name:' entries." >&2
+  exit 1
+fi
 for f in "${SPEC_FILES[@]}"; do
   folder="$(basename "$(dirname "$f")")"
   fm="$(frontmatter "$f")"
