@@ -45,7 +45,19 @@ if [[ ! -d "$PROJECT_DIR" ]]; then
 fi
 
 frontmatter() { awk '/^---$/{c++; next} c==1' "$1"; }
-fm_field() { printf '%s\n' "$1" | grep -E "^$2:" | head -1 | sed -E "s/^$2:[[:space:]]*//; s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/"; }
+# First value of a frontmatter field, quotes stripped: fm_field <frontmatter> <key>.
+# awk (always exit 0) rather than grep|head|sed — under `set -o pipefail`, the grep
+# pipeline returns 1 when the field is absent and kills the script, which is exactly
+# the common case here (waiting_verification specs without verify_attempts yet).
+fm_field() {
+  printf '%s\n' "$1" | awk -v key="$2" '
+    !done && $0 ~ "^" key ":" {
+      sub("^" key ":[ \t]*", "")
+      gsub(/^["\047]|["\047]$/, "")
+      print
+      done = 1
+    }'
+}
 
 echo "Spec status — ${PROJECT_DIR}/"
 echo ""

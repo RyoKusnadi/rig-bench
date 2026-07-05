@@ -1,0 +1,29 @@
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # State-table sync + per-spec consistency (dep graph, status/folder, sizing).
+      - name: make check
+        run: make check
+
+      # Hook + lifecycle-script suites. The script tests run the .sh files under
+      # /bin/bash; note CI's bash is 4+, so the bash-3.2 floor (memory/gotchas.md)
+      # is only truly exercised on macOS — don't introduce bash-4isms and rely on
+      # CI to catch them.
+      - name: npm test
+        run: npm test

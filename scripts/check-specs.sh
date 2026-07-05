@@ -14,9 +14,9 @@
 #   - a spec's frontmatter `status` not matching the lifecycle folder it's
 #     physically sitting in (specs/README.md "State Transitions" invariant)
 #
-# This is advisory, not a hard gate — matching the existing file-conflict scan's
-# own severity. Exits 1 if any issue is found so it can be wired into CI later,
-# but nothing currently calls it automatically.
+# Exits 1 if any issue is found. Runs via `make check`, which CI executes on
+# every PR (.github/workflows/checks.yml); the post-spec-edit hook also runs it
+# advisorily after spec edits.
 #
 # Portability: must run under bash 3.2 (macOS's /bin/bash). No associative
 # arrays, readarray, or other bash-4isms — map- and graph-shaped logic lives
