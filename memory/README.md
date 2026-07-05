@@ -2,7 +2,7 @@
 
 Durable, file-based memory for this harness. Three notebooks, plain markdown, grep as the
 query engine. This is the deliberately-smaller replacement for the removed TF-IDF/SQLite
-memory system (see `REMOVED.md` — "Memory system"): at this repo's scale, a vector store was
+memory system: at this repo's scale, a vector store was
 complexity without daily value, and these files are what it actually needed to be.
 
 ## The notebooks

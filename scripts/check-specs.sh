@@ -17,6 +17,10 @@
 # This is advisory, not a hard gate — matching the existing file-conflict scan's
 # own severity. Exits 1 if any issue is found so it can be wired into CI later,
 # but nothing currently calls it automatically.
+#
+# Portability: must run under bash 3.2 (macOS's /bin/bash). No associative
+# arrays, readarray, or other bash-4isms — map- and graph-shaped logic lives
+# in awk, which has associative arrays everywhere.
 
 set -euo pipefail
 
@@ -66,98 +70,109 @@ fi
 echo "Checking ${#SPEC_FILES[@]} spec(s) in ${PROJECT_DIR}/ ..."
 echo ""
 
-# ── Extract frontmatter helper ──────────────────────────────────────────────
+# ── Extract frontmatter helpers ─────────────────────────────────────────────
 frontmatter() {
   awk '/^---$/{c++; next} c==1' "$1"
 }
 
-# ── Build id -> file map, checking for duplicates ───────────────────────────
-declare -A ID_TO_FILE
+# First value of a frontmatter field, quotes stripped. Reads the frontmatter on
+# stdin. Always exits 0 — under `set -o pipefail`, a grep-based extraction would
+# kill the whole script on the first spec missing the field, instead of letting
+# the missing-id/missing-status checks report it.
+fm_field() {
+  awk -v key="$1" '
+    !done && $0 ~ "^" key ":" {
+      sub("^" key ":[ \t]*", "")
+      gsub(/^["\047]|["\047]$/, "")
+      print
+      done = 1
+    }'
+}
+
+# ── Frontmatter facts, one line per spec: file<TAB>id<TAB>status<TAB>deps ───
+SPEC_DATA=""
 for f in "${SPEC_FILES[@]}"; do
   fm="$(frontmatter "$f")"
-  id="$(printf '%s\n' "$fm" | grep -E '^id:' | head -1 | sed -E 's/^id:[[:space:]]*//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
-  if [[ -z "$id" ]]; then
-    echo "ISSUE [missing-id]: $f has no 'id' field in frontmatter."
-    ISSUES=$((ISSUES + 1))
-    continue
-  fi
-  if [[ -n "${ID_TO_FILE[$id]:-}" ]]; then
-    echo "ISSUE [duplicate-id]: id '$id' used by both ${ID_TO_FILE[$id]} and $f."
-    ISSUES=$((ISSUES + 1))
-  else
-    ID_TO_FILE[$id]="$f"
-  fi
+  id="$(printf '%s\n' "$fm" | fm_field id)"
+  status_val="$(printf '%s\n' "$fm" | fm_field status)"
+  deps_raw="$(printf '%s\n' "$fm" | fm_field depends_on)"
+  deps_clean="$(printf '%s' "$deps_raw" | sed -E 's/^\[//; s/\]$//' | tr ',' ' ' | tr -d '\042\047')"
+  SPEC_DATA+="${f}	${id}	${status_val}	${deps_clean}
+"
 done
 
-# ── Check depends_on resolves within this project ───────────────────────────
-# Also collect id → deps and id → status maps for the graph checks below (spec 0005).
-declare -A ID_DEPS
-declare -A ID_STATUS
-for f in "${SPEC_FILES[@]}"; do
-  fm="$(frontmatter "$f")"
-  id="$(printf '%s\n' "$fm" | grep -E '^id:' | head -1 | sed -E 's/^id:[[:space:]]*//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
-  status_val="$(printf '%s\n' "$fm" | grep -E '^status:' | head -1 | sed -E 's/^status:[[:space:]]*//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
-  [[ -n "$id" ]] && ID_STATUS[$id]="$status_val"
-  deps_raw="$(printf '%s\n' "$fm" | grep -E '^depends_on:' | head -1 | sed -E 's/^depends_on:[[:space:]]*//')"
-  inner="$(echo "$deps_raw" | sed -E 's/^\[//; s/\]$//')"
-  if [[ -n "$inner" ]] && [[ "$(echo "$inner" | tr -d '[:space:]')" != "" ]]; then
-    IFS=',' read -ra deps <<< "$inner"
-    for dep in "${deps[@]}"; do
-      dep_clean="$(echo "$dep" | tr -d '[:space:]"'"'"'')"
-      [[ -z "$dep_clean" ]] && continue
-      if [[ -z "${ID_TO_FILE[$dep_clean]:-}" ]]; then
-        echo "ISSUE [dangling-depends_on]: $f depends_on '$dep_clean', which is not any spec's id in ${PROJECT_DIR}/."
-        ISSUES=$((ISSUES + 1))
-      elif [[ -n "$id" ]]; then
-        ID_DEPS[$id]="${ID_DEPS[$id]:-} $dep_clean"
-      fi
-    done
-  fi
-done
+# ── Map/graph checks: duplicate ids, dangling depends_on, cycles,
+#    finished-depends-on-unfinished (spec 0005) — one awk pass ──────────────
+# Cycle detection is a recursive DFS with white(0)/gray(1)/black(2) coloring;
+# a gray hit is a cycle. Dangling deps are reported once and never enter the
+# dep graph, so no double-report.
+GRAPH_REPORT="$(printf '%s' "$SPEC_DATA" | awk -F'\t' -v project_dir="$PROJECT_DIR" '
+function dfs(node, path,    i, m, arr, d) {
+  color[node] = 1
+  m = split(deps[node], arr, " ")
+  for (i = 1; i <= m; i++) {
+    d = arr[i]
+    if (d == "") continue
+    if (color[d] == 1) {
+      printf "ISSUE [dep-cycle]: depends_on cycle detected: \047%s\047 -> \047%s\047 (path:%s %s).\n", node, d, path, node
+    } else if (color[d] == 0) {
+      dfs(d, path " " node)
+    }
+  }
+  color[node] = 2
+}
+{
+  file = $1; id = $2; status = $3; rawdeps = $4
+  if (id == "") {
+    printf "ISSUE [missing-id]: %s has no \047id\047 field in frontmatter.\n", file
+    next
+  }
+  if (id in id_file) {
+    printf "ISSUE [duplicate-id]: id \047%s\047 used by both %s and %s.\n", id, id_file[id], file
+    next
+  }
+  id_file[id] = file
+  id_status[id] = status
+  raw[id] = rawdeps
+  order[++n] = id
+}
+END {
+  for (i = 1; i <= n; i++) {
+    id = order[i]
+    m = split(raw[id], arr, " ")
+    for (j = 1; j <= m; j++) {
+      d = arr[j]
+      if (d == "") continue
+      if (!(d in id_file)) {
+        printf "ISSUE [dangling-depends_on]: %s depends_on \047%s\047, which is not any spec\047s id in %s/.\n", id_file[id], d, project_dir
+      } else {
+        deps[id] = deps[id] " " d
+      }
+    }
+  }
+  for (i = 1; i <= n; i++) {
+    if (color[order[i]] == 0) dfs(order[i], "")
+  }
+  for (i = 1; i <= n; i++) {
+    id = order[i]
+    if (id_status[id] != "finished") continue
+    m = split(deps[id], arr, " ")
+    for (j = 1; j <= m; j++) {
+      d = arr[j]
+      if (d == "") continue
+      if (id_status[d] != "finished") {
+        printf "ISSUE [finished-dep-unfinished]: spec \047%s\047 is finished but depends_on \047%s\047 (status: %s) is not.\n", id, d, (id_status[d] == "" ? "unknown" : id_status[d])
+        print "  spec-exec\047s dependency gate should have prevented this — the graph and the folders disagree."
+      }
+    }
+  }
+}')"
 
-# ── Dependency-graph checks: cycles, finished-depends-on-unfinished (spec 0005) ──
-# Iterative DFS with white(0)/gray(1)/black(2) coloring; a gray hit is a cycle.
-# Dangling deps were already reported above and never enter ID_DEPS, so no double-report.
-declare -A COLOR
-for start in "${!ID_TO_FILE[@]}"; do
-  [[ "${COLOR[$start]:-0}" -ne 0 ]] && continue
-  STACK=("$start")
-  PATH_STACK=()
-  while [[ ${#STACK[@]} -gt 0 ]]; do
-    node="${STACK[${#STACK[@]}-1]}"
-    if [[ "${COLOR[$node]:-0}" -eq 0 ]]; then
-      COLOR[$node]=1
-      PATH_STACK+=("$node")
-      for d in ${ID_DEPS[$node]:-}; do
-        case "${COLOR[$d]:-0}" in
-          1)
-            echo "ISSUE [dep-cycle]: depends_on cycle detected: '$node' -> '$d' (path: ${PATH_STACK[*]})."
-            ISSUES=$((ISSUES + 1))
-            ;;
-          0) STACK+=("$d") ;;
-        esac
-      done
-    else
-      # Finished expanding this node (it may appear once more on the stack).
-      unset 'STACK[${#STACK[@]}-1]'
-      if [[ "${COLOR[$node]:-0}" -eq 1 ]]; then
-        COLOR[$node]=2
-        [[ ${#PATH_STACK[@]} -gt 0 ]] && unset 'PATH_STACK[${#PATH_STACK[@]}-1]'
-      fi
-    fi
-  done
-done
-
-for id in "${!ID_DEPS[@]}"; do
-  [[ "${ID_STATUS[$id]:-}" != "finished" ]] && continue
-  for d in ${ID_DEPS[$id]:-}; do
-    if [[ "${ID_STATUS[$d]:-}" != "finished" ]]; then
-      echo "ISSUE [finished-dep-unfinished]: spec '$id' is finished but depends_on '$d' (status: ${ID_STATUS[$d]:-unknown}) is not."
-      echo "  spec-exec's dependency gate should have prevented this — the graph and the folders disagree."
-      ISSUES=$((ISSUES + 1))
-    fi
-  done
-done
+if [[ -n "$GRAPH_REPORT" ]]; then
+  printf '%s\n' "$GRAPH_REPORT"
+  GRAPH_ISSUES="$(printf '%s\n' "$GRAPH_REPORT" | grep -c '^ISSUE')"
+  ISSUES=$((ISSUES + GRAPH_ISSUES))
+fi
 
 # ── Sizing heuristic: Files/Interfaces Touched growing past one deliverable ──
 for f in "${SPEC_FILES[@]}"; do
@@ -194,7 +209,7 @@ fi
 for f in "${SPEC_FILES[@]}"; do
   folder="$(basename "$(dirname "$f")")"
   fm="$(frontmatter "$f")"
-  status="$(printf '%s\n' "$fm" | grep -E '^status:' | head -1 | sed -E 's/^status:[[:space:]]*//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
+  status="$(printf '%s\n' "$fm" | fm_field status)"
   if [[ -z "$status" ]]; then
     echo "ISSUE [missing-status]: $f has no 'status' field in frontmatter."
     ISSUES=$((ISSUES + 1))

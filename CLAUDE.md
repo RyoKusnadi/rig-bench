@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repo.
 
 ## What this repo is
 
-A clean-slate harness skeleton for Claude Code. All subsystems (hooks, workflows, agents, memory, telemetry, research) have been stripped for reimplementation. See `REMOVED.md` for the full record of what was removed and why.
+A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `specs/` — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency scripts, and file-based memory. The removal record (`REMOVED.md`) and the phase plan (`improvement-plan.md`) served their purpose and now live only in git history.
 
 ## Non-negotiables
 
@@ -40,7 +40,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
 | `.claude/agents/` | `spec-executor.md`, `spec-verifier.md` — thin dispatch entry points into the skills |
-| `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions" and `improvement-plan.md` Phase 2) |
+| `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions") |
 | `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
 | `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
 | `lib/` | Placeholder (`.gitkeep`) |

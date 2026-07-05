@@ -94,7 +94,7 @@ members**, the specs may be dispatched concurrently instead of processed seriall
 the default — dispatch only when the batch shape allows it and concurrency actually buys
 something (two independent one-file specs aren't worth the worktree overhead).
 
-Procedure, per Phase 4 of `improvement-plan.md` (prose + data only, no orchestration code):
+Procedure (prose + data only, no orchestration code — see `memory/decisions.md` on the dispatch shape):
 
 1. **Re-check the file-conflict scan** (Phase 4 above) across exactly the batch being
    dispatched. Overlapping specs drop back to serial order; they are not dispatched together.

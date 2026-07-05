@@ -1,7 +1,7 @@
 {
   "name": "rig-bench",
   "private": true,
-  "description": "Multi-agent harness for Claude Code \u2014 skeleton after cleanup. See REMOVED.md.",
+  "description": "Spec-driven harness for Claude Code \u2014 lifecycle skills, hooks, and consistency checks.",
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs"
