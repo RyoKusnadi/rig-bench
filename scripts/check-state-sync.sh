@@ -13,7 +13,8 @@
 # the enforcement must not reintroduce one. state.yaml is parsed line-oriented,
 # which is safe for its current flat structure.
 #
-# Exit codes: 0 = in sync, 1 = drift found (CI-ready, nothing calls it automatically yet).
+# Exit codes: 0 = in sync, 1 = drift found. Runs via `make check`, which CI
+# executes on every PR (.github/workflows/checks.yml).
 #
 # Spec: specs/template/*/0001-state-sync-check.md
 

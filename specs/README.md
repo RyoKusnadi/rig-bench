@@ -142,8 +142,8 @@ sits in. `scripts/check-specs.sh` checks this automatically — a mismatch (e.g.
 sitting in `in_progress/`) is a bug, not a valid intermediate state, however it happened.
 
 **Machine-readable mirror:** `workflows/state.yaml` carries the same state/folder/transition
-facts plus the `MAX_VERIFY_ATTEMPTS` constant below, as pure data — no orchestration code, per
-`improvement-plan.md`'s Phase 2. It's for future tooling to read instead of parsing this
+facts plus the `MAX_VERIFY_ATTEMPTS` constant below, as pure data — no orchestration code, a
+deliberate design decision (see `memory/decisions.md`). It's for future tooling to read instead of parsing this
 table. **Sync enforcement:** `scripts/check-state-sync.sh` (also run by `make check`) verifies
 the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, exiting 1 on
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
@@ -260,7 +260,7 @@ other spec in the batch lists the same file. If yes, add `depends_on`.
 
 **Common shared files to watch for** in `specs/template/` (the harness
 itself): there are currently no standing examples (the operator/memory system that used to
-anchor this list was removed — see `REMOVED.md`), so treat this as a reminder to actually run
+anchor this list was removed), so treat this as a reminder to actually run
 the scan above rather than pattern-match against a fixed list.
 
 A spec that cannot yet name its files in `## Files/Interfaces Touched` is

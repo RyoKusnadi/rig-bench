@@ -187,5 +187,5 @@ a human decision before another attempt.
 - **Dependency ordering** — `depends_on` is the only coordination mechanism between specs
 - **File-conflict gate** — before approval, every batch of specs is scanned for shared files; any two specs that touch the same file are chained via `depends_on` to prevent merge conflicts during concurrent worktree execution
 - **Worktree isolation** — concurrent agents never share a working directory
-- **Structured output** — every agent call returns a typed schema, not prose
-- **State, not transcripts** — the workflow passes structured data between phases, never raw text
+- **Prose + data, no orchestration code** — the lifecycle procedure lives in the skills' prose and `workflows/state.yaml` carries the structural facts; there is deliberately no workflow-engine layer (see `memory/decisions.md`)
+- **Checks are enforced** — `make check` (state-table sync + per-spec consistency) and `npm test` run in CI on every PR
