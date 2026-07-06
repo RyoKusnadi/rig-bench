@@ -4,7 +4,7 @@ title: Detect depends_on cycles and finished-depends-on-unfinished in check-spec
 status: finished
 depends_on: ["0001"]
 verify_attempts: 0
-source: REMOVED.md#workflows-output-schemas-and-shared-lib-utilities-second-pass
+source: ""
 ---
 ## Problem
 

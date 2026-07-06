@@ -6,7 +6,6 @@
 .claude/instincts/
 .claude/session-state/
 telemetry/runs/
-todo.md
 node_modules/
 .claude/memory-vectors.db
 .claude/memory-vectors.db-*

@@ -1,8 +1,10 @@
 # Specs
 
-Spec-driven decomposition of `todo.md`. `todo.md` stays as the long-form
-rationale ("why this matters"); a spec here is the short-form executable
-unit ("what to build, scoped to one PR").
+Spec-driven decomposition of a project's long-form rationale doc, when one
+exists. The rationale doc stays as the long-form "why this matters"; a spec
+here is the short-form executable unit ("what to build, scoped to one PR").
+The harness itself currently keeps no such doc — its rationale lives in
+merged PRs, git history, and `memory/`.
 
 ## Structure
 
@@ -65,7 +67,7 @@ Plain `ls specs/` is wrong here — it also returns `spec-template.md`, which is
 
 One spec = one deliverable, sized to fit a single `new-feature.js`/`bug-fix.js`/
 `refactor.js` workflow run (one hook, one script, one schema change — not a
-whole `todo.md` section). If a spec's Implementation Notes start spanning
+whole rationale-doc phase). If a spec's Implementation Notes start spanning
 multiple unrelated files, split it.
 
 This is a deliberate divergence from GitHub Spec Kit and Kiro, which split
@@ -213,14 +215,13 @@ a new spec rather than retyping the structure from memory; that file is the
 single source of truth for what a spec contains, so update it (not this
 README) if the shape changes.
 
-**The `source:` frontmatter field is relative to the project the spec belongs to, not
-always this repo's root `todo.md`.** For `specs/template/` (this harness), `source` points
-into this repo's root `todo.md` as the template shows. A project under `projects/<name>/` is
-its own standalone git repo; if it
-has an equivalent long-form rationale doc, `source` should point there instead
-(`projects/<name>/todo.md#anchor`, or whatever that project actually uses) — it doesn't have
-to be this repo's `todo.md`, and if the project has no such doc yet, leave `source` blank
-rather than pointing it at something that doesn't apply.
+**The `source:` frontmatter field points into the project's long-form rationale doc, when
+one exists.** This harness (`specs/template/`) currently has no such doc, so its specs
+leave `source` blank (`""`), as the template shows. A project under `projects/<name>/` is
+its own standalone git repo; if it has an equivalent long-form rationale doc, `source`
+should point there (`projects/<name>/todo.md#anchor`, or whatever that project actually
+uses) — and if the project has no such doc yet, leave `source` blank rather than pointing
+it at something that doesn't apply.
 
 ### Acceptance Criteria format
 

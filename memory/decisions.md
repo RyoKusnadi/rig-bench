@@ -18,5 +18,13 @@ Concurrent dispatch was rebuilt on the opposite shape from the twice-removed wor
 layer: the procedure lives in spec-exec's prose, the limit lives in state.yaml (sync-enforced
 against the README), and the agents are entry points that delegate to skills. The decoupling
 test is the design's invariant — deleting an agent file must break nothing but dispatch.
-Kill criterion (improvement-plan.md Phase 4): agents accumulating lifecycle prose, or an
-orchestration layer looking necessary, means stop and re-plan.
+Kill criterion (a standing constraint from that design, PR #82): agents accumulating
+lifecycle prose, or an orchestration layer looking necessary, means stop and re-plan.
+
+## 2026-07-06 — No standing plan doc at the repo root
+
+The harness deliberately keeps no long-form plan/rationale file in the working tree. Earlier
+ones were deleted once their phases shipped, and recreating one was reverted the same day by
+the human's explicit call. Phase history lives in merged PRs, git history, and these memory
+notebooks; `specs/template/` specs leave `source:` blank (`""`) until such a doc exists
+again. Don't reintroduce one without an explicit ask.

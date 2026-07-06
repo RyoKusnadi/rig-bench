@@ -4,7 +4,7 @@ title: Enforce sync between state.yaml, README state table, and check-specs.sh
 status: finished
 depends_on: []
 verify_attempts: 1
-source: improvement-plan.md#phase-2
+source: ""
 ---
 ## Problem
 

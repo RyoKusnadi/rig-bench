@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repo.
 
 ## What this repo is
 
-A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `specs/` — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency scripts, and file-based memory. The removal record (`REMOVED.md`) and the phase plan (`improvement-plan.md`) served their purpose and now live only in git history.
+A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `specs/` — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency scripts, file-based memory, and the thin dispatch agents. There is deliberately no standing plan doc in the tree: the rebuild's rationale and phase history live in the merged PRs, git history, and `memory/`.
 
 ## Non-negotiables
 
