@@ -4,7 +4,7 @@ title: File-based memory notebook (decisions, gotchas, lessons)
 status: finished
 depends_on: []
 verify_attempts: 0
-source: REMOVED.md#memory-system
+source: improvement-plan.md#phase-3
 ---
 ## Problem
 

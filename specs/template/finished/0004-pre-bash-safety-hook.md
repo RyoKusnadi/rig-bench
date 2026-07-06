@@ -4,7 +4,7 @@ title: Pre-bash safety hook enforcing the destructive-git non-negotiable
 status: finished
 depends_on: []
 verify_attempts: 0
-source: REMOVED.md#hooks-lib-and-scripts-third-pass
+source: improvement-plan.md#phase-3
 ---
 ## Problem
 

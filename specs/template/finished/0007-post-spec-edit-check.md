@@ -4,7 +4,7 @@ title: PostToolUse hook auto-running check-specs.sh on spec file edits
 status: finished
 depends_on: ["0004", "0005"]
 verify_attempts: 0
-source: REMOVED.md#hooks-lib-and-scripts-third-pass
+source: improvement-plan.md#phase-3
 ---
 ## Problem
 
