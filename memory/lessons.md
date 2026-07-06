@@ -12,7 +12,8 @@ passed and moved the spec to `finished/` with the failure section stripped. Find
 contract works as written; `verify_attempts` surviving in the finished spec's frontmatter is
 a useful permanent trace that the retry path ran; and the failure-section format was precise
 enough to fix from without re-reading the original conversation — which is the property that
-matters. This satisfies improvement-plan.md Phase 1's "run for real" gate.
+matters. This satisfied the "run for real" gate on Phase 1 of the improvement plan (see
+`improvement-plan.md`'s shipped-phase record).
 
 ## 2026-07-03 — Verification steps must describe the tree at verification time (spec 0006, PR #74)
 

@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repo.
 
 ## What this repo is
 
-A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `specs/` — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency scripts, and file-based memory. The removal record (`REMOVED.md`) and the phase plan (`improvement-plan.md`) served their purpose and now live only in git history.
+A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `specs/` — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency scripts, file-based memory, and the thin dispatch agents. `improvement-plan.md` is the long-form rationale doc for this rebuild: it records the shipped phases and the gated roadmap ahead. Read it before planning harness work — specs' `source:` frontmatter points into it.
 
 ## Non-negotiables
 
@@ -34,6 +34,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 
 | Directory | Contents |
 |---|---|
+| `improvement-plan.md` | Shipped-phase record + gated roadmap for the harness (the `source:` doc for `specs/template/`) |
 | `specs/spec-template.md` | Canonical spec template |
 | `specs/<project_name>/` | Per-project spec lifecycle folders (`draft/`, `ready/`, `in_progress/`, etc.) — `specs/template/` is this harness's own specs |
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |

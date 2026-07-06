@@ -1,8 +1,9 @@
 # Specs
 
-Spec-driven decomposition of `todo.md`. `todo.md` stays as the long-form
-rationale ("why this matters"); a spec here is the short-form executable
-unit ("what to build, scoped to one PR").
+Spec-driven decomposition of a project's long-form rationale doc — for this
+harness itself, that doc is the root `improvement-plan.md`. The rationale doc
+stays as the long-form "why this matters"; a spec here is the short-form
+executable unit ("what to build, scoped to one PR").
 
 ## Structure
 
@@ -65,7 +66,7 @@ Plain `ls specs/` is wrong here — it also returns `spec-template.md`, which is
 
 One spec = one deliverable, sized to fit a single `new-feature.js`/`bug-fix.js`/
 `refactor.js` workflow run (one hook, one script, one schema change — not a
-whole `todo.md` section). If a spec's Implementation Notes start spanning
+whole rationale-doc phase). If a spec's Implementation Notes start spanning
 multiple unrelated files, split it.
 
 This is a deliberate divergence from GitHub Spec Kit and Kiro, which split
@@ -214,12 +215,12 @@ single source of truth for what a spec contains, so update it (not this
 README) if the shape changes.
 
 **The `source:` frontmatter field is relative to the project the spec belongs to, not
-always this repo's root `todo.md`.** For `specs/template/` (this harness), `source` points
-into this repo's root `todo.md` as the template shows. A project under `projects/<name>/` is
-its own standalone git repo; if it
+always this repo's root `improvement-plan.md`.** For `specs/template/` (this harness),
+`source` points into this repo's root `improvement-plan.md` as the template shows. A project
+under `projects/<name>/` is its own standalone git repo; if it
 has an equivalent long-form rationale doc, `source` should point there instead
 (`projects/<name>/todo.md#anchor`, or whatever that project actually uses) — it doesn't have
-to be this repo's `todo.md`, and if the project has no such doc yet, leave `source` blank
+to be this repo's plan doc, and if the project has no such doc yet, leave `source` blank
 rather than pointing it at something that doesn't apply.
 
 ### Acceptance Criteria format

@@ -18,5 +18,6 @@ Concurrent dispatch was rebuilt on the opposite shape from the twice-removed wor
 layer: the procedure lives in spec-exec's prose, the limit lives in state.yaml (sync-enforced
 against the README), and the agents are entry points that delegate to skills. The decoupling
 test is the design's invariant — deleting an agent file must break nothing but dispatch.
-Kill criterion (improvement-plan.md Phase 4): agents accumulating lifecycle prose, or an
-orchestration layer looking necessary, means stop and re-plan.
+Kill criterion (a standing constraint in `improvement-plan.md`, first stated in its Phase 4):
+agents accumulating lifecycle prose, or an orchestration layer looking necessary, means stop
+and re-plan.
