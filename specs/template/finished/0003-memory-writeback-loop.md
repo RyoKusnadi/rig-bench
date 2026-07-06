@@ -4,7 +4,7 @@ title: Wire the memory write-back loop into spec-verify and spec-plan
 status: finished
 depends_on: ["0002"]
 verify_attempts: 0
-source: REMOVED.md#memory-system
+source: ""
 ---
 ## Problem
 

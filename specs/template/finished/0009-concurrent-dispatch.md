@@ -4,7 +4,7 @@ title: Concurrent dispatch procedure with worktree isolation and a data-backed l
 status: finished
 depends_on: ["0008"]
 verify_attempts: 0
-source: improvement-plan.md#phase-4
+source: ""
 ---
 ## Problem
 
