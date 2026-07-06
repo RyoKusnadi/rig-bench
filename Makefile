@@ -1,4 +1,4 @@
-.PHONY: clean check status
+.PHONY: clean check status metrics
 
 # Remove all files/directories ignored by .gitignore
 clean:
@@ -12,3 +12,7 @@ check:
 # Read-only lifecycle view: per-state counts + attention items
 status:
 	@scripts/spec-status.sh template
+
+# Read-only lifecycle metrics: attempts distribution, failure rate, dependency stats, cycle time
+metrics:
+	@scripts/spec-metrics.sh template
