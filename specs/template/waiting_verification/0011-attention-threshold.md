@@ -1,7 +1,7 @@
 ---
 id: "0011"
 title: Metrics-driven attention threshold in spec-status
-status: in_progress
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
 source: ""
