@@ -20,6 +20,12 @@ dispatch:
   attempts_field: verify_attempts
   failure_section_header: "## Verification Failures"
 
+# Advisory threshold consumed at runtime by scripts/spec-status.sh: when the share of
+# finished specs with verify_attempts > 0 exceeds this percentage, the status view prints
+# an attention line. Data lives only here (no prose copy, so no sync check applies).
+attention:
+  verify_failure_rate_threshold_pct: 50
+
 states:
   - name: draft
     folder: draft

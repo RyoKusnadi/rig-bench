@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # spec-status.sh — read-only status view over one project's spec lifecycle:
 # per-state counts (states from workflows/state.yaml, lifecycle order) plus
-# attention items (waiting_verification specs with failed attempts, blocked specs).
+# attention items (waiting_verification specs with failed attempts, blocked specs,
+# and an advisory verification-failure-rate line over finished/ — spec 0011).
 #
 # Usage: scripts/spec-status.sh <project>
 #        scripts/spec-status.sh          (only valid if exactly one specs/<project>/ exists)
@@ -100,6 +101,30 @@ if [[ -d "$PROJECT_DIR/blocked" ]]; then
     echo "  - $id — $title: BLOCKED — needs human review (see specs/README.md \"Un-blocking a spec\")."
     ATTENTION=$((ATTENTION + 1))
   done < <(find "$PROJECT_DIR/blocked" -maxdepth 1 -name '*.md' -print0 | sort -z)
+fi
+
+# Advisory verification-failure-rate check: the share of finished specs that failed
+# verification at least once (verify_attempts > 0), compared against
+# attention.verify_failure_rate_threshold_pct in workflows/state.yaml. Fail-open by
+# design: a missing threshold key or an empty finished/ skips the check entirely.
+THRESHOLD="$(awk '/^[[:space:]]*verify_failure_rate_threshold_pct:/ { print $NF; exit }' "$STATE_YAML")"
+if [[ "$THRESHOLD" =~ ^[0-9]+$ && -d "$PROJECT_DIR/finished" ]]; then
+  FINISHED_TOTAL=0
+  ATTEMPTED=0
+  while IFS= read -r -d '' f; do
+    FINISHED_TOTAL=$((FINISHED_TOTAL + 1))
+    fm="$(frontmatter "$f")"
+    attempts="$(fm_field "$fm" verify_attempts)"
+    [[ -z "$attempts" || "$attempts" == "0" ]] && continue
+    ATTEMPTED=$((ATTEMPTED + 1))
+  done < <(find "$PROJECT_DIR/finished" -maxdepth 1 -name '*.md' -print0)
+  if [[ "$FINISHED_TOTAL" -gt 0 ]]; then
+    RATE_PCT="$(awk -v a="$ATTEMPTED" -v t="$FINISHED_TOTAL" 'BEGIN { print int(a * 100 / t) }')"
+    if [[ "$RATE_PCT" -gt "$THRESHOLD" ]]; then
+      echo "  - verification failure rate: ${RATE_PCT}% of finished specs have verify_attempts > 0, above the ${THRESHOLD}% threshold (attention.verify_failure_rate_threshold_pct in ${STATE_YAML})."
+      ATTENTION=$((ATTENTION + 1))
+    fi
+  fi
 fi
 
 if [[ "$ATTENTION" -eq 0 ]]; then
