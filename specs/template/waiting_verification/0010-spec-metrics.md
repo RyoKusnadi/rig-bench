@@ -1,7 +1,7 @@
 ---
 id: "0010"
 title: Lifecycle metrics script and make target
-status: in_progress
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
 source: ""
