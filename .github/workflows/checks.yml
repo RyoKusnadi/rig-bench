@@ -13,6 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The transition-enforcement check in check-specs.sh (spec 0014) diffs spec
+      # folders against origin/main; a fetch-depth-1 PR checkout doesn't have that
+      # ref, and the check would silently skip (fail-open). Fetch it explicitly.
+      - name: fetch base ref for transition check
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+        continue-on-error: true
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'

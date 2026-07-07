@@ -1,9 +1,11 @@
 ---
 id: "0013"
 title: Automate the file-conflict gate in check-specs.sh
-status: ready
+status: waiting_verification
 depends_on: ["0012"]
 verify_attempts: 0
+branch: "0013-file-conflict-check"
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/94"
 source: ""
 ---
 ## Problem

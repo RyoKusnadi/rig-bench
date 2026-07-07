@@ -141,24 +141,49 @@ MAX_DEPTH="$(printf '%s' "$SPEC_DATA" | awk -F'\t' '
 printf "  %-22s %s\n" "specs with depends_on" "$WITH_DEPS"
 printf "  %-22s %s spec(s)\n" "max chain depth" "$MAX_DEPTH"
 
-# ── Cycle time: finished specs tracked in git, first commit → last commit ───
-# --follow rides through the git-mv lifecycle moves; an untracked file yields
-# empty output (not an error), which is the skip signal.
+# ── Cycle time: history frontmatter first, git as fallback (spec 0020) ──────
+# A spec carrying `history:` entries (flat `- <state> <ISO-8601 UTC>` lines, written
+# at each lifecycle move) is measured ready -> finished from those. Specs predating
+# the convention fall back to git: --follow rides through the git-mv lifecycle moves;
+# an untracked file yields empty output (not an error), which is the skip signal.
+# Day arithmetic is a Julian-day-number formula in awk — BSD awk has no mktime, and
+# BSD/GNU date flags disagree, so pure integer math is the portable option.
 echo ""
-echo "Cycle time (finished specs, first commit -> last commit):"
+echo "Cycle time (finished specs, ready -> finished; * = git-estimated):"
 CYCLE_ROWS=0
 while IFS='	' read -r f id state attempts deps; do
   [[ "$state" == "finished" ]] || continue
+  fm="$(frontmatter "$f")"
+  hist="$(printf '%s\n' "$fm" | awk '
+    /^history:/ { inh = 1; next }
+    inh && /^[[:space:]]*- / { sub(/^[[:space:]]*- +/, ""); print; next }
+    inh { inh = 0 }')"
+  ready_ts="$(printf '%s\n' "$hist" | awk '$1 == "ready" { print $2; exit }')"
+  fin_ts="$(printf '%s\n' "$hist" | awk '$1 == "finished" { print $2; exit }')"
+  if [[ "$ready_ts" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} && "$fin_ts" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+    days="$(awk -v a="$ready_ts" -v b="$fin_ts" '
+      function jdn(s,    y, m, d, p) {
+        split(substr(s, 1, 10), p, "-")
+        y = p[1] + 0; m = p[2] + 0; d = p[3] + 0
+        return int((1461 * (y + 4800 + int((m - 14) / 12))) / 4) \
+             + int((367 * (m - 2 - 12 * int((m - 14) / 12))) / 12) \
+             - int((3 * int((y + 4900 + int((m - 14) / 12)) / 100)) / 4) + d - 32075
+      }
+      BEGIN { print jdn(b) - jdn(a) }')"
+    printf "  %-22s %s day(s)\n" "$id" "$days"
+    CYCLE_ROWS=$((CYCLE_ROWS + 1))
+    continue
+  fi
   times="$(git log --follow --format=%ct -- "$f" 2>/dev/null || true)"
   [[ -z "$times" ]] && continue
   newest="$(printf '%s\n' "$times" | head -1)"
   oldest="$(printf '%s\n' "$times" | tail -1)"
   days=$(((newest - oldest) / 86400))
-  printf "  %-22s %s day(s)\n" "$id" "$days"
+  printf "  %-22s %s day(s) *\n" "$id" "$days"
   CYCLE_ROWS=$((CYCLE_ROWS + 1))
 done <<EOF
 $SPEC_DATA
 EOF
 if [[ "$CYCLE_ROWS" -eq 0 ]]; then
-  echo "  (no finished specs tracked in git)"
+  echo "  (no finished specs with history entries or git tracking)"
 fi

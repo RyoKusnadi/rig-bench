@@ -36,6 +36,20 @@ const MUST_ASK = [
   "git branch -D feature-x",
   "git branch --delete --force feature-x",
   "git clean -fd",
+  // spec 0016 additions
+  "rm -rf src",
+  "rm -r -f ./build",
+  "sudo rm -rf /var/data",
+  "rm --recursive --force dist",
+  "git stash drop",
+  "git stash clear",
+  "cd repo && git stash drop stash@{1}",
+  "git push origin :feature",
+  "git push origin --delete feature",
+  "git checkout -- .",
+  "git checkout main -- src/app.js",
+  "git restore .",
+  "git restore --staged --worktree file.txt",
 ];
 
 const MUST_ALLOW = [
@@ -46,6 +60,19 @@ const MUST_ALLOW = [
   "git clean -fdX", // the Makefile's own clean — ignored files only
   "echo 'git push --force' > notes.txt && cat notes.txt", // matching here is acceptable either way; see below
   "ls -la",
+  // spec 0016 additions
+  "rm -rf /tmp/scratch",
+  "rm -rf /private/tmp/build-cache",
+  "rm -rf node_modules",
+  "rm -rf ./node_modules",
+  "rm -f single-file.txt", // force without recursive
+  "rm -r olddir", // recursive without force
+  "git stash list",
+  "git stash pop",
+  "git push origin main:main", // full refspec — not a deletion
+  "git checkout -b topic",
+  "git checkout --track origin/topic",
+  "git restore --staged file.txt", // unstage only — no working-tree discard
 ];
 
 for (const cmd of MUST_ASK) {
