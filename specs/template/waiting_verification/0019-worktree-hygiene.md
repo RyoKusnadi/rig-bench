@@ -1,9 +1,11 @@
 ---
 id: "0019"
 title: Worktree hygiene script for concurrent dispatch
-status: ready
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
+branch: "0019-worktree-hygiene"
+pr: ""
 source: ""
 ---
 ## Problem

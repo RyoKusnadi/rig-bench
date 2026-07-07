@@ -3,6 +3,19 @@
 Surprising behaviors of this repo/tooling that cost time to discover. Entry format and
 pruning convention: see `memory/README.md`.
 
+## 2026-07-07 — Stacked PRs + squash merge silently lose content (specs 0012–0020, PRs #92–#100)
+
+The 0012→0020 dependency chain was executed as stacked PRs — each spec's PR based on its
+dependency's feature branch, per spec-exec's "Branch base" rule. Squash-merging those PRs
+merged each one *into its base branch*, not into main: only the bottom PR (#92) reached
+main, and the intermediate branches holding all implementation content were deleted on
+merge. GitHub marked every PR "merged" throughout — nothing looked wrong until main's tree
+was inspected. Content was recovered from surviving local branches and re-landed as one PR
+(#100). Rule going forward: a stacked PR's content only reaches main if PRs merge strictly
+leaf-first with base retargeting after each merge, or the whole stack re-lands as one PR
+against main — when dispatching a dependent chain, prefer serializing merges (merge + pull
+main between specs) over stacking, and always verify main's tree after merging a stack.
+
 ## 2026-07-05 — Lifecycle scripts must stay bash-3.2 compatible (PR pending)
 
 macOS ships bash 3.2 as /bin/bash, which predates associative arrays (`declare -A`,
