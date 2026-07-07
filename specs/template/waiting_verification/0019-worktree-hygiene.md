@@ -5,7 +5,7 @@ status: waiting_verification
 depends_on: []
 verify_attempts: 0
 branch: "0019-worktree-hygiene"
-pr: ""
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/101"
 source: ""
 ---
 ## Problem
