@@ -23,7 +23,7 @@ function makeRepo(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, "scripts"));
   fs.mkdirSync(path.join(dir, "workflows"));
-  for (const s of ["check-specs.sh", "spec-status.sh", "check-state-sync.sh"]) {
+  for (const s of ["check-specs.sh", "spec-status.sh", "check-state-sync.sh", "spec-metrics.sh"]) {
     fs.copyFileSync(path.join(ROOT, "scripts", s), path.join(dir, "scripts", s));
     fs.chmodSync(path.join(dir, "scripts", s), 0o755);
   }
@@ -510,6 +510,32 @@ test("spec-status: failed attempts and blocked specs appear under attention", (t
   assert.match(out.stdout, /0001 — Failed once: waiting_verification with 1 failed attempt/);
   assert.match(out.stdout, /0002 — Stuck: BLOCKED/);
   assert.doesNotMatch(out.stdout, /\(none\)/);
+});
+
+// ── spec-metrics.sh ──────────────────────────────────────────────────────────
+
+test("spec-metrics: history entries drive cycle time without git (spec 0020)", (t) => {
+  const repo = makeRepo(t); // deliberately not a git repo — history must suffice
+  const dir = path.join(repo, "specs", "p", "finished");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "0001-a.md"),
+    `---\nid: "0001"\nstatus: finished\nverify_attempts: 0\nhistory:\n` +
+      `  - ready 2026-01-01T08:00:00Z\n  - in_progress 2026-01-02T08:00:00Z\n` +
+      `  - finished 2026-01-04T09:30:00Z\n---\n\n${ALL_SECTIONS}`,
+  );
+  const out = run(repo, "spec-metrics.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /0001\s+3 day\(s\)/);
+  assert.doesNotMatch(out.stdout, /0001\s+3 day\(s\) \*/); // not the git-estimated form
+});
+
+test("spec-metrics: finished spec without history falls back to git skip (spec 0020)", (t) => {
+  const repo = makeRepo(t); // non-git fixture: no history and no git → skip message
+  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
+  const out = run(repo, "spec-metrics.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /\(no finished specs with history entries or git tracking\)/);
 });
 
 // ── check-state-sync.sh ──────────────────────────────────────────────────────

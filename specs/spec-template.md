@@ -6,6 +6,7 @@ depends_on: []
 verify_attempts: 0
 branch: ""
 pr: ""
+history: []
 source: ""
 ---
 ## Problem
@@ -58,3 +59,18 @@ generated.
 feature branch and draft PR are created — they're the traceability pointers from a spec to
 its implementation. A spec reaching `finished/` with `pr` still empty is flagged by
 `scripts/check-specs.sh` (specs predating these fields have no `pr` key and are exempt).
+
+`history` (frontmatter) records when the spec entered each lifecycle state, as flat
+`- <state> <ISO-8601 UTC timestamp>` entries (spec 0020). Whoever writes the spec to
+`ready/` records the first entry, and each later move appends one in the same step as the
+`git mv` and `status` edit (`date -u +%Y-%m-%dT%H:%M:%SZ`), replacing the empty `[]` with a
+block list on first append:
+
+```yaml
+history:
+  - ready 2026-07-07T04:00:00Z
+  - in_progress 2026-07-08T09:30:00Z
+```
+
+`scripts/spec-metrics.sh` computes cycle time from these entries when present, falling back
+to git history for specs that predate the convention.

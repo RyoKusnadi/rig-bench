@@ -124,6 +124,13 @@ old path). Treat `finished/` as a working-set convenience (what shipped recently
 scan) rather than an archive. There is currently no separate long-term archive mechanism —
 git history is it, for now.
 
+**Transition timestamps (spec 0020):** each spec's `history` frontmatter list records when
+it entered each state, as flat `- <state> <ISO-8601 UTC timestamp>` entries. Whoever writes
+the spec to `ready/` records the first entry; every later move appends one *in the same
+step* as the `git mv` and `status` edit (same-step discipline per `memory/lessons.md`
+2026-07-06). `scripts/spec-metrics.sh` computes cycle time from these entries when present
+and falls back to git history for specs that predate the convention — no backfill needed.
+
 **Ambiguity gate:** a spec may contain inline `[NEEDS CLARIFICATION: ...]`
 markers while in `draft`. It cannot move to `ready` while any marker remains
 unresolved — resolve each one (edit the spec to answer it, or ask the human)

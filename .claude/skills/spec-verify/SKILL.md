@@ -122,7 +122,9 @@ implementation report before moving the file.
 git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
 ```
 
-Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`.
+Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`,
+and append a `history` entry (`- finished $(date -u +%Y-%m-%dT%H:%M:%SZ)`) in the same step
+(spec 0020; see the template's `history` note — same for the `blocked` move in Phase 6b).
 
 Then commit:
 ```bash
@@ -183,7 +185,8 @@ here — if it ever changes, that's the one place to change it).
   ```bash
   git mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
   ```
-  Update `status` to `blocked` in the frontmatter, then commit:
+  Update `status` to `blocked` in the frontmatter — appending the `history` entry
+  (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — then commit:
   ```bash
   git add -f specs/<project>/blocked/<filename>
   git commit -m "spec(<id>): block after <verify_attempts> failed verification attempts"
