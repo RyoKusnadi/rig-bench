@@ -229,6 +229,23 @@ for f in "${SPEC_FILES[@]}"; do
   fi
 done
 
+# ── PR traceability: a finished spec with a pr key must carry a value (spec 0012) ──
+# Specs predating the branch/pr fields have no `pr:` key at all and are exempt;
+# an empty value on a finished spec means the spec-exec recording step was skipped.
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+  [[ "$folder" == "finished" ]] || continue
+  fm="$(frontmatter "$f")"
+  has_pr="$(printf '%s\n' "$fm" | awk '/^pr:/ { print "yes"; exit }')"
+  [[ "$has_pr" == "yes" ]] || continue
+  pr_val="$(printf '%s\n' "$fm" | fm_field pr)"
+  if [[ -z "$pr_val" ]]; then
+    echo "ISSUE [empty-pr]: $f is finished but its 'pr' frontmatter field is empty."
+    echo "  spec-exec records the PR URL when the draft PR opens (spec 0012) — backfill it."
+    ISSUES=$((ISSUES + 1))
+  fi
+done
+
 echo ""
 if [[ "$ISSUES" -eq 0 ]]; then
   echo "No issues found."

@@ -4,6 +4,8 @@ title: Short imperative title
 status: draft
 depends_on: []
 verify_attempts: 0
+branch: ""
+pr: ""
 source: ""
 ---
 ## Problem
@@ -51,3 +53,8 @@ this spec fails verification; you don't set it by hand. A failed run also append
 `## Verification Failures` section below this one — see "State Transitions" in
 `specs/README.md` for the full retry contract. Don't author that section yourself; it's
 generated.
+
+`branch` and `pr` (frontmatter) start empty and are recorded by `spec-exec` when the
+feature branch and draft PR are created — they're the traceability pointers from a spec to
+its implementation. A spec reaching `finished/` with `pr` still empty is flagged by
+`scripts/check-specs.sh` (specs predating these fields have no `pr` key and are exempt).

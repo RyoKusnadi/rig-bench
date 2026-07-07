@@ -1,7 +1,7 @@
 ---
 id: "0012"
 title: Add spec-to-PR traceability via branch/pr frontmatter fields
-status: ready
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
 source: ""

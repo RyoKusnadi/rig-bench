@@ -146,6 +146,42 @@ test("check-specs: sizing threshold flags oversized Files/Interfaces Touched", (
   assert.match(out.stdout, /ISSUE \[sizing\].*7 files/);
 });
 
+test("check-specs: finished spec with empty pr field flagged (spec 0012)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "finished", "0001-a.md", {
+    id: "0001",
+    status: "finished",
+    pr: '""',
+  });
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[empty-pr\]/);
+});
+
+test("check-specs: finished spec without a pr key is grandfathered", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /No issues found/);
+});
+
+test("check-specs: finished spec with a recorded pr URL passes", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "finished", "0001-a.md", {
+    id: "0001",
+    status: "finished",
+    pr: '"https://github.com/x/y/pull/1"',
+  });
+  writeSpec(repo, "p", "ready", "0002-b.md", {
+    id: "0002",
+    status: "ready",
+    pr: '""', // empty pr outside finished/ is fine — recorded at PR-open time
+  });
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+});
+
 test("check-specs: empty project → exit 0", (t) => {
   const repo = makeRepo(t);
   fs.mkdirSync(path.join(repo, "specs", "p", "ready"), { recursive: true });

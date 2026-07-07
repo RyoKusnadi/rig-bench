@@ -111,6 +111,13 @@ it — a shipped spec shouldn't carry stale failure history in the working tree;
 of the file is the permanent record of what failed before, per "Clearing the record on
 success" in `specs/README.md`.
 
+If the spec's `pr` frontmatter field is non-empty, confirm the PR's state with
+`gh pr view <url> --json state` and include it in the report — advisory only, never a FAIL:
+merging is a human action that may legitimately still be pending, and `gh` may be missing or
+unauthenticated (note which, and move on). A finished spec whose `pr` field is *empty* while
+the key exists will be flagged by `check-specs.sh` (spec 0012) — backfill it from the
+implementation report before moving the file.
+
 ```bash
 git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
 ```
