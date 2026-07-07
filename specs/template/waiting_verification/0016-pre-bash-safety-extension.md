@@ -4,6 +4,8 @@ title: Extend pre-bash-safety hook to more destructive command classes
 status: waiting_verification
 depends_on: []
 verify_attempts: 0
+branch: "0016-pre-bash-safety-extension"
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/99"
 source: ""
 ---
 ## Problem
