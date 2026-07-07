@@ -290,6 +290,56 @@ for f in "${SPEC_FILES[@]}"; do
   fi
 done
 
+# ── Transition enforcement: folder moves must follow state.yaml valid_next (spec 0014) ──
+# Compares each spec's lifecycle folder between a base ref and the current tree via git
+# rename detection, so a `git mv` between lifecycle folders is one transition, not a
+# delete+add. Fail-open: no resolvable base ref (non-git fixture, shallow clone without
+# the ref) skips the check silently. Base defaults to origin/main; override with
+# TRANSITION_BASE_REF.
+TRANS_BASE="${TRANSITION_BASE_REF:-origin/main}"
+if git rev-parse --verify --quiet "$TRANS_BASE" >/dev/null 2>&1; then
+  TRANSITION_REPORT="$({ awk -F: '
+      /^[[:space:]]*-[[:space:]]*name:/ { cur = $2; gsub(/[[:space:]]/, "", cur) }
+      /^[[:space:]]*valid_next:/ {
+        line = $2
+        sub(/^[[:space:]]*\[/, "", line)
+        sub(/\].*$/, "", line)
+        gsub(/,/, " ", line)
+        printf "T\t%s\t%s\n", cur, line
+      }' "$STATE_YAML"
+    git diff --name-status -M --diff-filter=R "$TRANS_BASE" -- "$PROJECT_DIR/" 2>/dev/null |
+      awk -F'\t' '$3 != "" { printf "R\t%s\t%s\n", $2, $3 }' || true; } | awk -F'\t' '
+  function reach(src, dst,    i, m, arr, d) {
+    if (src == dst) return 1
+    if (seen[src] == q) return 0
+    seen[src] = q
+    m = split(nexts[src], arr, " ")
+    for (i = 1; i <= m; i++) { d = arr[i]; if (d != "" && reach(d, dst)) return 1 }
+    return 0
+  }
+  $1 == "T" { nexts[$2] = $3; known[$2] = 1 }
+  $1 == "R" {
+    n1 = split($2, a, "/"); n2 = split($3, b, "/")
+    if (n1 < 4 || n2 < 4) next
+    olds = a[3]; news = b[3]
+    if (olds == news) next
+    if (!(olds in known)) next   # unknown old folder — the unknown-status check owns that
+    # Path reachability, not direct membership: a single PR legitimately collapses
+    # multi-hop moves (ready -> in_progress -> waiting_verification) into one
+    # endpoint pair, so illegal means "no path through valid_next" (e.g. anything
+    # out of a terminal state, or anything back into draft).
+    q++
+    if (!reach(olds, news)) {
+      printf "ISSUE [illegal-transition]: %s moved \047%s\047 -> \047%s\047, but no valid_next path leads from \047%s\047 to \047%s\047.\n", $3, olds, news, olds, news
+      print "  specs/README.md State Transitions: moves must follow the valid_next table in workflows/state.yaml."
+    }
+  }')"
+  if [[ -n "$TRANSITION_REPORT" ]]; then
+    printf '%s\n' "$TRANSITION_REPORT"
+    ISSUES=$((ISSUES + $(printf '%s\n' "$TRANSITION_REPORT" | grep -c '^ISSUE')))
+  fi
+fi
+
 # ── PR traceability: a finished spec with a pr key must carry a value (spec 0012) ──
 # Specs predating the branch/pr fields have no `pr:` key at all and are exempt;
 # an empty value on a finished spec means the spec-exec recording step was skipped.

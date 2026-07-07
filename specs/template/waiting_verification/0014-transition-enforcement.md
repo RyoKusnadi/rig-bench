@@ -1,7 +1,7 @@
 ---
 id: "0014"
 title: Enforce state transitions against state.yaml valid_next
-status: ready
+status: waiting_verification
 depends_on: ["0013"]
 verify_attempts: 0
 source: ""
@@ -48,6 +48,14 @@ existing check.
   folder) from each side, look up `valid_next` for the old state with the same
   line-oriented awk used for the existing state-list parse. A transition into the same
   folder (pure rename within a state) is not a transition.
+- **Legality is path reachability through `valid_next`, not direct membership**
+  (decided during implementation): one PR legitimately collapses multi-hop moves —
+  this repo's own flow lands `ready -> in_progress -> waiting_verification` in a single
+  branch, which a base-vs-tree diff sees as the endpoint pair
+  `ready -> waiting_verification`. Direct-membership checking would fail every normal
+  implementation PR. Illegal therefore means "no path exists" — which still catches
+  the real violations: any move out of a terminal state (`finished`, `abandoned`) and
+  any move back into `draft`.
 - Base resolution: `git rev-parse --verify --quiet "${TRANSITION_BASE_REF:-origin/main}"`;
   empty result → skip. In CI (`checks.yml`) `origin/main` exists on PR checkouts; ensure
   the workflow's fetch depth actually includes it, or fetch it explicitly in the workflow.

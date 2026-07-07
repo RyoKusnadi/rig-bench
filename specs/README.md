@@ -151,6 +151,14 @@ the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, e
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
 is no third hand-maintained copy.
 
+**Transition enforcement (spec 0014):** `valid_next` is enforced, not just documented —
+`scripts/check-specs.sh` diffs each spec's lifecycle folder against a base ref
+(`origin/main` by default, `TRANSITION_BASE_REF` to override) and reports an
+`[illegal-transition]` ISSUE when no `valid_next` path leads from the old folder to the new
+one. Path reachability, not single-hop membership, because one PR legitimately collapses
+multi-hop moves (`ready → in_progress → waiting_verification`) into one endpoint pair. No
+resolvable base ref (non-git fixtures, shallow clones) skips the check silently.
+
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
 | `draft` | `draft/` | `spec-plan`, drafting | `ready` |

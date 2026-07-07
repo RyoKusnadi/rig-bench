@@ -72,6 +72,45 @@ function run(repo, script, ...args) {
   return { code: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
+function runEnv(repo, env, script, ...args) {
+  const res = spawnSync("/bin/bash", [path.join(repo, "scripts", script), ...args], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+  return { code: res.status, stdout: res.stdout, stderr: res.stderr };
+}
+
+// Turn a fixture into a git repo with everything committed — the transition
+// check (spec 0014) only activates when a base ref resolves.
+function gitInit(repo) {
+  const opts = { cwd: repo, encoding: "utf8" };
+  for (const args of [
+    ["init", "-q"],
+    ["add", "-A"],
+    ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"],
+  ]) {
+    const res = spawnSync("git", args, opts);
+    if (res.status !== 0) throw new Error(`git ${args.join(" ")}: ${res.stderr}`);
+  }
+}
+
+// Move a spec between lifecycle folders, updating its status field, and stage
+// the move — the same shape as the skills' git mv + same-step sed. Staging
+// matters: git only rename-detects tracked paths, so an unstaged copy+delete
+// wouldn't register as a transition (git mv stages implicitly in the real flow).
+function moveSpec(repo, project, name, from, to) {
+  const src = path.join(repo, "specs", project, from, name);
+  const dstDir = path.join(repo, "specs", project, to);
+  fs.mkdirSync(dstDir, { recursive: true });
+  const dst = path.join(dstDir, name);
+  const content = fs
+    .readFileSync(src, "utf8")
+    .replace(`status: ${from}`, `status: ${to}`);
+  fs.writeFileSync(dst, content);
+  fs.rmSync(src);
+  spawnSync("git", ["add", "-A"], { cwd: repo, encoding: "utf8" });
+}
+
 // ── check-specs.sh ───────────────────────────────────────────────────────────
 
 test("check-specs: clean project → exit 0, no issues", (t) => {
@@ -267,6 +306,40 @@ test("check-specs: shared file outside ready/in_progress is not a conflict (spec
     "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
   );
   const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+});
+
+test("check-specs: move with no valid_next path flagged (spec 0014)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
+  gitInit(repo);
+  moveSpec(repo, "p", "0001-a.md", "finished", "ready"); // out of a terminal state
+  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[illegal-transition\].*'finished' -> 'ready'/);
+});
+
+test("check-specs: single-hop and collapsed multi-hop moves pass (spec 0014)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
+  writeSpec(repo, "p", "ready", "0002-b.md", { id: "0002", status: "ready" });
+  gitInit(repo);
+  moveSpec(repo, "p", "0001-a.md", "ready", "in_progress"); // direct valid_next hop
+  // one PR legitimately collapses ready → in_progress → waiting_verification:
+  moveSpec(repo, "p", "0002-b.md", "ready", "waiting_verification");
+  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /No issues found/);
+});
+
+test("check-specs: unresolvable base ref skips the transition check (spec 0014)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
+  gitInit(repo);
+  moveSpec(repo, "p", "0001-a.md", "finished", "ready");
+  // status/folder now agree ('ready' in ready/), so only the transition check could
+  // fire — and it must not, with no resolvable base.
+  const out = runEnv(repo, { TRANSITION_BASE_REF: "no-such-ref" }, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
