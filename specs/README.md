@@ -248,8 +248,11 @@ worktree from the same base commit).
 earlier one in `depends_on`. This forces serial execution — the second spec
 lands on top of the first instead of diverging from the same base.
 
-How to scan (run from repo root after drafting all specs, scoped to one
-project):
+**The scan is automated (spec 0013):** `scripts/check-specs.sh <project>` reports a
+`[file-conflict]` ISSUE for any file shared between two `ready/`/`in_progress/` specs that
+have no `depends_on` path between them (either direction, directly or transitively). It runs
+via `make check`, CI, and the post-spec-edit hook — so drift is caught at write time, not
+merge time. The manual form, kept for background:
 
 ```bash
 # Print every file listed across all ready specs for a project, flag duplicates

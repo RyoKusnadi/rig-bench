@@ -56,6 +56,15 @@ function writeSpec(repo, project, state, name, fm) {
   fs.writeFileSync(path.join(dir, name), `---\n${lines}\n---\n\n# ${name}\n`);
 }
 
+function writeSpecWithBody(repo, project, state, name, fm, body) {
+  const dir = path.join(repo, "specs", project, state);
+  fs.mkdirSync(dir, { recursive: true });
+  const lines = Object.entries(fm)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+  fs.writeFileSync(path.join(dir, name), `---\n${lines}\n---\n\n${body}\n`);
+}
+
 function run(repo, script, ...args) {
   const res = spawnSync("/bin/bash", [path.join(repo, "scripts", script), ...args], {
     encoding: "utf8",
@@ -178,6 +187,85 @@ test("check-specs: finished spec with a recorded pr URL passes", (t) => {
     status: "ready",
     pr: '""', // empty pr outside finished/ is fine — recorded at PR-open time
   });
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+});
+
+test("check-specs: shared file across ready specs without a chain flagged (spec 0013)", (t) => {
+  const repo = makeRepo(t);
+  // 0001 uses a backticked path with trailing prose; 0002 lists the bare path —
+  // extraction must normalize both to the same file.
+  writeSpecWithBody(
+    repo,
+    "p",
+    "ready",
+    "0001-a.md",
+    { id: "0001", status: "ready" },
+    "## Files/Interfaces Touched\n- `lib/foo.mjs` — add the parser\n",
+  );
+  writeSpecWithBody(
+    repo,
+    "p",
+    "ready",
+    "0002-b.md",
+    { id: "0002", status: "ready" },
+    "## Files/Interfaces Touched\n- lib/foo.mjs rework the parser\n",
+  );
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[file-conflict\].*'0001' and '0002'.*'lib\/foo\.mjs'/);
+});
+
+test("check-specs: shared file with a depends_on chain passes (spec 0013)", (t) => {
+  const repo = makeRepo(t);
+  writeSpecWithBody(
+    repo,
+    "p",
+    "ready",
+    "0001-a.md",
+    { id: "0001", status: "ready" },
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+  );
+  writeSpecWithBody(
+    repo,
+    "p",
+    "ready",
+    "0002-mid.md",
+    { id: "0002", status: "ready", depends_on: "[0001]" },
+    "## Files/Interfaces Touched\n- `lib/other.mjs`\n",
+  );
+  // 0003 shares the file with 0001 but is ordered only transitively (0003→0002→0001).
+  writeSpecWithBody(
+    repo,
+    "p",
+    "in_progress",
+    "0003-c.md",
+    { id: "0003", status: "in_progress", depends_on: "[0002]" },
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+  );
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /No issues found/);
+});
+
+test("check-specs: shared file outside ready/in_progress is not a conflict (spec 0013)", (t) => {
+  const repo = makeRepo(t);
+  writeSpecWithBody(
+    repo,
+    "p",
+    "finished",
+    "0001-a.md",
+    { id: "0001", status: "finished" },
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+  );
+  writeSpecWithBody(
+    repo,
+    "p",
+    "ready",
+    "0002-b.md",
+    { id: "0002", status: "ready" },
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+  );
   const out = run(repo, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });

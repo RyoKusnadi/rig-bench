@@ -174,6 +174,67 @@ if [[ -n "$GRAPH_REPORT" ]]; then
   ISSUES=$((ISSUES + GRAPH_ISSUES))
 fi
 
+# ── File-conflict gate: shared paths across ready/in_progress specs (spec 0013) ──
+# Two specs eligible for (concurrent) execution that touch the same file must be
+# ordered via depends_on — either direction, directly or transitively. Path per
+# bullet: the first backticked span if present, else the first token, so trailing
+# prose on a bullet doesn't defeat matching. Automates the manual grep documented
+# in specs/README.md's "File-conflict gate".
+FILE_DATA=""
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+  [[ "$folder" == "ready" || "$folder" == "in_progress" ]] || continue
+  fm="$(frontmatter "$f")"
+  id="$(printf '%s\n' "$fm" | fm_field id)"
+  [[ -z "$id" ]] && continue
+  while IFS= read -r p; do
+    [[ -z "$p" ]] && continue
+    FILE_DATA+="${id}	${p}
+"
+  done <<EOF
+$(awk '
+    /^## Files\/Interfaces Touched/ { infiles=1; next }
+    /^## / && infiles { infiles=0 }
+    infiles && /^- / {
+      line = $0
+      sub(/^- +/, "", line)
+      if (match(line, /`[^`]+`/)) print substr(line, RSTART+1, RLENGTH-2)
+      else { split(line, a, /[ \t]/); print a[1] }
+    }' "$f")
+EOF
+done
+
+CONFLICT_REPORT="$({ printf '%s' "$SPEC_DATA" | awk -F'\t' '{ printf "S\t%s\t%s\n", $2, $4 }'
+  printf '%s' "$FILE_DATA" | awk -F'\t' '{ printf "F\t%s\t%s\n", $1, $2 }'; } | awk -F'\t' '
+function reach(src, dst,    i, m, arr, d) {
+  if (src == dst) return 1
+  if (seen[src] == q) return 0
+  seen[src] = q
+  m = split(deps[src], arr, " ")
+  for (i = 1; i <= m; i++) { d = arr[i]; if (d != "" && reach(d, dst)) return 1 }
+  return 0
+}
+function ordered(a, b) { q++; if (reach(a, b)) return 1; q++; if (reach(b, a)) return 1; return 0 }
+$1 == "S" { deps[$2] = $3 }
+$1 == "F" { ids[$3] = ids[$3] " " $2 }
+END {
+  for (p in ids) {
+    n = split(ids[p], arr, " ")
+    for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) {
+      a = arr[i]; b = arr[j]
+      if (a == "" || b == "" || a == b) continue
+      if (!ordered(a, b)) {
+        printf "ISSUE [file-conflict]: specs \047%s\047 and \047%s\047 both touch \047%s\047 with no depends_on path between them.\n", a, b, p
+        print "  specs/README.md File-conflict gate: chain the later spec onto the earlier via depends_on."
+      }
+    }
+  }
+}')"
+if [[ -n "$CONFLICT_REPORT" ]]; then
+  printf '%s\n' "$CONFLICT_REPORT"
+  ISSUES=$((ISSUES + $(printf '%s\n' "$CONFLICT_REPORT" | grep -c '^ISSUE')))
+fi
+
 # ── Sizing heuristic: Files/Interfaces Touched growing past one deliverable ──
 for f in "${SPEC_FILES[@]}"; do
   count="$(awk '
