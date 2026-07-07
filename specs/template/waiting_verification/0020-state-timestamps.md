@@ -5,7 +5,7 @@ status: waiting_verification
 depends_on: ["0012", "0014", "0018"]
 verify_attempts: 0
 branch: "0020-state-timestamps"
-pr: ""
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/98"
 history:
   - ready 2026-07-07T00:00:00Z
   - in_progress 2026-07-07T15:49:56Z
