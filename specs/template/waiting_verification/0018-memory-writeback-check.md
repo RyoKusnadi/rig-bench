@@ -1,9 +1,11 @@
 ---
 id: "0018"
 title: Check the memory writeback loop actually ran
-status: ready
+status: waiting_verification
 depends_on: ["0015"]
 verify_attempts: 0
+branch: "0018-memory-writeback-check"
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/97"
 source: ""
 ---
 ## Problem

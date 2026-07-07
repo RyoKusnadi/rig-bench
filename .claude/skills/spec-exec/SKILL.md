@@ -149,9 +149,17 @@ For each spec (whether run concurrently or one at a time):
      specs/<project>/waiting_verification/<filename> specs/<project>/in_progress/<filename>` —
      it needs to go through `in_progress/` like any other implementation work, not be edited
      in place inside `waiting_verification/`.
+   - **Every move here and in step 3** updates the `status` field *and* appends a
+     `history` entry (`- <entered state> $(date -u +%Y-%m-%dT%H:%M:%SZ)`, creating the
+     block list from `history: []` on first append) in the same step as the `git mv` —
+     never as a separate pass (spec 0020; see the template's `history` note).
 2. **Implement.** Read the full spec content and implement every acceptance criterion: create
    a feature branch named after the spec ID and slug, make the changes, commit, open a draft
-   PR. Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
+   PR. Once the draft PR is open, record the feature-branch name and PR URL in the spec's
+   `branch` and `pr` frontmatter fields (they default to `""` from the template) and commit
+   that with the spec's lifecycle move — the spec carries its own implementation pointers,
+   and `check-specs.sh` flags a finished spec whose `pr` field is still empty (spec 0012).
+   Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).
    **Branch base:** if every entry in this spec's `depends_on` is already merged into the

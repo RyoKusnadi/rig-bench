@@ -36,6 +36,71 @@ const DESTRUCTIVE_PATTERNS = [
     label: "git clean (force, not limited to ignored files)",
     extra: (cmd) => /\bclean\b[^|;&]*(\s-[a-zA-Z]*d|\s--force[^|;&]*-d|\s-d)/.test(cmd),
   },
+  // ── spec 0016 additions ──
+  {
+    // rm with recursive+force flags targeting anything outside the temp allowlist
+    // (/tmp, /private/tmp, node_modules). Flags may be combined, separate, or long.
+    // The extra() anchor requires rm at command position (start of a segment,
+    // optionally after sudo) so `echo rm -rf x` and filenames don't trip it.
+    re: /\brm\b/,
+    label: "recursive force rm outside temp paths",
+    extra: (cmd) => {
+      const m = cmd.match(/(?:^|[|;&])\s*(?:sudo\s+)?rm((?:\s[^|;&]*)?)/);
+      if (!m) return false;
+      const args = (m[1] || "").trim().split(/\s+/).filter(Boolean);
+      let recursive = false;
+      let force = false;
+      const targets = [];
+      for (const a of args) {
+        if (a === "--recursive") recursive = true;
+        else if (a === "--force") force = true;
+        else if (/^-[a-zA-Z]+$/.test(a)) {
+          if (/[rR]/.test(a)) recursive = true;
+          if (a.includes("f")) force = true;
+        } else if (!a.startsWith("--")) targets.push(a);
+      }
+      if (!recursive || !force || targets.length === 0) return false;
+      const allowed = (t) =>
+        t === "/tmp" ||
+        t.startsWith("/tmp/") ||
+        t === "/private/tmp" ||
+        t.startsWith("/private/tmp/") ||
+        /(^|\/)node_modules\/?$/.test(t) ||
+        t.includes("/node_modules/");
+      return targets.some((t) => !allowed(t));
+    },
+  },
+  {
+    // git stash drop/clear — stashes have no branch ref; dropped means gone
+    re: /\bgit\b[^|;&]*\bstash\b[^|;&]*\b(drop|clear)\b/,
+    label: "git stash drop/clear",
+  },
+  {
+    // remote branch deletion: git push --delete, or the empty-LHS refspec form
+    // (`git push origin :branch`). `main:main` must not match — the colon needs
+    // whitespace immediately before it to be a deletion.
+    re: /\bgit\b[^|;&]*\bpush\b[^|;&]*(\s--delete\b|\s+:\S+)/,
+    label: "remote branch deletion via push",
+  },
+  {
+    // git checkout with a -- pathspec separator discards working-tree changes
+    re: /\bgit\b[^|;&]*\bcheckout\b[^|;&]*\s--(\s|$)/,
+    label: "git checkout -- (working-tree discard)",
+  },
+  {
+    // git restore discards working-tree content unless it's the --staged-only
+    // form (which merely unstages); --staged plus --worktree discards again.
+    re: /\bgit\b[^|;&]*\brestore\b/,
+    label: "git restore (working-tree discard)",
+    extra: (cmd) => {
+      const m = cmd.match(/\bgit\b[^|;&]*\brestore\b([^|;&]*)/);
+      if (!m) return false;
+      const args = m[1] || "";
+      const staged = /\s--staged\b/.test(args);
+      const worktree = /\s(--worktree|-W)\b/.test(args);
+      return !staged || worktree;
+    },
+  },
 ];
 
 function readStdin() {

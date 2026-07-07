@@ -174,6 +174,67 @@ if [[ -n "$GRAPH_REPORT" ]]; then
   ISSUES=$((ISSUES + GRAPH_ISSUES))
 fi
 
+# ── File-conflict gate: shared paths across ready/in_progress specs (spec 0013) ──
+# Two specs eligible for (concurrent) execution that touch the same file must be
+# ordered via depends_on — either direction, directly or transitively. Path per
+# bullet: the first backticked span if present, else the first token, so trailing
+# prose on a bullet doesn't defeat matching. Automates the manual grep documented
+# in specs/README.md's "File-conflict gate".
+FILE_DATA=""
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+  [[ "$folder" == "ready" || "$folder" == "in_progress" ]] || continue
+  fm="$(frontmatter "$f")"
+  id="$(printf '%s\n' "$fm" | fm_field id)"
+  [[ -z "$id" ]] && continue
+  while IFS= read -r p; do
+    [[ -z "$p" ]] && continue
+    FILE_DATA+="${id}	${p}
+"
+  done <<EOF
+$(awk '
+    /^## Files\/Interfaces Touched/ { infiles=1; next }
+    /^## / && infiles { infiles=0 }
+    infiles && /^- / {
+      line = $0
+      sub(/^- +/, "", line)
+      if (match(line, /`[^`]+`/)) print substr(line, RSTART+1, RLENGTH-2)
+      else { split(line, a, /[ \t]/); print a[1] }
+    }' "$f")
+EOF
+done
+
+CONFLICT_REPORT="$({ printf '%s' "$SPEC_DATA" | awk -F'\t' '{ printf "S\t%s\t%s\n", $2, $4 }'
+  printf '%s' "$FILE_DATA" | awk -F'\t' '{ printf "F\t%s\t%s\n", $1, $2 }'; } | awk -F'\t' '
+function reach(src, dst,    i, m, arr, d) {
+  if (src == dst) return 1
+  if (seen[src] == q) return 0
+  seen[src] = q
+  m = split(deps[src], arr, " ")
+  for (i = 1; i <= m; i++) { d = arr[i]; if (d != "" && reach(d, dst)) return 1 }
+  return 0
+}
+function ordered(a, b) { q++; if (reach(a, b)) return 1; q++; if (reach(b, a)) return 1; return 0 }
+$1 == "S" { deps[$2] = $3 }
+$1 == "F" { ids[$3] = ids[$3] " " $2 }
+END {
+  for (p in ids) {
+    n = split(ids[p], arr, " ")
+    for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) {
+      a = arr[i]; b = arr[j]
+      if (a == "" || b == "" || a == b) continue
+      if (!ordered(a, b)) {
+        printf "ISSUE [file-conflict]: specs \047%s\047 and \047%s\047 both touch \047%s\047 with no depends_on path between them.\n", a, b, p
+        print "  specs/README.md File-conflict gate: chain the later spec onto the earlier via depends_on."
+      }
+    }
+  }
+}')"
+if [[ -n "$CONFLICT_REPORT" ]]; then
+  printf '%s\n' "$CONFLICT_REPORT"
+  ISSUES=$((ISSUES + $(printf '%s\n' "$CONFLICT_REPORT" | grep -c '^ISSUE')))
+fi
+
 # ── Sizing heuristic: Files/Interfaces Touched growing past one deliverable ──
 for f in "${SPEC_FILES[@]}"; do
   count="$(awk '
@@ -226,6 +287,156 @@ for f in "${SPEC_FILES[@]}"; do
     echo "ISSUE [status-mismatch]: $f has status '$status' but sits in '$folder/'."
     echo "  specs/README.md's State Transitions invariant: status must always match the physical folder."
     ISSUES=$((ISSUES + 1))
+  fi
+done
+
+# ── Spec-quality lint (spec 0015) ────────────────────────────────────────────
+# Three prose invariants made checkable: clarification markers may not leave draft/,
+# a generated failures section implies verify_attempts > 0, and every spec carries the
+# template's required sections. The required-section list is derived from the template's
+# own ## headings — no hand-maintained copy (same reasoning as the state.yaml-derived
+# state list, spec 0001).
+SPEC_TEMPLATE="specs/spec-template.md"
+if [[ ! -f "$SPEC_TEMPLATE" ]]; then
+  echo "Error: $SPEC_TEMPLATE is missing — it is the source of the required-section list." >&2
+  exit 1
+fi
+REQUIRED_SECTIONS="$(awk '/^## / { sub(/^## /, ""); print }' "$SPEC_TEMPLATE")"
+
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+
+  # Unresolved clarification marker outside draft/ (colon form only — prose may
+  # legitimately mention the marker's name without carrying a live question).
+  if [[ "$folder" != "draft" ]] && grep -q '\[NEEDS CLARIFICATION:' "$f"; then
+    echo "ISSUE [stray-clarification]: $f carries an unresolved clarification marker outside draft/."
+    echo "  specs/README.md Ambiguity gate: resolve every marker before a spec leaves draft."
+    ISSUES=$((ISSUES + 1))
+  fi
+
+  # Failures section present while verify_attempts says no verification ever failed.
+  fm="$(frontmatter "$f")"
+  attempts="$(printf '%s\n' "$fm" | fm_field verify_attempts)"
+  [[ -z "$attempts" ]] && attempts=0
+  if [[ "$attempts" == "0" ]] && grep -q '^## Verification Failures' "$f"; then
+    echo "ISSUE [stale-failures-section]: $f has a Verification Failures section but verify_attempts is 0."
+    echo "  Only spec-verify writes that section (and increments the counter) — one of the two is wrong."
+    ISSUES=$((ISSUES + 1))
+  fi
+
+  # Required template sections, matched as exact heading lines.
+  while IFS= read -r sec; do
+    [[ -z "$sec" ]] && continue
+    if ! grep -q "^## ${sec}\$" "$f"; then
+      echo "ISSUE [missing-section]: $f is missing required section '## ${sec}'."
+      echo "  specs/spec-template.md is the canonical section list — every spec carries all of them."
+      ISSUES=$((ISSUES + 1))
+    fi
+  done <<EOF
+$REQUIRED_SECTIONS
+EOF
+done
+
+# ── Transition enforcement: folder moves must follow state.yaml valid_next (spec 0014) ──
+# Compares each spec's lifecycle folder between a base ref and the current tree via git
+# rename detection, so a `git mv` between lifecycle folders is one transition, not a
+# delete+add. Fail-open: no resolvable base ref (non-git fixture, shallow clone without
+# the ref) skips the check silently. Base defaults to origin/main; override with
+# TRANSITION_BASE_REF.
+TRANS_BASE="${TRANSITION_BASE_REF:-origin/main}"
+if git rev-parse --verify --quiet "$TRANS_BASE" >/dev/null 2>&1; then
+  TRANSITION_REPORT="$({ awk -F: '
+      /^[[:space:]]*-[[:space:]]*name:/ { cur = $2; gsub(/[[:space:]]/, "", cur) }
+      /^[[:space:]]*valid_next:/ {
+        line = $2
+        sub(/^[[:space:]]*\[/, "", line)
+        sub(/\].*$/, "", line)
+        gsub(/,/, " ", line)
+        printf "T\t%s\t%s\n", cur, line
+      }' "$STATE_YAML"
+    git diff --name-status -M --diff-filter=R "$TRANS_BASE" -- "$PROJECT_DIR/" 2>/dev/null |
+      awk -F'\t' '$3 != "" { printf "R\t%s\t%s\n", $2, $3 }' || true; } | awk -F'\t' '
+  function reach(src, dst,    i, m, arr, d) {
+    if (src == dst) return 1
+    if (seen[src] == q) return 0
+    seen[src] = q
+    m = split(nexts[src], arr, " ")
+    for (i = 1; i <= m; i++) { d = arr[i]; if (d != "" && reach(d, dst)) return 1 }
+    return 0
+  }
+  $1 == "T" { nexts[$2] = $3; known[$2] = 1 }
+  $1 == "R" {
+    n1 = split($2, a, "/"); n2 = split($3, b, "/")
+    if (n1 < 4 || n2 < 4) next
+    olds = a[3]; news = b[3]
+    if (olds == news) next
+    if (!(olds in known)) next   # unknown old folder — the unknown-status check owns that
+    # Path reachability, not direct membership: a single PR legitimately collapses
+    # multi-hop moves (ready -> in_progress -> waiting_verification) into one
+    # endpoint pair, so illegal means "no path through valid_next" (e.g. anything
+    # out of a terminal state, or anything back into draft).
+    q++
+    if (!reach(olds, news)) {
+      printf "ISSUE [illegal-transition]: %s moved \047%s\047 -> \047%s\047, but no valid_next path leads from \047%s\047 to \047%s\047.\n", $3, olds, news, olds, news
+      print "  specs/README.md State Transitions: moves must follow the valid_next table in workflows/state.yaml."
+    }
+  }')"
+  if [[ -n "$TRANSITION_REPORT" ]]; then
+    printf '%s\n' "$TRANSITION_REPORT"
+    ISSUES=$((ISSUES + $(printf '%s\n' "$TRANSITION_REPORT" | grep -c '^ISSUE')))
+  fi
+fi
+
+# ── PR traceability: a finished spec with a pr key must carry a value (spec 0012) ──
+# Specs predating the branch/pr fields have no `pr:` key at all and are exempt;
+# an empty value on a finished spec means the spec-exec recording step was skipped.
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+  [[ "$folder" == "finished" ]] || continue
+  fm="$(frontmatter "$f")"
+  has_pr="$(printf '%s\n' "$fm" | awk '/^pr:/ { print "yes"; exit }')"
+  [[ "$has_pr" == "yes" ]] || continue
+  pr_val="$(printf '%s\n' "$fm" | fm_field pr)"
+  if [[ -z "$pr_val" ]]; then
+    echo "ISSUE [empty-pr]: $f is finished but its 'pr' frontmatter field is empty."
+    echo "  spec-exec records the PR URL when the draft PR opens (spec 0012) — backfill it."
+    ISSUES=$((ISSUES + 1))
+  fi
+done
+
+# ── Memory writeback check: escalations must leave a lessons.md entry (spec 0018) ──
+# The lifecycle loop promises every blocked escalation (and every failed verification)
+# a distilled memory/lessons.md entry — this makes the promise checkable. Provenance
+# match: a "## " heading that mentions "spec" and contains the raw id, which accepts
+# the documented tag forms — "(spec 0006)", "(spec 0006, PR #77)", "(spec 0006 | PR #77)"
+# — and the plural batch form "(specs 0010+0011, ...)". Blocked without an entry is a
+# hard ISSUE (escalations are exactly what the notebook exists for); a
+# waiting_verification spec with failed attempts is a WARN only — attempt-1 failures
+# may be mid-fix with the entry legitimately pending. LESSONS_FILE overrides the path
+# (fixtures); a missing file counts as "no entries".
+LESSONS_FILE="${LESSONS_FILE:-memory/lessons.md}"
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+  [[ "$folder" == "blocked" || "$folder" == "waiting_verification" ]] || continue
+  fm="$(frontmatter "$f")"
+  id="$(printf '%s\n' "$fm" | fm_field id)"
+  [[ -z "$id" ]] && continue
+  attempts="$(printf '%s\n' "$fm" | fm_field verify_attempts)"
+  [[ -z "$attempts" ]] && attempts=0
+  if [[ "$folder" == "waiting_verification" && "$attempts" == "0" ]]; then
+    continue
+  fi
+  has_lesson="$(awk -v id="$id" '/^## / && /spec/ && index($0, id) { print "yes"; exit }' "$LESSONS_FILE" 2>/dev/null || true)"
+  if [[ "$has_lesson" == "yes" ]]; then
+    continue
+  fi
+  if [[ "$folder" == "blocked" ]]; then
+    echo "ISSUE [missing-lesson]: $f is blocked but ${LESSONS_FILE} has no entry tagged (spec ${id})."
+    echo "  spec-verify Phase 6b: a blocked escalation always gets a lessons.md entry."
+    ISSUES=$((ISSUES + 1))
+  else
+    echo "WARN [missing-lesson]: $f has ${attempts} failed attempt(s) but ${LESSONS_FILE} has no entry tagged (spec ${id})."
+    echo "  Advisory: spec-verify Phase 6a writes one on every failed verification."
   fi
 done
 

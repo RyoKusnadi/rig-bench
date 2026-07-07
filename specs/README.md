@@ -124,6 +124,13 @@ old path). Treat `finished/` as a working-set convenience (what shipped recently
 scan) rather than an archive. There is currently no separate long-term archive mechanism —
 git history is it, for now.
 
+**Transition timestamps (spec 0020):** each spec's `history` frontmatter list records when
+it entered each state, as flat `- <state> <ISO-8601 UTC timestamp>` entries. Whoever writes
+the spec to `ready/` records the first entry; every later move appends one *in the same
+step* as the `git mv` and `status` edit (same-step discipline per `memory/lessons.md`
+2026-07-06). `scripts/spec-metrics.sh` computes cycle time from these entries when present
+and falls back to git history for specs that predate the convention — no backfill needed.
+
 **Ambiguity gate:** a spec may contain inline `[NEEDS CLARIFICATION: ...]`
 markers while in `draft`. It cannot move to `ready` while any marker remains
 unresolved — resolve each one (edit the spec to answer it, or ask the human)
@@ -150,6 +157,14 @@ table. **Sync enforcement:** `scripts/check-state-sync.sh` (also run by `make ch
 the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, exiting 1 on
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
 is no third hand-maintained copy.
+
+**Transition enforcement (spec 0014):** `valid_next` is enforced, not just documented —
+`scripts/check-specs.sh` diffs each spec's lifecycle folder against a base ref
+(`origin/main` by default, `TRANSITION_BASE_REF` to override) and reports an
+`[illegal-transition]` ISSUE when no `valid_next` path leads from the old folder to the new
+one. Path reachability, not single-hop membership, because one PR legitimately collapses
+multi-hop moves (`ready → in_progress → waiting_verification`) into one endpoint pair. No
+resolvable base ref (non-git fixtures, shallow clones) skips the check silently.
 
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
@@ -248,8 +263,11 @@ worktree from the same base commit).
 earlier one in `depends_on`. This forces serial execution — the second spec
 lands on top of the first instead of diverging from the same base.
 
-How to scan (run from repo root after drafting all specs, scoped to one
-project):
+**The scan is automated (spec 0013):** `scripts/check-specs.sh <project>` reports a
+`[file-conflict]` ISSUE for any file shared between two `ready/`/`in_progress/` specs that
+have no `depends_on` path between them (either direction, directly or transitively). It runs
+via `make check`, CI, and the post-spec-edit hook — so drift is caught at write time, not
+merge time. The manual form, kept for background:
 
 ```bash
 # Print every file listed across all ready specs for a project, flag duplicates
