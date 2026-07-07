@@ -2,7 +2,7 @@
 id: "0020"
 title: Record state-transition timestamps in spec frontmatter
 status: ready
-depends_on: ["0012", "0014"]
+depends_on: ["0012", "0014", "0018"]
 verify_attempts: 0
 source: ""
 ---
@@ -57,7 +57,8 @@ nothing records them.
   malformed hand edit degrades instead of erroring.
 - Note the 0012 interaction: both specs touch `spec-template.md` frontmatter and both
   skills' move prose — this spec lands on top of 0012's merged shape (hence
-  `depends_on`), and on 0014's README edits.
+  `depends_on`), on 0014's README edits, and on 0015/0018's `tests/spec-scripts.test.mjs`
+  additions (via `depends_on: 0018`, which transitively orders the whole chain).
 - Bash-3.2/awk-only per `memory/gotchas.md` (2026-07-05).
 
 ## Verification
