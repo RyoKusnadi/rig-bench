@@ -1,7 +1,7 @@
 ---
 id: "0018"
 title: Check the memory writeback loop actually ran
-status: ready
+status: waiting_verification
 depends_on: ["0015"]
 verify_attempts: 0
 source: ""

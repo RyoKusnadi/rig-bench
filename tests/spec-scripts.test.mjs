@@ -374,6 +374,52 @@ test("check-specs: missing required section flagged by name (spec 0015)", (t) =>
   assert.doesNotMatch(out.stdout, /missing required section '## Problem'/);
 });
 
+test("check-specs: blocked spec without a lessons entry flagged (spec 0018)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "blocked", "0001-a.md", { id: "0001", status: "blocked" });
+  fs.mkdirSync(path.join(repo, "memory"));
+  fs.writeFileSync(
+    path.join(repo, "memory", "lessons.md"),
+    "# Lessons\n\n## 2026-01-01 — Something else (spec 0999)\n\ntext\n",
+  );
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[missing-lesson\].*\(spec 0001\)/);
+});
+
+test("check-specs: blocked spec with a matching lessons entry passes (spec 0018)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "blocked", "0001-a.md", { id: "0001", status: "blocked" });
+  writeSpec(repo, "p", "blocked", "0002-b.md", { id: "0002", status: "blocked" });
+  // 0001 tagged singular+PR form, 0002 via the plural batch form — both accepted.
+  fs.mkdirSync(path.join(repo, "memory"));
+  fs.writeFileSync(
+    path.join(repo, "memory", "lessons.md"),
+    "# Lessons\n\n## 2026-01-01 — Went sideways (spec 0001, PR #7)\n\ntext\n\n" +
+      "## 2026-01-02 — Batch run (specs 0002+0003, PRs #8–#9)\n\ntext\n",
+  );
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+});
+
+test("check-specs: failed-attempt spec without lessons entry warns but passes (spec 0018)", (t) => {
+  const repo = makeRepo(t);
+  writeSpecWithBody(
+    repo,
+    "p",
+    "waiting_verification",
+    "0001-a.md",
+    { id: "0001", status: "waiting_verification", verify_attempts: "1" },
+    `${ALL_SECTIONS}\n## Verification Failures\n\nAttempt 1 of 2.\n`,
+  );
+  // LESSONS_FILE override keeps fixtures off the real notebook (and proves the knob).
+  const lessons = path.join(repo, "other-lessons.md");
+  fs.writeFileSync(lessons, "# Lessons\n");
+  const out = runEnv(repo, { LESSONS_FILE: lessons }, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /WARN \[missing-lesson\].*\(spec 0001\)/);
+});
+
 test("check-specs: move with no valid_next path flagged (spec 0014)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
