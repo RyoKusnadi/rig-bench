@@ -4,6 +4,8 @@ title: Enforce state transitions against state.yaml valid_next
 status: waiting_verification
 depends_on: ["0013"]
 verify_attempts: 0
+branch: "0014-transition-enforcement"
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/95"
 source: ""
 ---
 ## Problem
