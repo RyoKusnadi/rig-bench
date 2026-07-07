@@ -4,6 +4,8 @@ title: Lint spec quality in check-specs.sh
 status: waiting_verification
 depends_on: ["0014"]
 verify_attempts: 0
+branch: "0015-spec-quality-lint"
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/96"
 source: ""
 ---
 ## Problem
