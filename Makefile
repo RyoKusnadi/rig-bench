@@ -1,4 +1,4 @@
-.PHONY: clean check status metrics
+.PHONY: clean check status metrics worktrees
 
 # Remove all files/directories ignored by .gitignore
 clean:
@@ -16,3 +16,7 @@ status:
 # Read-only lifecycle metrics: attempts distribution, failure rate, dependency stats, cycle time
 metrics:
 	@scripts/spec-metrics.sh template
+
+# List concurrent-dispatch worktrees, flag stale ones (read-only; suggested commands only)
+worktrees:
+	@scripts/worktree-status.sh
