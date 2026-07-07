@@ -1,7 +1,7 @@
 ---
 id: "0015"
 title: Lint spec quality in check-specs.sh
-status: ready
+status: waiting_verification
 depends_on: ["0014"]
 verify_attempts: 0
 source: ""
@@ -44,7 +44,7 @@ when a human happens to read the file.
 
 ## Implementation Notes
 
-- Marker match is the colon form only (`\[NEEDS CLARIFICATION:`): specs may legitimately
+- Marker match is the colon form only (bracket, marker name, colon): specs may legitimately
   *mention* the marker name in prose (this spec does), and the colon is what the
   README's marker convention actually prescribes for a live, unresolved question.
 - Failures-section match anchors to line start (`^## Verification Failures`) so inline

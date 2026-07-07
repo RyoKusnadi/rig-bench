@@ -290,6 +290,53 @@ for f in "${SPEC_FILES[@]}"; do
   fi
 done
 
+# ── Spec-quality lint (spec 0015) ────────────────────────────────────────────
+# Three prose invariants made checkable: clarification markers may not leave draft/,
+# a generated failures section implies verify_attempts > 0, and every spec carries the
+# template's required sections. The required-section list is derived from the template's
+# own ## headings — no hand-maintained copy (same reasoning as the state.yaml-derived
+# state list, spec 0001).
+SPEC_TEMPLATE="specs/spec-template.md"
+if [[ ! -f "$SPEC_TEMPLATE" ]]; then
+  echo "Error: $SPEC_TEMPLATE is missing — it is the source of the required-section list." >&2
+  exit 1
+fi
+REQUIRED_SECTIONS="$(awk '/^## / { sub(/^## /, ""); print }' "$SPEC_TEMPLATE")"
+
+for f in "${SPEC_FILES[@]}"; do
+  folder="$(basename "$(dirname "$f")")"
+
+  # Unresolved clarification marker outside draft/ (colon form only — prose may
+  # legitimately mention the marker's name without carrying a live question).
+  if [[ "$folder" != "draft" ]] && grep -q '\[NEEDS CLARIFICATION:' "$f"; then
+    echo "ISSUE [stray-clarification]: $f carries an unresolved clarification marker outside draft/."
+    echo "  specs/README.md Ambiguity gate: resolve every marker before a spec leaves draft."
+    ISSUES=$((ISSUES + 1))
+  fi
+
+  # Failures section present while verify_attempts says no verification ever failed.
+  fm="$(frontmatter "$f")"
+  attempts="$(printf '%s\n' "$fm" | fm_field verify_attempts)"
+  [[ -z "$attempts" ]] && attempts=0
+  if [[ "$attempts" == "0" ]] && grep -q '^## Verification Failures' "$f"; then
+    echo "ISSUE [stale-failures-section]: $f has a Verification Failures section but verify_attempts is 0."
+    echo "  Only spec-verify writes that section (and increments the counter) — one of the two is wrong."
+    ISSUES=$((ISSUES + 1))
+  fi
+
+  # Required template sections, matched as exact heading lines.
+  while IFS= read -r sec; do
+    [[ -z "$sec" ]] && continue
+    if ! grep -q "^## ${sec}\$" "$f"; then
+      echo "ISSUE [missing-section]: $f is missing required section '## ${sec}'."
+      echo "  specs/spec-template.md is the canonical section list — every spec carries all of them."
+      ISSUES=$((ISSUES + 1))
+    fi
+  done <<EOF
+$REQUIRED_SECTIONS
+EOF
+done
+
 # ── Transition enforcement: folder moves must follow state.yaml valid_next (spec 0014) ──
 # Compares each spec's lifecycle folder between a base ref and the current tree via git
 # rename detection, so a `git mv` between lifecycle folders is one transition, not a

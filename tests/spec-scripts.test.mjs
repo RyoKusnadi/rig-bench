@@ -31,6 +31,12 @@ function makeRepo(t) {
     path.join(ROOT, "workflows", "state.yaml"),
     path.join(dir, "workflows", "state.yaml"),
   );
+  fs.mkdirSync(path.join(dir, "specs"));
+  // The quality lint (spec 0015) derives its required-section list from the template.
+  fs.copyFileSync(
+    path.join(ROOT, "specs", "spec-template.md"),
+    path.join(dir, "specs", "spec-template.md"),
+  );
   // A minimal specs/README.md that agrees with the real state.yaml, so
   // check-state-sync.sh passes in the fixture repo by default.
   const states = fs
@@ -39,7 +45,6 @@ function makeRepo(t) {
     .filter((l) => /^\s*-\s*name:/.test(l))
     .map((l) => l.replace(/^\s*-\s*name:\s*/, "").trim());
   const rows = states.map((s) => `| \`${s}\` | \`${s}/\` | x | x |`).join("\n");
-  fs.mkdirSync(path.join(dir, "specs"));
   fs.writeFileSync(
     path.join(dir, "specs", "README.md"),
     `# specs\n\nMAX_VERIFY_ATTEMPTS = 2\n\nMAX_CONCURRENT_DISPATCH = 3\n\n| State | Folder | Entered by | Valid next states |\n|---|---|---|---|\n${rows}\n`,
@@ -47,13 +52,21 @@ function makeRepo(t) {
   return dir;
 }
 
+// Every required template section except Files/Interfaces Touched — fixture specs
+// need all of them to pass the quality lint (spec 0015). Tests that exercise the
+// Files-section parsing supply their own Files section via writeSpecWithBody.
+const OTHER_SECTIONS =
+  "## Problem\n\n## Acceptance Criteria\n\n## Out of Scope\n\n" +
+  "## Implementation Notes\n\n## Verification\n";
+const ALL_SECTIONS = `## Files/Interfaces Touched\n\n${OTHER_SECTIONS}`;
+
 function writeSpec(repo, project, state, name, fm) {
   const dir = path.join(repo, "specs", project, state);
   fs.mkdirSync(dir, { recursive: true });
   const lines = Object.entries(fm)
     .map(([k, v]) => `${k}: ${v}`)
     .join("\n");
-  fs.writeFileSync(path.join(dir, name), `---\n${lines}\n---\n\n# ${name}\n`);
+  fs.writeFileSync(path.join(dir, name), `---\n${lines}\n---\n\n${ALL_SECTIONS}`);
 }
 
 function writeSpecWithBody(repo, project, state, name, fm, body) {
@@ -240,7 +253,7 @@ test("check-specs: shared file across ready specs without a chain flagged (spec 
     "ready",
     "0001-a.md",
     { id: "0001", status: "ready" },
-    "## Files/Interfaces Touched\n- `lib/foo.mjs` — add the parser\n",
+    "## Files/Interfaces Touched\n- `lib/foo.mjs` — add the parser\n\n" + OTHER_SECTIONS,
   );
   writeSpecWithBody(
     repo,
@@ -248,7 +261,7 @@ test("check-specs: shared file across ready specs without a chain flagged (spec 
     "ready",
     "0002-b.md",
     { id: "0002", status: "ready" },
-    "## Files/Interfaces Touched\n- lib/foo.mjs rework the parser\n",
+    "## Files/Interfaces Touched\n- lib/foo.mjs rework the parser\n\n" + OTHER_SECTIONS,
   );
   const out = run(repo, "check-specs.sh", "p");
   assert.equal(out.code, 1, out.stdout + out.stderr);
@@ -263,7 +276,7 @@ test("check-specs: shared file with a depends_on chain passes (spec 0013)", (t) 
     "ready",
     "0001-a.md",
     { id: "0001", status: "ready" },
-    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n\n" + OTHER_SECTIONS,
   );
   writeSpecWithBody(
     repo,
@@ -271,7 +284,7 @@ test("check-specs: shared file with a depends_on chain passes (spec 0013)", (t) 
     "ready",
     "0002-mid.md",
     { id: "0002", status: "ready", depends_on: "[0001]" },
-    "## Files/Interfaces Touched\n- `lib/other.mjs`\n",
+    "## Files/Interfaces Touched\n- `lib/other.mjs`\n\n" + OTHER_SECTIONS,
   );
   // 0003 shares the file with 0001 but is ordered only transitively (0003→0002→0001).
   writeSpecWithBody(
@@ -280,7 +293,7 @@ test("check-specs: shared file with a depends_on chain passes (spec 0013)", (t) 
     "in_progress",
     "0003-c.md",
     { id: "0003", status: "in_progress", depends_on: "[0002]" },
-    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n\n" + OTHER_SECTIONS,
   );
   const out = run(repo, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
@@ -295,7 +308,7 @@ test("check-specs: shared file outside ready/in_progress is not a conflict (spec
     "finished",
     "0001-a.md",
     { id: "0001", status: "finished" },
-    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n\n" + OTHER_SECTIONS,
   );
   writeSpecWithBody(
     repo,
@@ -303,10 +316,62 @@ test("check-specs: shared file outside ready/in_progress is not a conflict (spec
     "ready",
     "0002-b.md",
     { id: "0002", status: "ready" },
-    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n",
+    "## Files/Interfaces Touched\n- `lib/foo.mjs`\n\n" + OTHER_SECTIONS,
   );
   const out = run(repo, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
+});
+
+test("check-specs: clarification marker outside draft flagged, inside draft allowed (spec 0015)", (t) => {
+  const repo = makeRepo(t);
+  const body = `${ALL_SECTIONS}\n[NEEDS CLARIFICATION: which auth model?]\n`;
+  writeSpecWithBody(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" }, body);
+  writeSpecWithBody(repo, "p", "draft", "0002-b.md", { id: "0002", status: "draft" }, body);
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[stray-clarification\].*0001/);
+  assert.doesNotMatch(out.stdout, /ISSUE \[stray-clarification\].*0002/);
+});
+
+test("check-specs: failures section with verify_attempts 0 flagged (spec 0015)", (t) => {
+  const repo = makeRepo(t);
+  writeSpecWithBody(
+    repo,
+    "p",
+    "waiting_verification",
+    "0001-a.md",
+    { id: "0001", status: "waiting_verification", verify_attempts: "0" },
+    `${ALL_SECTIONS}\n## Verification Failures\n\nAttempt 1 of 2.\n`,
+  );
+  // Same section with attempts > 0 is the legitimate spec-verify handoff.
+  writeSpecWithBody(
+    repo,
+    "p",
+    "waiting_verification",
+    "0002-b.md",
+    { id: "0002", status: "waiting_verification", verify_attempts: "1" },
+    `${ALL_SECTIONS}\n## Verification Failures\n\nAttempt 1 of 2.\n`,
+  );
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[stale-failures-section\].*0001/);
+  assert.doesNotMatch(out.stdout, /ISSUE \[stale-failures-section\].*0002/);
+});
+
+test("check-specs: missing required section flagged by name (spec 0015)", (t) => {
+  const repo = makeRepo(t);
+  writeSpecWithBody(
+    repo,
+    "p",
+    "ready",
+    "0001-a.md",
+    { id: "0001", status: "ready" },
+    ALL_SECTIONS.replace("## Out of Scope\n\n", ""),
+  );
+  const out = run(repo, "check-specs.sh", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[missing-section\].*'## Out of Scope'/);
+  assert.doesNotMatch(out.stdout, /missing required section '## Problem'/);
 });
 
 test("check-specs: move with no valid_next path flagged (spec 0014)", (t) => {
