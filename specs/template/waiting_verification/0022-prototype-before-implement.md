@@ -5,7 +5,7 @@ status: waiting_verification
 depends_on: []
 verify_attempts: 0
 branch: "feat/0021-verification-trace-capture"
-pr: ""
+pr: "https://github.com/RyoKusnadi/rig-bench/pull/102"
 history:
   - ready 2026-07-08T00:00:00Z
   - in_progress 2026-07-08T00:00:00Z
