@@ -1,11 +1,13 @@
 ---
 id: "0014"
 title: Enforce state transitions against state.yaml valid_next
-status: waiting_verification
+status: finished
 depends_on: ["0013"]
 verify_attempts: 0
 branch: "0014-transition-enforcement"
 pr: "https://github.com/RyoKusnadi/rig-bench/pull/95"
+history:
+  - finished 2026-07-08T12:09:22Z
 source: ""
 ---
 ## Problem
