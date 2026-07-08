@@ -1,11 +1,13 @@
 ---
 id: "0015"
 title: Lint spec quality in check-specs.sh
-status: waiting_verification
+status: finished
 depends_on: ["0014"]
 verify_attempts: 0
 branch: "0015-spec-quality-lint"
 pr: "https://github.com/RyoKusnadi/rig-bench/pull/96"
+history:
+  - finished 2026-07-08T12:09:22Z
 source: ""
 ---
 ## Problem
