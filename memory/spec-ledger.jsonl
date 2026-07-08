@@ -1,0 +1,10 @@
+{"project":"template","id":"0012","title":"Add spec-to-PR traceability via branch/pr frontmatter fields","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0013","title":"Automate the file-conflict gate in check-specs.sh","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0014","title":"Enforce state transitions against state.yaml valid_next","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0015","title":"Lint spec quality in check-specs.sh","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0018","title":"Check the memory writeback loop actually ran","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0020","title":"Record state-transition timestamps in spec frontmatter","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0010","title":"Lifecycle metrics script and make target","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0011","title":"Metrics-driven attention threshold in spec-status","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0016","title":"Extend pre-bash-safety hook to more destructive command classes","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
+{"project":"template","id":"0019","title":"Worktree hygiene script for concurrent dispatch","outcome":"finished","verify_attempts":0,"axis":"","timestamp":"2026-07-08T12:09:22Z"}
