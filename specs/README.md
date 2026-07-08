@@ -230,6 +230,13 @@ moving the file to `finished/` — a shipped spec shouldn't carry stale failure 
 or compressed; the git history of the file (and of the trace dir) is where that record
 actually lives (`git log --follow` on the spec path).
 
+**Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
+`memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace
+and failure section, this record is never cleared; it's the durable, queryable history of
+what shipped or got stuck, across every spec, so `spec-plan` can check
+`scripts/spec-ledger.sh list <project> blocked` before drafting something similar from
+scratch (spec 0025).
+
 ## Template
 
 The canonical spec shape — frontmatter and section list — lives in

@@ -153,9 +153,21 @@ For each spec (whether run concurrently or one at a time):
      `history` entry (`- <entered state> $(date -u +%Y-%m-%dT%H:%M:%SZ)`, creating the
      block list from `history: []` on first append) in the same step as the `git mv` —
      never as a separate pass (spec 0020; see the template's `history` note).
-2. **Implement.** Read the full spec content and implement every acceptance criterion: create
-   a feature branch named after the spec ID and slug, make the changes, commit, open a draft
-   PR. Once the draft PR is open, record the feature-branch name and PR URL in the spec's
+2. **Implement.** Read the full spec content and implement every acceptance criterion.
+   **Prototype first if the spec introduces a new mechanism.** If any Acceptance Criterion or
+   Implementation Note describes a mechanism that doesn't already exist in the repo (a new
+   algorithm, a new file format, a new control-flow shape — not just wiring an existing
+   pattern into a new file or copying an existing script's structure), write a throwaway
+   script under `/tmp/` that exercises just that mechanism against 2-3 concrete inputs before
+   touching the real files. Confirm it behaves as the spec describes, then delete the
+   throwaway script — its job is to catch a broken mechanism while it's still cheap to
+   redesign, not to ship as an artifact. Skip this for specs that only wire together, extend,
+   or configure things that already work elsewhere in the repo (spec 0022; the empirical
+   basis is Meta-Harness's finding that unprototyped mechanism changes are disproportionately
+   the ones that ship with bugs or no effect — see `memory/decisions.md`).
+   Once that checks out: create a feature branch named after the spec ID and slug, make the
+   changes, commit, open a draft PR. Once the draft PR is open, record the feature-branch name
+   and PR URL in the spec's
    `branch` and `pr` frontmatter fields (they default to `""` from the template) and commit
    that with the spec's lifecycle move — the spec carries its own implementation pointers,
    and `check-specs.sh` flags a finished spec whose `pr` field is still empty (spec 0012).

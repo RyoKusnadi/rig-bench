@@ -42,3 +42,33 @@ also writes the raw run — actual commands and full output — to
 summary carries, so they clear on success for the same reason the failures section does;
 git history keeps them. Kept dependency-free bash + grep-able plain files per the two
 decisions above — the trace is more raw experience to grep, not a new tooling layer.
+
+## 2026-07-08 — Four more Meta-Harness/SIA mechanisms adopted (specs 0022-0025)
+
+Following up on spec 0021 (raw traces over summaries), the rest of Meta-Harness's proposer
+discipline (its two SKILL.md files) turned out to transfer cleanly to this repo's own
+spec-plan/spec-exec/spec-verify loop, once translated from "evolve a benchmarked ML system"
+to "evolve a harness with pass/fail verification":
+
+- **0022 — mandatory prototype before implementing a new mechanism.** Meta-Harness requires
+  prototyping the core mechanism in `/tmp` before writing the final candidate; skipping it
+  correlates with bugs or no effect. `spec-exec` now requires the same, scoped to specs that
+  introduce a mechanism the repo doesn't already have.
+- **0023 — falsifiable hypothesis + one-mechanism-per-spec.** Both SKILL.md files require a
+  falsifiable claim and ban bundling ("if you're tempted to add 'and also...' that's a second
+  candidate"). `spec-plan` now captures the claim in Phase 2 and self-checks for bundling in
+  Phase 3, sharpening the existing one-deliverable *size* rule with a one-mechanism *content*
+  rule.
+- **0024 — anti-overfitting rule for shared tooling.** Both papers ban hardcoding
+  task/dataset specifics into general-purpose scaffold code. Added to `CLAUDE.md`'s
+  Non-negotiables: shared tooling (skills/hooks/scripts) must not special-case a specific
+  spec id or scenario.
+- **0025 — structured outcome ledger.** `evolution_summary.jsonl` + `frontier_val.json` let
+  each iteration see what's been tried without re-reading everything. Adapted as
+  `memory/spec-ledger.jsonl` (via `scripts/spec-ledger.sh`) — one line per finished or
+  blocked spec, appended by `spec-verify`, consulted by `spec-plan` before drafting into a
+  previously-blocked area.
+
+Left out again: tbench2's environment-bootstrap technique (smaller expected gain here — this
+harness's executors already share the repo) and SIA's weight-update lever (no model training
+in this repo). Both remain open if a future spec makes the case.

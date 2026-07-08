@@ -55,6 +55,12 @@ user first:
   changes for the person who asked for this.
 - **What would the docs say if this shipped?** Draft this mentally; it becomes the `Problem`
   and `Acceptance Criteria` sections.
+- **What's the falsifiable claim this design rests on?** State it as "if this ships, X should
+  happen" — something concrete enough that it could turn out to be wrong (spec 0023). If the
+  honest answer is "this just adjusts an existing knob" (a limit, a threshold, a default), say
+  so plainly rather than dressing it up as a new capability — that's still a legitimate spec,
+  just a smaller one, and naming it accurately keeps the batch's `depends_on` graph and scope
+  honest.
 - **What are the key decisions that must be made?** Significant ones are worth surfacing
   explicitly with the user even though the template doesn't have a dedicated section for
   them — fold the reasoning into `Problem` or `Implementation Notes` so it isn't lost.
@@ -76,6 +82,11 @@ spec's area go into its `Implementation Notes` with their provenance tag, so the
 inherits them instead of rediscovering them. A memory hit that *contradicts* the spec's
 direction is worth surfacing to the user before drafting continues — the point of
 `memory/decisions.md` is that overturning one should be a choice, not an accident.
+
+Also check `scripts/spec-ledger.sh list <project> blocked` — if a past spec in this area was
+already tried and blocked, that's worth surfacing before drafting a similar one from scratch
+(spec 0025); read the blocked spec file itself (still on disk under `blocked/`) for why it
+didn't make it, rather than only the one-line ledger record.
 
 ### Considerations scan (skip for trivial specs)
 
@@ -139,6 +150,14 @@ mobile-first or desktop-first for your users").
   another — set the pointer while the relationship is fresh, not as an afterthought. If a
   `depends_on` id doesn't exist yet and isn't a sibling being drafted in this same pass, ask
   rather than write a dangling reference.
+
+**One mechanism per spec — check even a single-deliverable spec for this.** A spec can be one
+file and still bundle two independent changes disguised as one ("and also fix X while we're in
+there"). Before drafting, check the falsifiable claim from Phase 2 against the acceptance
+criteria being assembled: does every criterion serve that one claim, or has a second,
+unrelated claim crept in? If you're tempted to add "and also..." to the Problem statement,
+that's very likely a second spec, not an extra paragraph in this one (spec 0023). This is
+distinct from the deliverable-count check above — a single-file spec can still fail it.
 
 Follow `specs/spec-template.md` for each spec, whether drafting one or several. The
 plan must contain the literal file content for every spec, not a description of what it would
