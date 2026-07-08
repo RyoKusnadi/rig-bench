@@ -3,6 +3,19 @@
 Surprising behaviors of this repo/tooling that cost time to discover. Entry format and
 pruning convention: see `memory/README.md`.
 
+## 2026-07-08 — Multi-line shell run under /bin/sh silently ships broken generated files (spec 0021 dogfooding)
+
+A batch trace-generation command using bashisms (`declare -A`, `${map[$key]}`) was executed
+through a tool whose default shell was /bin/sh (dash). Dash rejected the bashisms line by
+line but kept executing: the loop still ran, files were still created — with their
+interpolated sections empty — and the final listing looked plausible. The command "worked"
+while writing 10 degraded artifacts; only reading stderr (a wall of `Bad substitution`)
+revealed it. This is nastier than the bash-3.2 entry below: there the script died loudly;
+here partial execution produced wrong *content* with a success-shaped exit. Rule: never
+inline bashisms into a multi-line command whose executing shell you haven't pinned — write
+the script to a file and run it with an explicit `bash script.sh`, and after any batch file
+generation, read one generated file back before building on it.
+
 ## 2026-07-07 — Stacked PRs + squash merge silently lose content (specs 0012–0020, PRs #92–#100)
 
 The 0012→0020 dependency chain was executed as stacked PRs — each spec's PR based on its

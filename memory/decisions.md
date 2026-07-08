@@ -105,3 +105,15 @@ its target capability — translated here: verification now also runs the projec
 discovered not hardcoded per spec 0024) and a gate failure fails the spec under the same
 retry contract. Once per session against a shared tree, with attribution — not once per
 spec. A project with no gates gets a note, not a failure.
+
+## 2026-07-08 — Spec id 0026 is intentionally unused
+
+During the 0027/0028 planning pass, 0026 was mentally allocated to a "write a lessons.md
+entry on every success" spec mirroring Meta-Harness's mandatory per-iteration report — then
+dropped on discovering spec-verify's Phase 6c had already deliberately decided against
+routine success entries ("a notebook padded with 'it worked' entries stops being read"),
+with the structured equivalent covered by 0025's ledger. The sibling specs were already
+drafted as 0027/0028 and referenced by id across skills and the template, so the gap stays
+rather than renumbering shipped references. If a future planning pass wants to reuse 0026:
+fine — ids only need to be unique, not contiguous (check-specs.sh checks duplicates, not
+gaps).
