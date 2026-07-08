@@ -1,11 +1,13 @@
 ---
 id: "0012"
 title: Add spec-to-PR traceability via branch/pr frontmatter fields
-status: waiting_verification
+status: finished
 depends_on: []
 verify_attempts: 0
 branch: "0012-spec-pr-traceability"
 pr: "https://github.com/RyoKusnadi/rig-bench/pull/93"
+history:
+  - finished 2026-07-08T12:09:22Z
 source: ""
 ---
 ## Problem
