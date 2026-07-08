@@ -46,7 +46,16 @@ test("append writes a well-formed line and creates memory/ if absent", (t) => {
   assert.equal(record.title, "Trace capture");
   assert.equal(record.outcome, "finished");
   assert.equal(record.verify_attempts, 0);
+  assert.equal(record.axis, "");
   assert.match(record.timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+});
+
+test("append accepts an optional axis argument and records it", (t) => {
+  const dir = makeFixture(t);
+  const { code } = run(dir, ["append", "template", "0027", "Axis tag", "finished", "0", "verification-loop"]);
+  assert.equal(code, 0);
+  const record = JSON.parse(fs.readFileSync(ledgerPath(dir), "utf8").trim());
+  assert.equal(record.axis, "verification-loop");
 });
 
 test("append escapes double quotes in the title so the line stays valid JSON", (t) => {

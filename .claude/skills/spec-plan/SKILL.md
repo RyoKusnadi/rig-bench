@@ -61,6 +61,12 @@ user first:
   so plainly rather than dressing it up as a new capability — that's still a legitimate spec,
   just a smaller one, and naming it accurately keeps the batch's `depends_on` graph and scope
   honest.
+- **Where does this design come from?** If it substantially borrows from a paper, a reference
+  implementation, or another project — rather than being derived fresh from this repo's own
+  problem — say so and carry the citation into the spec's `Implementation Notes` (per the
+  template's note). Presenting a borrowed mechanism as if newly invented deprives a later
+  reader of the chance to go check the source when the spec's own reasoning is thin (spec
+  0028).
 - **What are the key decisions that must be made?** Significant ones are worth surfacing
   explicitly with the user even though the template doesn't have a dedicated section for
   them — fold the reasoning into `Problem` or `Implementation Notes` so it isn't lost.
@@ -87,6 +93,14 @@ Also check `scripts/spec-ledger.sh list <project> blocked` — if a past spec in
 already tried and blocked, that's worth surfacing before drafting a similar one from scratch
 (spec 0025); read the blocked spec file itself (still on disk under `blocked/`) for why it
 didn't make it, rather than only the one-line ledger record.
+
+While you're there, glance at whether the last 3 `finished` records for this project
+(`scripts/spec-ledger.sh list <project> finished`, most recent lines) share the same `axis`.
+Three in a row on the same axis isn't wrong, but it's worth a one-line note to the user before
+drafting a fourth — "the last three specs were all `<axis>`; want to keep going there or look
+elsewhere?" — rather than silently continuing down the same groove (spec 0027). This is
+advisory, never a block: the user may have good reason to keep going (a multi-spec sequence
+genuinely isn't done yet), and axis is optional freeform text, not every spec sets one.
 
 ### Considerations scan (skip for trivial specs)
 
@@ -162,7 +176,10 @@ distinct from the deliverable-count check above — a single-file spec can still
 Follow `specs/spec-template.md` for each spec, whether drafting one or several. The
 plan must contain the literal file content for every spec, not a description of what it would
 contain. Default `status: ready` — an approved spec goes straight to
-`specs/<project_name>/ready/`, skipping `draft/`.
+`specs/<project_name>/ready/`, skipping `draft/`. Set the frontmatter `axis` field when the
+spec clearly targets one identifiable part of the harness (see the template's note on `axis`
+for examples and guidance) — leave it `""` when nothing natural fits rather than forcing a
+label.
 
 As a quick reference, the template's sections are:
 

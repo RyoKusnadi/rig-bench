@@ -173,9 +173,10 @@ git commit -m "spec(<id>): mark <slug> as finished"
 ```
 
 Record the outcome in the ledger — `verify_attempts` here is whatever the frontmatter already
-holds (0 for a spec that passed first try):
+holds (0 for a spec that passed first try), and `axis` is the spec's `axis` frontmatter value
+(empty string if unset):
 ```bash
-scripts/spec-ledger.sh append <project> <id> "<title>" finished <verify_attempts>
+scripts/spec-ledger.sh append <project> <id> "<title>" finished <verify_attempts> "<axis>"
 ```
 
 Report: `Spec {id} — {title}: verified and moved to finished.`
@@ -240,10 +241,10 @@ here — if it ever changes, that's the one place to change it).
   git add -f specs/<project>/blocked/<filename>
   git commit -m "spec(<id>): block after <verify_attempts> failed verification attempts"
   ```
-  Record the outcome in the ledger, same as a finished spec, so a later planning pass can see
-  this was tried and blocked without re-reading the file:
+  Record the outcome in the ledger, same as a finished spec (including `axis`), so a later
+  planning pass can see this was tried and blocked without re-reading the file:
   ```bash
-  scripts/spec-ledger.sh append <project> <id> "<title>" blocked <verify_attempts>
+  scripts/spec-ledger.sh append <project> <id> "<title>" blocked <verify_attempts> "<axis>"
   ```
   Report clearly, as an escalation rather than a routine failure:
   `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked/.

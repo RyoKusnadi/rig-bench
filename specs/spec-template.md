@@ -8,6 +8,7 @@ branch: ""
 pr: ""
 history: []
 source: ""
+axis: ""
 ---
 ## Problem
 
@@ -43,6 +44,11 @@ Enough detail for an implementer to start without re-deriving the design —
 key data structures, edge cases, the approach for anything non-obvious. This
 is this convention's lightweight equivalent of Spec Kit/Kiro's `plan.md`.
 
+If the design substantially borrows from a paper, a reference implementation, or another
+open-source project, name the source here (title/repo + link if available) rather than
+presenting the mechanism as invented fresh — a reader deciding whether to trust or extend the
+approach needs to know where its evidence comes from (spec 0028).
+
 ## Verification
 
 The concrete, end-to-end step that proves the spec is done: a test name to
@@ -74,3 +80,12 @@ history:
 
 `scripts/spec-metrics.sh` computes cycle time from these entries when present, falling back
 to git history for specs that predate the convention.
+
+`axis` (frontmatter, optional) is a short freeform label for which part of the harness this
+spec primarily changes — e.g. `verification-loop`, `planning-discipline`, `tooling-rule`,
+`memory-ledger`, `dispatch`. Left `""` for specs where no single axis is a natural fit (many
+specs, especially outside `template/`'s own harness-improvement work, won't need one).
+`spec-verify` records it into `memory/spec-ledger.jsonl` on `finished`/`blocked` (spec 0025),
+and `spec-plan` checks recent axes there before drafting something in the same area
+repeatedly (spec 0027) — the label only needs to be consistent enough to `grep` for, not a
+fixed enum.

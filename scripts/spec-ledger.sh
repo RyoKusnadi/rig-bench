@@ -7,17 +7,21 @@
 # numeric score.
 #
 # Usage:
-#   scripts/spec-ledger.sh append <project> <id> <title> <outcome> <verify_attempts>
+#   scripts/spec-ledger.sh append <project> <id> <title> <outcome> <verify_attempts> [axis]
 #   scripts/spec-ledger.sh list [project] [outcome]
 #
 #   <outcome> is "finished" or "blocked".
+#   [axis] is an optional freeform label for which part of the harness this spec primarily
+#   changed (spec-template.md's optional `axis` frontmatter field, spec 0027) — used to spot
+#   when several specs in a row have targeted the same area. Omit it, or pass "", for a spec
+#   with no axis set; recorded as an empty string either way.
 #   `list` with no args prints every record; a project and/or outcome narrows it.
 #
 # Dependency-free bash per memory/decisions.md. No jq (not assumed present) — JSON lines are
 # built and read with plain string handling, one flat object per line, so `grep`/`cut` work
 # directly on the file too.
 #
-# Spec: specs/template/*/0025-spec-outcome-ledger.md
+# Spec: specs/template/*/0025-spec-outcome-ledger.md, extended by 0027-axis-diversity-tracking.md
 
 set -euo pipefail
 
@@ -30,7 +34,7 @@ LEDGER_FILE="memory/spec-ledger.jsonl"
 usage() {
   cat >&2 << 'EOF'
 Usage:
-  scripts/spec-ledger.sh append <project> <id> <title> <outcome> <verify_attempts>
+  scripts/spec-ledger.sh append <project> <id> <title> <outcome> <verify_attempts> [axis]
   scripts/spec-ledger.sh list [project] [outcome]
 EOF
 }
@@ -51,11 +55,12 @@ shift
 
 case "$CMD" in
   append)
-    if [[ $# -ne 5 ]]; then
+    if [[ $# -ne 5 && $# -ne 6 ]]; then
       usage
       exit 1
     fi
     project="$1"; id="$2"; title="$3"; outcome="$4"; attempts="$5"
+    axis="${6:-}"
 
     if [[ "$outcome" != "finished" && "$outcome" != "blocked" ]]; then
       echo "Error: outcome must be 'finished' or 'blocked' (got '${outcome}')." >&2
@@ -68,9 +73,9 @@ case "$CMD" in
 
     mkdir -p "$(dirname "$LEDGER_FILE")"
     ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf '{"project":"%s","id":"%s","title":"%s","outcome":"%s","verify_attempts":%s,"timestamp":"%s"}\n' \
+    printf '{"project":"%s","id":"%s","title":"%s","outcome":"%s","verify_attempts":%s,"axis":"%s","timestamp":"%s"}\n' \
       "$(json_escape "$project")" "$(json_escape "$id")" "$(json_escape "$title")" \
-      "$outcome" "$attempts" "$ts" >> "$LEDGER_FILE"
+      "$outcome" "$attempts" "$(json_escape "$axis")" "$ts" >> "$LEDGER_FILE"
     echo "Recorded: ${project}/${id} — ${outcome} (attempt ${attempts})"
     ;;
 

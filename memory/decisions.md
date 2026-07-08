@@ -72,3 +72,25 @@ to "evolve a harness with pass/fail verification":
 Left out again: tbench2's environment-bootstrap technique (smaller expected gain here — this
 harness's executors already share the repo) and SIA's weight-update lever (no model training
 in this repo). Both remain open if a future spec makes the case.
+
+## 2026-07-08 — Axis diversity and provenance citation (specs 0027-0028)
+
+Two more small Meta-Harness disciplines, continuing from 0021-0025:
+
+- **0027 — axis tag + diversity nudge.** Meta-Harness tracks which named axis each candidate
+  targets and requires diversifying when the same one repeats 3 times running. Added an
+  optional `axis` frontmatter field (freeform, e.g. `verification-loop`, `tooling-rule`);
+  `spec-verify` records it into the spec 0025 ledger; `spec-plan` glances at the last 3
+  `finished` records' axes before drafting and notes (never blocks) a repeat. Deliberately
+  optional/freeform rather than a required enum, to stay a strict extension of 0025 rather
+  than forcing a retrofit of every existing spec.
+- **0028 — cite external provenance.** Specs 0021-0027 each informally cited Meta-Harness in
+  this file by habit; nothing required it. Meta-Harness's own instructions treat drawing on
+  published approaches as an explicit, named practice. Made it explicit: `spec-plan` now asks
+  whether a design substantially derives from an external source and carries the citation
+  into `Implementation Notes`, following `spec-template.md`'s existing pattern of
+  documentation-only rules (spec 0024's precedent) rather than new tooling.
+
+Both are the direct output of "keep improving": mined further into the same reference
+material rather than re-treading 0021-0025's ground. Still open, still set aside: tbench2
+environment bootstrap, SIA weight updates.
