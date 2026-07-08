@@ -1,9 +1,11 @@
 ---
 id: "0010"
 title: Lifecycle metrics script and make target
-status: waiting_verification
+status: finished
 depends_on: []
 verify_attempts: 0
+history:
+  - finished 2026-07-08T12:09:22Z
 source: ""
 ---
 ## Problem
