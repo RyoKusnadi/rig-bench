@@ -88,6 +88,28 @@ Capture and record the output. Mark **PASS** if the output matches what the spec
 If the `Verification` section specifies a manual step that requires human confirmation, ask
 the user to confirm that the verification step passed before continuing.
 
+**3c-2. Run the project's own gates (regression check)**
+
+A spec's Verification step proves its *own* behavior; it says nothing about what the
+implementation broke elsewhere. So after 3c, also run the target project's standing
+gates — whatever that project already defines as its full check suite (for this harness
+itself: the `check` target in the `Makefile` plus the npm test suite; for a nested project
+under `projects/<n>/`, that project's own equivalent — its declared test/lint/build
+commands, discoverable from its Makefile, package manifest, or README). Record the result
+as one more PASS/FAIL line in this spec's report and trace, labeled `Regression gate`.
+
+**A spec whose own Verification passes but whose project gates fail is a FAIL** — same
+retry contract as any criterion failure. Improving one thing while silently breaking others
+is the outcome verification exists to catch; Meta-Harness's outer loop evaluates every
+candidate on the full benchmark rather than only its target capability for exactly this
+reason (spec 0029).
+
+Two scoping notes: run the gates once per verification session when verifying multiple
+specs against the same working tree, not once per spec — attribute a gate failure to the
+spec(s) whose touched files plausibly caused it, and say so in each affected report. And if
+a project defines no gates at all, note that in the report and move on — absence of gates
+is a gap worth flagging, not a verification failure.
+
 **3d. Capture the verification trace**
 
 Before reporting, write the *raw* record of this verification run to
@@ -115,6 +137,10 @@ Overall: PASS | FAIL
 $ <exact command run>
 <full stdout/stderr, verbatim; truncate a single output past ~400 lines with a
  "... (truncated, M more lines)" marker rather than paraphrasing it>
+
+## Regression gate
+$ <exact gate commands run>
+<full output, same truncation rule; or "no gates defined for this project">
 ```
 
 Keep it factual and raw — this file exists so the fix loop can read what actually happened,
@@ -132,6 +158,7 @@ Spec 0001 — <title>
   [FAIL] Criterion 2: <criterion text>
          Reason: <what was missing or wrong>
   [PASS] Verification: <command output>
+  [PASS] Regression gate: <project gates run, or "no gates defined">
 
 Overall: PASS / FAIL
 ```

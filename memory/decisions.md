@@ -94,3 +94,14 @@ Two more small Meta-Harness disciplines, continuing from 0021-0025:
 Both are the direct output of "keep improving": mined further into the same reference
 material rather than re-treading 0021-0025's ground. Still open, still set aside: tbench2
 environment bootstrap, SIA weight updates.
+
+## 2026-07-08 — Regression gate in verification (spec 0029)
+
+`spec-verify` checked a spec's own criteria and Verification step but never the project's
+standing gates, so an implementation could pass its own check while breaking other specs'
+tests. Meta-Harness's outer loop scores every candidate on the full benchmark, never only
+its target capability — translated here: verification now also runs the project's own gates
+(`make check` + test suite for the harness; a nested project's declared equivalents,
+discovered not hardcoded per spec 0024) and a gate failure fails the spec under the same
+retry contract. Once per session against a shared tree, with attribution — not once per
+spec. A project with no gates gets a note, not a failure.

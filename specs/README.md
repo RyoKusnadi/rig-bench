@@ -191,7 +191,9 @@ dispatched spec-executor agents (mirrored as `dispatch.max_concurrent` in
 — see the "Machine-readable mirror" note above). Each spec's frontmatter carries a `verify_attempts` field
 (default `0`, see `spec-template.md`) that `spec-verify` — and only `spec-verify` — increments.
 
-When `spec-verify` finds a spec fails (any Acceptance Criterion or the Verification step):
+When `spec-verify` finds a spec fails (any Acceptance Criterion, the Verification step, or
+the project's standing gates — the *regression gate* of spec 0029: a spec that passes its own
+check while breaking `make check`/the test suite fails verification):
 
 1. Increment `verify_attempts` by 1.
 2. Write (replacing any prior run's) a `## Verification Failures` section into the spec file,
