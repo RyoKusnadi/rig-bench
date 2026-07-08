@@ -1,7 +1,7 @@
 ---
 id: "0020"
 title: Record state-transition timestamps in spec frontmatter
-status: waiting_verification
+status: finished
 depends_on: ["0012", "0014", "0018"]
 verify_attempts: 0
 branch: "0020-state-timestamps"
@@ -10,6 +10,8 @@ history:
   - ready 2026-07-07T00:00:00Z
   - in_progress 2026-07-07T15:49:56Z
   - waiting_verification 2026-07-07T15:49:56Z
+history:
+  - finished 2026-07-08T12:09:22Z
 source: ""
 ---
 ## Problem
