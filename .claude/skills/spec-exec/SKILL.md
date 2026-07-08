@@ -173,8 +173,13 @@ For each spec (whether run concurrently or one at a time):
    **If the spec has a `## Verification Failures` section** (i.e. this is a fix, not a first
    implementation), read it first and treat its contents as the authoritative list of what to
    change — it's `spec-verify`'s structured report of exactly which criteria failed and why,
-   not just background context. Leave the section in the file; `spec-verify` clears it on the
-   next passing run, or replaces it if this fix still doesn't pass.
+   not just background context. That section is deliberately compressed, so also read the raw
+   verification trace behind it before editing: `scripts/spec-trace.sh <project> <id>` prints
+   the latest attempt's actual commands and their full output. The summary tells you *which*
+   criteria failed; the trace shows you the exact command output the verifier saw — the raw
+   signal a distilled list drops, and often the difference between guessing at a fix and
+   seeing the real cause. Leave the failures section in the file; `spec-verify` clears it (and
+   the trace dir) on the next passing run, or replaces it if this fix still doesn't pass.
 3. **Move to waiting_verification.** `git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 

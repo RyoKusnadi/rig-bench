@@ -198,6 +198,13 @@ When `spec-verify` finds a spec fails (any Acceptance Criterion or the Verificat
    listing each failed criterion verbatim plus the reason it failed, and the Verification
    step's output if that's what failed. This is the structured handoff — it's what `spec-exec`
    reads to know what to fix, instead of a human having to relay the failure report by hand.
+   Alongside it, `spec-verify` writes the raw run to
+   `specs/<project>/.traces/<id>/attempt-<verify_attempts>.md` — the actual commands and their
+   full output, queryable with `scripts/spec-trace.sh <project> <id>`. The failures section is
+   the compressed handoff; the trace is the uncompressed one. `spec-exec` reads both on a fix,
+   because a distilled summary drops the raw command output that often pinpoints the cause
+   (the empirical basis is the Meta-Harness finding that traces beat summaries as fix signal —
+   see `memory/decisions.md`).
 3. If `verify_attempts < MAX_VERIFY_ATTEMPTS`: leave the file in `waiting_verification/`,
    status unchanged. Report the failure and that this was attempt `{verify_attempts}` of
    `MAX_VERIFY_ATTEMPTS`.
@@ -218,9 +225,10 @@ move — a fresh attempt budget for a spec a human has just reviewed and chosen 
 rather than it re-blocking after a single additional failure.
 
 **Clearing the record on success:** once a spec passes verification, `spec-verify` removes
-the `## Verification Failures` section before moving the file to `finished/` — a shipped
-spec's file shouldn't carry stale failure history; the git history of the file is where that
-record actually lives (`git log --follow` on the spec path).
+the `## Verification Failures` section *and* the spec's `.traces/<id>/` directory before
+moving the file to `finished/` — a shipped spec shouldn't carry stale failure history, raw
+or compressed; the git history of the file (and of the trace dir) is where that record
+actually lives (`git log --follow` on the spec path).
 
 ## Template
 

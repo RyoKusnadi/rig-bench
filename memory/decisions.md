@@ -28,3 +28,17 @@ ones were deleted once their phases shipped, and recreating one was reverted the
 the human's explicit call. Phase history lives in merged PRs, git history, and these memory
 notebooks; `specs/template/` specs leave `source:` blank (`""`) until such a doc exists
 again. Don't reintroduce one without an explicit ask.
+
+## 2026-07-08 — Verification failures hand off a raw trace, not just a summary (spec 0021)
+
+The verify→fix retry loop is this harness's own self-improvement loop, and the fix agent's
+only feedback was the compressed `## Verification Failures` summary (plus a distilled
+`lessons.md` line). Meta-Harness (Lee et al., 2026) shows empirically that an improver fed
+raw execution traces fixes far more than one fed only summaries, and that summaries cannot
+recover the dropped signal (their traces-vs-scores+summary ablation). So `spec-verify` now
+also writes the raw run — actual commands and full output — to
+`specs/<project>/.traces/<id>/attempt-<n>.md`, queryable via `scripts/spec-trace.sh`, and
+`spec-exec` reads it on a fix. Traces are the raw form of the same failure history the
+summary carries, so they clear on success for the same reason the failures section does;
+git history keeps them. Kept dependency-free bash + grep-able plain files per the two
+decisions above — the trace is more raw experience to grep, not a new tooling layer.
