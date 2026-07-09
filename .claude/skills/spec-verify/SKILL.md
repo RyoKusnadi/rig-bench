@@ -182,7 +182,7 @@ If the spec's `pr` frontmatter field is non-empty, confirm the PR's state with
 `gh pr view <url> --json state` and include it in the report — advisory only, never a FAIL:
 merging is a human action that may legitimately still be pending, and `gh` may be missing or
 unauthenticated (note which, and move on). A finished spec whose `pr` field is *empty* while
-the key exists will be flagged by `check-specs.sh` (spec 0012) — backfill it from the
+the key exists will be flagged by `check-specs.sh` — backfill it from the
 implementation report before moving the file.
 
 ```bash
@@ -191,7 +191,7 @@ git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/
 
 Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`,
 and append a `history` entry (`- finished $(date -u +%Y-%m-%dT%H:%M:%SZ)`) in the same step
-(spec 0020; see the template's `history` note — same for the `blocked` move in Phase 6b).
+(see the template's `history` note — same for the `blocked` move in Phase 6b).
 
 Then, **if `workflows/state.yaml`'s `spec_files.tracked` is `true`**, commit the move:
 ```bash

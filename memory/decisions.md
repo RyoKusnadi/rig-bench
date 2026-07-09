@@ -29,7 +29,7 @@ the human's explicit call. Phase history lives in merged PRs, git history, and t
 notebooks; `specs/template/` specs leave `source:` blank (`""`) until such a doc exists
 again. Don't reintroduce one without an explicit ask.
 
-## 2026-07-08 — Verification failures hand off a raw trace, not just a summary (spec 0021)
+## 2026-07-08 — Verification failures hand off a raw trace, not just a summary
 
 The verify→fix retry loop is this harness's own self-improvement loop, and the fix agent's
 only feedback was the compressed `## Verification Failures` summary (plus a distilled
@@ -43,27 +43,27 @@ summary carries, so they clear on success for the same reason the failures secti
 git history keeps them. Kept dependency-free bash + grep-able plain files per the two
 decisions above — the trace is more raw experience to grep, not a new tooling layer.
 
-## 2026-07-08 — Four more Meta-Harness/SIA mechanisms adopted (specs 0022-0025)
+## 2026-07-08 — Four more Meta-Harness/SIA mechanisms adopted
 
-Following up on spec 0021 (raw traces over summaries), the rest of Meta-Harness's proposer
+Following up on the raw-traces-over-summaries change, the rest of Meta-Harness's proposer
 discipline (its two SKILL.md files) turned out to transfer cleanly to this repo's own
 spec-plan/spec-exec/spec-verify loop, once translated from "evolve a benchmarked ML system"
 to "evolve a harness with pass/fail verification":
 
-- **0022 — mandatory prototype before implementing a new mechanism.** Meta-Harness requires
+- **Mandatory prototype before implementing a new mechanism.** Meta-Harness requires
   prototyping the core mechanism in `/tmp` before writing the final candidate; skipping it
   correlates with bugs or no effect. `spec-exec` now requires the same, scoped to specs that
   introduce a mechanism the repo doesn't already have.
-- **0023 — falsifiable hypothesis + one-mechanism-per-spec.** Both SKILL.md files require a
+- **Falsifiable hypothesis + one-mechanism-per-spec.** Both SKILL.md files require a
   falsifiable claim and ban bundling ("if you're tempted to add 'and also...' that's a second
   candidate"). `spec-plan` now captures the claim in Phase 2 and self-checks for bundling in
   Phase 3, sharpening the existing one-deliverable *size* rule with a one-mechanism *content*
   rule.
-- **0024 — anti-overfitting rule for shared tooling.** Both papers ban hardcoding
+- **Anti-overfitting rule for shared tooling.** Both papers ban hardcoding
   task/dataset specifics into general-purpose scaffold code. Added to `CLAUDE.md`'s
   Non-negotiables: shared tooling (skills/hooks/scripts) must not special-case a specific
   spec id or scenario.
-- **0025 — structured outcome ledger.** `evolution_summary.jsonl` + `frontier_val.json` let
+- **Structured outcome ledger.** `evolution_summary.jsonl` + `frontier_val.json` let
   each iteration see what's been tried without re-reading everything. Adapted as
   `memory/spec-ledger.jsonl` (via `scripts/spec-ledger.sh`) — one line per finished or
   blocked spec, appended by `spec-verify`, consulted by `spec-plan` before drafting into a
@@ -73,36 +73,36 @@ Left out again: tbench2's environment-bootstrap technique (smaller expected gain
 harness's executors already share the repo) and SIA's weight-update lever (no model training
 in this repo). Both remain open if a future spec makes the case.
 
-## 2026-07-08 — Axis diversity and provenance citation (specs 0027-0028)
+## 2026-07-08 — Axis diversity and provenance citation
 
-Two more small Meta-Harness disciplines, continuing from 0021-0025:
+Two more small Meta-Harness disciplines, continuing the same source material:
 
-- **0027 — axis tag + diversity nudge.** Meta-Harness tracks which named axis each candidate
+- **Axis tag + diversity nudge.** Meta-Harness tracks which named axis each candidate
   targets and requires diversifying when the same one repeats 3 times running. Added an
   optional `axis` frontmatter field (freeform, e.g. `verification-loop`, `tooling-rule`);
-  `spec-verify` records it into the spec 0025 ledger; `spec-plan` glances at the last 3
+  `spec-verify` records it into the outcome ledger; `spec-plan` glances at the last 3
   `finished` records' axes before drafting and notes (never blocks) a repeat. Deliberately
   optional/freeform rather than a required enum, to stay a strict extension of 0025 rather
   than forcing a retrofit of every existing spec.
-- **0028 — cite external provenance.** Specs 0021-0027 each informally cited Meta-Harness in
+- **Cite external provenance.** The preceding entries each informally cited Meta-Harness in
   this file by habit; nothing required it. Meta-Harness's own instructions treat drawing on
   published approaches as an explicit, named practice. Made it explicit: `spec-plan` now asks
   whether a design substantially derives from an external source and carries the citation
   into `Implementation Notes`, following `spec-template.md`'s existing pattern of
-  documentation-only rules (spec 0024's precedent) rather than new tooling.
+  documentation-only rules (the general-purpose-tooling rule's precedent) rather than new tooling.
 
 Both are the direct output of "keep improving": mined further into the same reference
 material rather than re-treading 0021-0025's ground. Still open, still set aside: tbench2
 environment bootstrap, SIA weight updates.
 
-## 2026-07-08 — Regression gate in verification (spec 0029)
+## 2026-07-08 — Regression gate in verification
 
 `spec-verify` checked a spec's own criteria and Verification step but never the project's
 standing gates, so an implementation could pass its own check while breaking other specs'
 tests. Meta-Harness's outer loop scores every candidate on the full benchmark, never only
 its target capability — translated here: verification now also runs the project's own gates
 (`make check` + test suite for the harness; a nested project's declared equivalents,
-discovered not hardcoded per spec 0024) and a gate failure fails the spec under the same
+discovered not hardcoded per the general-purpose-tooling rule) and a gate failure fails the spec under the same
 retry contract. Once per session against a shared tree, with attribution — not once per
 spec. A project with no gates gets a note, not a failure.
 
@@ -118,7 +118,7 @@ rather than renumbering shipped references. If a future planning pass wants to r
 fine — ids only need to be unique, not contiguous (check-specs.sh checks duplicates, not
 gaps).
 
-## 2026-07-08 — Criteria drift check: the test must not change while being taken (spec 0030)
+## 2026-07-08 — Criteria drift check: the test must not change while being taken
 
 The one Meta-Harness mechanism the earlier passes under-weighted: the held-out test set,
 "never exposed during evolution," guarding the evaluation from the optimizing process. In a
@@ -145,7 +145,7 @@ memory/spec-ledger.jsonl becomes the durable outcome record, and cycle-time metr
 frontmatter history entries (0020) rather than the git fallback. Flipping the knob back to
 true restores the original fully-reviewable convention without touching any prose.
 
-## 2026-07-09 — Trace diff and confound-isolation in the fix path (specs 0031-0032)
+## 2026-07-09 — Trace diff and confound-isolation in the fix path
 
 A full re-read of the Meta-Harness paper (arXiv:2603.28052) against the adopted inventory
 surfaced two missed mechanisms, both now in:
@@ -154,7 +154,7 @@ surfaced two missed mechanisms, both now in:
   results between pairs of runs" — the one capability the trace CLI lacked. New `diff`
   subcommand compares two attempts of a spec (defaulting to the last two), answering the
   second-failure question directly: what did the fix actually change in observed behavior?
-- **0032 — fix only what failed.** Appendix A.2's central causal lesson: the proposer's
+- **Fix only what failed.** Appendix A.2's central causal lesson: the proposer's
   first two candidates bundled structural fixes with prompt edits, both regressed, and only
   isolating the changes revealed the confound; the eventual winner was deliberately
   additive. spec-exec's fix path now requires retries to change only what the failure
@@ -169,7 +169,7 @@ reasons recorded above.
 
 ## 2026-07-09 — Operative files cite PR #102, not uncommitted spec ids
 
-With spec_files.tracked: false, provenance markers like "(spec 0021)" in skills, scripts,
+With spec_files.tracked: false, provenance markers like "" in skills, scripts,
 tests, and docs pointed at documents a fresh clone doesn't have. Cleanup pass rewrote every
 such reference in operative files to "(PR #102)" — the durable, reachable home of the
 rationale — or dropped it where the surrounding prose already carries the reasoning.

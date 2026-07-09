@@ -3,7 +3,7 @@
 Surprising behaviors of this repo/tooling that cost time to discover. Entry format and
 pruning convention: see `memory/README.md`.
 
-## 2026-07-08 — Multi-line shell run under /bin/sh silently ships broken generated files (spec 0021 dogfooding)
+## 2026-07-08 — Multi-line shell run under /bin/sh silently ships broken generated files (trace-generation dogfooding)
 
 A batch trace-generation command using bashisms (`declare -A`, `${map[$key]}`) was executed
 through a tool whose default shell was /bin/sh (dash). Dash rejected the bashisms line by

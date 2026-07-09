@@ -141,7 +141,7 @@ MAX_DEPTH="$(printf '%s' "$SPEC_DATA" | awk -F'\t' '
 printf "  %-22s %s\n" "specs with depends_on" "$WITH_DEPS"
 printf "  %-22s %s spec(s)\n" "max chain depth" "$MAX_DEPTH"
 
-# ── Cycle time: history frontmatter first, git as fallback (spec 0020) ──────
+# ── Cycle time: history frontmatter first, git as fallback ──────
 # A spec carrying `history:` entries (flat `- <state> <ISO-8601 UTC>` lines, written
 # at each lifecycle move) is measured ready -> finished from those. Specs predating
 # the convention fall back to git: --follow rides through the git-mv lifecycle moves;

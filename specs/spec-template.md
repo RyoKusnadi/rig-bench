@@ -67,7 +67,7 @@ its implementation. A spec reaching `finished/` with `pr` still empty is flagged
 `scripts/check-specs.sh` (specs predating these fields have no `pr` key and are exempt).
 
 `history` (frontmatter) records when the spec entered each lifecycle state, as flat
-`- <state> <ISO-8601 UTC timestamp>` entries (spec 0020). Whoever writes the spec to
+`- <state> <ISO-8601 UTC timestamp>` entries. Whoever writes the spec to
 `ready/` records the first entry, and each later move appends one in the same step as the
 `git mv` and `status` edit (`date -u +%Y-%m-%dT%H:%M:%SZ`), replacing the empty `[]` with a
 block list on first append:

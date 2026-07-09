@@ -102,7 +102,7 @@ for f in "${SPEC_FILES[@]}"; do
 done
 
 # ── Map/graph checks: duplicate ids, dangling depends_on, cycles,
-#    finished-depends-on-unfinished (spec 0005) — one awk pass ──────────────
+#    finished-depends-on-unfinished — one awk pass ──────────────
 # Cycle detection is a recursive DFS with white(0)/gray(1)/black(2) coloring;
 # a gray hit is a cycle. Dangling deps are reported once and never enter the
 # dep graph, so no double-report.
@@ -174,7 +174,7 @@ if [[ -n "$GRAPH_REPORT" ]]; then
   ISSUES=$((ISSUES + GRAPH_ISSUES))
 fi
 
-# ── File-conflict gate: shared paths across ready/in_progress specs (spec 0013) ──
+# ── File-conflict gate: shared paths across ready/in_progress specs ──
 # Two specs eligible for (concurrent) execution that touch the same file must be
 # ordered via depends_on — either direction, directly or transitively. Path per
 # bullet: the first backticked span if present, else the first token, so trailing
@@ -252,7 +252,7 @@ done
 
 # ── Status/folder mismatch: frontmatter status must match the lifecycle folder ──
 # Valid states are derived from workflows/state.yaml (the machine-readable state
-# table) rather than hand-maintained here — spec 0001 removed the third copy.
+# table) rather than hand-maintained here (an earlier hand-maintained third copy was removed).
 # Parsing stays line-oriented (awk only) to keep this script dependency-free.
 STATE_YAML="workflows/state.yaml"
 if [[ ! -f "$STATE_YAML" ]]; then
@@ -290,12 +290,12 @@ for f in "${SPEC_FILES[@]}"; do
   fi
 done
 
-# ── Spec-quality lint (spec 0015) ────────────────────────────────────────────
+# ── Spec-quality lint ────────────────────────────────────────────
 # Three prose invariants made checkable: clarification markers may not leave draft/,
 # a generated failures section implies verify_attempts > 0, and every spec carries the
 # template's required sections. The required-section list is derived from the template's
 # own ## headings — no hand-maintained copy (same reasoning as the state.yaml-derived
-# state list, spec 0001).
+# state list).
 SPEC_TEMPLATE="specs/spec-template.md"
 if [[ ! -f "$SPEC_TEMPLATE" ]]; then
   echo "Error: $SPEC_TEMPLATE is missing — it is the source of the required-section list." >&2
@@ -337,7 +337,7 @@ $REQUIRED_SECTIONS
 EOF
 done
 
-# ── Transition enforcement: folder moves must follow state.yaml valid_next (spec 0014) ──
+# ── Transition enforcement: folder moves must follow state.yaml valid_next ──
 # Compares each spec's lifecycle folder between a base ref and the current tree via git
 # rename detection, so a `git mv` between lifecycle folders is one transition, not a
 # delete+add. Fail-open: no resolvable base ref (non-git fixture, shallow clone without
@@ -387,7 +387,7 @@ if git rev-parse --verify --quiet "$TRANS_BASE" >/dev/null 2>&1; then
   fi
 fi
 
-# ── Criteria drift: the test must not change while being taken (PR #102) ──
+# ── Criteria drift: the test must not change while being taken ──
 # A spec's Acceptance Criteria and Verification sections are what the implementation gets
 # graded against; silently editing them after work starts is grading against a weakened
 # test (Meta-Harness's held-out-set principle: the evaluation target is never exposed to —
@@ -418,12 +418,12 @@ if git rev-parse --verify --quiet "$DRIFT_BASE" >/dev/null 2>&1; then
     cur_sections="$(extract_graded_sections < "$f")"
     if [[ "$base_sections" != "$cur_sections" ]]; then
       echo "WARN [criteria-drift]: $f's Acceptance Criteria or Verification section differs from ${DRIFT_BASE}:${base_path}."
-      echo "  The graded sections changed after work started (PR #102) — confirm this was a deliberate, human-approved scope change, not the implementation adjusting its own test."
+      echo "  The graded sections changed after work started — confirm this was a deliberate, human-approved scope change, not the implementation adjusting its own test."
     fi
   done
 fi
 
-# ── PR traceability: a finished spec with a pr key must carry a value (spec 0012) ──
+# ── PR traceability: a finished spec with a pr key must carry a value ──
 # Specs predating the branch/pr fields have no `pr:` key at all and are exempt;
 # an empty value on a finished spec means the spec-exec recording step was skipped.
 for f in "${SPEC_FILES[@]}"; do
@@ -435,12 +435,12 @@ for f in "${SPEC_FILES[@]}"; do
   pr_val="$(printf '%s\n' "$fm" | fm_field pr)"
   if [[ -z "$pr_val" ]]; then
     echo "ISSUE [empty-pr]: $f is finished but its 'pr' frontmatter field is empty."
-    echo "  spec-exec records the PR URL when the draft PR opens (spec 0012) — backfill it."
+    echo "  spec-exec records the PR URL when the draft PR opens — backfill it."
     ISSUES=$((ISSUES + 1))
   fi
 done
 
-# ── Memory writeback check: escalations must leave a lessons.md entry (spec 0018) ──
+# ── Memory writeback check: escalations must leave a lessons.md entry ──
 # The lifecycle loop promises every blocked escalation (and every failed verification)
 # a distilled memory/lessons.md entry — this makes the promise checkable. Provenance
 # match: a "## " heading that mentions "spec" and contains the raw id, which accepts

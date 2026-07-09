@@ -28,8 +28,8 @@ attention:
 
 # Whether spec markdown files (and their .traces/ directories) are committed to git.
 # tracked: true is the original convention — lifecycle moves are force-added past the
-# gitignore so every state change is reviewable in PRs, and the transition (spec 0014)
-# and criteria-drift (PR #102) checks can compare against a base ref. tracked: false
+# gitignore so every state change is reviewable in PRs, and the transition
+# and criteria-drift checks can compare against a base ref. tracked: false
 # (this repo's owner preference, 2026-07-08 — see memory/decisions.md) keeps spec
 # documents as local working state: PRs carry implementation changes only, the skills
 # skip the add/commit of spec and trace paths, and those two base-ref checks are

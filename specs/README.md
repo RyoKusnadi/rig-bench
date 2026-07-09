@@ -124,7 +124,7 @@ old path). Treat `finished/` as a working-set convenience (what shipped recently
 scan) rather than an archive. There is currently no separate long-term archive mechanism —
 git history is it, for now.
 
-**Transition timestamps (spec 0020):** each spec's `history` frontmatter list records when
+**Transition timestamps:** each spec's `history` frontmatter list records when
 it entered each state, as flat `- <state> <ISO-8601 UTC timestamp>` entries. Whoever writes
 the spec to `ready/` records the first entry; every later move appends one *in the same
 step* as the `git mv` and `status` edit (same-step discipline per `memory/lessons.md`
@@ -158,7 +158,7 @@ the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, e
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
 is no third hand-maintained copy.
 
-**Transition enforcement (spec 0014):** `valid_next` is enforced, not just documented —
+**Transition enforcement:** `valid_next` is enforced, not just documented —
 `scripts/check-specs.sh` diffs each spec's lifecycle folder against a base ref
 (`origin/main` by default, `TRANSITION_BASE_REF` to override) and reports an
 `[illegal-transition]` ISSUE when no `valid_next` path leads from the old folder to the new
@@ -242,7 +242,7 @@ state: the folder lifecycle, retry contract, traces, and fix loop all work ident
 disk, but commits carry implementation changes only, `memory/spec-ledger.jsonl` becomes the
 durable outcome record, and the two base-ref checks are dormant for spec files (nothing
 committed to diff). Cycle-time metrics still work via the frontmatter `history` entries
-(spec 0020); the git-estimated fallback does not.
+; the git-estimated fallback does not.
 
 **Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
 `memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace
@@ -292,7 +292,7 @@ worktree from the same base commit).
 earlier one in `depends_on`. This forces serial execution — the second spec
 lands on top of the first instead of diverging from the same base.
 
-**The scan is automated (spec 0013):** `scripts/check-specs.sh <project>` reports a
+**The scan is automated:** `scripts/check-specs.sh <project>` reports a
 `[file-conflict]` ISSUE for any file shared between two `ready/`/`in_progress/` specs that
 have no `depends_on` path between them (either direction, directly or transitively). It runs
 via `make check`, CI, and the post-spec-edit hook — so drift is caught at write time, not

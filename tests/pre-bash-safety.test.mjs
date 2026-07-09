@@ -36,7 +36,7 @@ const MUST_ASK = [
   "git branch -D feature-x",
   "git branch --delete --force feature-x",
   "git clean -fd",
-  // spec 0016 additions
+  // extended ask-first patterns
   "rm -rf src",
   "rm -r -f ./build",
   "sudo rm -rf /var/data",
@@ -60,7 +60,7 @@ const MUST_ALLOW = [
   "git clean -fdX", // the Makefile's own clean — ignored files only
   "echo 'git push --force' > notes.txt && cat notes.txt", // matching here is acceptable either way; see below
   "ls -la",
-  // spec 0016 additions
+  // extended ask-first patterns
   "rm -rf /tmp/scratch",
   "rm -rf /private/tmp/build-cache",
   "rm -rf node_modules",

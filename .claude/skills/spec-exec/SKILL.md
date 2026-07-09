@@ -152,7 +152,7 @@ For each spec (whether run concurrently or one at a time):
    - **Every move here and in step 3** updates the `status` field *and* appends a
      `history` entry (`- <entered state> $(date -u +%Y-%m-%dT%H:%M:%SZ)`, creating the
      block list from `history: []` on first append) in the same step as the `git mv` —
-     never as a separate pass (spec 0020; see the template's `history` note).
+     never as a separate pass (see the template's `history` note).
 2. **Implement.** Read the full spec content and implement every acceptance criterion.
    **Prototype first if the spec introduces a new mechanism.** If any Acceptance Criterion or
    Implementation Note describes a mechanism that doesn't already exist in the repo (a new
@@ -170,7 +170,7 @@ For each spec (whether run concurrently or one at a time):
    and PR URL in the spec's
    `branch` and `pr` frontmatter fields (they default to `""` from the template) — the spec
    carries its own implementation pointers, and `check-specs.sh` flags a finished spec whose
-   `pr` field is still empty (spec 0012). If `workflows/state.yaml`'s `spec_files.tracked` is
+   `pr` field is still empty. If `workflows/state.yaml`'s `spec_files.tracked` is
    `true`, commit that with the spec's lifecycle move; with `tracked: false`, the frontmatter
    update stays local like the spec file itself — commits carry implementation changes only.
    Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —

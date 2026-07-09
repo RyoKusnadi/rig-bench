@@ -42,7 +42,7 @@ believed and why it changed, without archaeology.
 
 ## The lifecycle loop
 
-These notebooks are wired into the spec lifecycle (spec 0003), not just available to it:
+These notebooks are wired into the spec lifecycle, not just available to it:
 
 - **Write:** `spec-verify` appends a distilled `lessons.md` entry on every failed
   verification and every blocked escalation (and optionally on a pass that taught something

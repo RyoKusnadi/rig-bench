@@ -2,7 +2,7 @@
 # spec-status.sh — read-only status view over one project's spec lifecycle:
 # per-state counts (states from workflows/state.yaml, lifecycle order) plus
 # attention items (waiting_verification specs with failed attempts, blocked specs,
-# and an advisory verification-failure-rate line over finished/ — spec 0011).
+# and an advisory verification-failure-rate line over finished/).
 #
 # Usage: scripts/spec-status.sh <project>
 #        scripts/spec-status.sh          (only valid if exactly one specs/<project>/ exists)
