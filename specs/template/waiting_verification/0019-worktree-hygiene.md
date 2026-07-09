@@ -1,13 +1,11 @@
 ---
 id: "0019"
 title: Worktree hygiene script for concurrent dispatch
-status: finished
+status: waiting_verification
 depends_on: []
 verify_attempts: 0
 branch: "0019-worktree-hygiene"
 pr: "https://github.com/RyoKusnadi/rig-bench/pull/101"
-history:
-  - finished 2026-07-08T12:09:22Z
 source: ""
 ---
 ## Problem
