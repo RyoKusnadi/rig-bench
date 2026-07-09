@@ -194,6 +194,19 @@ For each spec (whether run concurrently or one at a time):
    signal a distilled list drops, and often the difference between guessing at a fix and
    seeing the real cause. Leave the failures section in the file; `spec-verify` clears it (and
    the trace dir) on the next passing run, or replaces it if this fix still doesn't pass.
+
+   **Fix only what failed — keep the retry attributable.** A retry that bundles the criterion
+   fix with opportunistic refactors, cleanups, or "while I'm in here" improvements can't be
+   diagnosed if it fails again: the second failure could be the original bug or any of the
+   bundled changes, and the attempt budget (`MAX_VERIFY_ATTEMPTS`) is too small to spend
+   on disentangling that. This is the confound Meta-Harness's proposer had to learn the
+   hard way (its first two candidates bundled structural fixes with prompt edits, both
+   regressed, and only isolating the changes revealed which part was harmful — Appendix
+   A.2, iterations 1-3); its eventual winner was deliberately *additive*, leaving working
+   machinery untouched. Apply both lessons: change only what the failure record implicates,
+   prefer additive changes over rewiring passing behavior, and if this is already a second
+   attempt, run `scripts/spec-trace.sh diff <project> <id>` first to see exactly what the
+   previous fix changed in observed behavior before deciding what to try next.
 3. **Move to waiting_verification.** `git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 

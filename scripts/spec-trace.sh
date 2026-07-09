@@ -7,13 +7,20 @@
 # fix loop (spec-exec) reads them; a human can grep them.
 #
 # Usage:
-#   scripts/spec-trace.sh <project>            # list specs that have traces (attempts, latest)
-#   scripts/spec-trace.sh <project> <id>       # show the latest attempt's trace for <id>
-#   scripts/spec-trace.sh <project> <id> <n>   # show attempt <n> for <id>
-#   scripts/spec-trace.sh                       # single-project shorthand (list)
+#   scripts/spec-trace.sh <project>                  # list specs that have traces (attempts, latest)
+#   scripts/spec-trace.sh <project> <id>             # show the latest attempt's trace for <id>
+#   scripts/spec-trace.sh <project> <id> <n>         # show attempt <n> for <id>
+#   scripts/spec-trace.sh diff <project> <id> [a b]  # diff two attempts (default: last two)
+#   scripts/spec-trace.sh                            # single-project shorthand (list)
+#
+# The diff mode exists for the second failure: when a spec fails verification again after a
+# fix, diffing the two attempts' traces shows exactly what the fix changed in the observed
+# behavior — which criteria flipped, which command output moved — before deciding what to
+# try next (Meta-Harness, Appendix D: the log CLI should "diff code and results between
+# pairs of runs").
 #
 # Dependency-free bash per memory/decisions.md — grep is the query engine by design.
-# Spec: specs/template/*/0021-verification-trace-capture.md
+# Spec: specs/template/*/0021-verification-trace-capture.md, diff added by 0031.
 
 set -euo pipefail
 
@@ -23,6 +30,7 @@ cd "$REPO_ROOT"
 
 usage() {
   echo "Usage: scripts/spec-trace.sh [project] [id] [attempt]" >&2
+  echo "       scripts/spec-trace.sh diff <project> <id> [attempt_a attempt_b]" >&2
 }
 
 # ── Resolve project (mirrors spec-status.sh's single-project shorthand) ───────
@@ -59,6 +67,50 @@ latest_attempt() {
   done
   printf '%s\n' "$max"
 }
+
+# ── Diff mode: compare two attempts of one spec (default: the last two) ───────
+if [[ $# -ge 1 && "$1" == "diff" ]]; then
+  shift
+  if [[ $# -lt 2 || $# -gt 4 || $# -eq 3 ]]; then
+    usage
+    exit 1
+  fi
+  PROJECT="$(resolve_project "$1")"
+  ID="$2"
+  A="${3:-}"
+  B="${4:-}"
+  TRACE_DIR="specs/${PROJECT}/.traces/${ID}"
+  if [[ ! -d "$TRACE_DIR" ]]; then
+    echo "Error: no verification trace for spec ${ID} in '${PROJECT}'." >&2
+    exit 1
+  fi
+  if [[ -z "$A" ]]; then
+    B="$(latest_attempt "$TRACE_DIR")"
+    if [[ -z "$B" || "$B" -lt 2 ]]; then
+      echo "Error: spec ${ID} has fewer than two attempts — nothing to diff." >&2
+      exit 1
+    fi
+    # default: previous attempt vs latest — the "what did the fix change" question
+    A=$((B - 1))
+    while [[ "$A" -ge 1 && ! -f "$TRACE_DIR/attempt-${A}.md" ]]; do A=$((A - 1)); done
+    if [[ "$A" -lt 1 ]]; then
+      echo "Error: spec ${ID} has only one attempt on disk — nothing to diff." >&2
+      exit 1
+    fi
+  fi
+  FA="$TRACE_DIR/attempt-${A}.md"
+  FB="$TRACE_DIR/attempt-${B}.md"
+  for f in "$FA" "$FB"; do
+    if [[ ! -f "$f" ]]; then
+      echo "Error: $(basename "$f") does not exist for spec ${ID} in '${PROJECT}'." >&2
+      exit 1
+    fi
+  done
+  echo "Trace diff — spec ${ID}: attempt-${A} vs attempt-${B}"
+  # diff exits 1 when files differ; that's the expected, successful case here.
+  diff -u "$FA" "$FB" || true
+  exit 0
+fi
 
 if [[ $# -gt 3 ]]; then
   usage

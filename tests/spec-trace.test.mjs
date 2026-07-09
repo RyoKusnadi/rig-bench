@@ -108,3 +108,32 @@ test("fails clearly for a non-existent project", (t) => {
   assert.equal(code, 1);
   assert.match(stderr, /specs\/nonexistent does not exist/);
 });
+
+test("diff mode compares the last two attempts by default (spec 0031)", (t) => {
+  const dir = makeFixture(t, {
+    traces: { "0021": { "1": "verdict: FAIL\ncommon line\n", "2": "verdict: PASS\ncommon line\n" } },
+  });
+  const { code, stdout } = run(dir, ["diff", "template", "0021"]);
+  assert.equal(code, 0);
+  assert.match(stdout, /attempt-1 vs attempt-2/);
+  assert.match(stdout, /-verdict: FAIL/);
+  assert.match(stdout, /\+verdict: PASS/);
+});
+
+test("diff mode accepts an explicit attempt pair (spec 0031)", (t) => {
+  const dir = makeFixture(t, {
+    traces: { "0021": { "1": "one\n", "2": "two\n", "3": "three\n" } },
+  });
+  const { code, stdout } = run(dir, ["diff", "template", "0021", "1", "3"]);
+  assert.equal(code, 0);
+  assert.match(stdout, /attempt-1 vs attempt-3/);
+  assert.match(stdout, /-one/);
+  assert.match(stdout, /\+three/);
+});
+
+test("diff mode fails clearly with fewer than two attempts (spec 0031)", (t) => {
+  const dir = makeFixture(t, { traces: { "0021": { "1": "only\n" } } });
+  const { code, stderr } = run(dir, ["diff", "template", "0021"]);
+  assert.equal(code, 1);
+  assert.match(stderr, /fewer than two attempts|only one attempt/);
+});

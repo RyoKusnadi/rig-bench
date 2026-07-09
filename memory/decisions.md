@@ -144,3 +144,25 @@ accepted deliberately: with tracked: false the [illegal-transition] (0014) and
 memory/spec-ledger.jsonl becomes the durable outcome record, and cycle-time metrics rely on
 frontmatter history entries (0020) rather than the git fallback. Flipping the knob back to
 true restores the original fully-reviewable convention without touching any prose.
+
+## 2026-07-09 — Trace diff and confound-isolation in the fix path (specs 0031-0032)
+
+A full re-read of the Meta-Harness paper (arXiv:2603.28052) against the adopted inventory
+surfaced two missed mechanisms, both now in:
+
+- **0031 — `spec-trace.sh diff`.** Appendix D's log-CLI guidance includes "diffs code and
+  results between pairs of runs" — the one capability the trace CLI lacked. New `diff`
+  subcommand compares two attempts of a spec (defaulting to the last two), answering the
+  second-failure question directly: what did the fix actually change in observed behavior?
+- **0032 — fix only what failed.** Appendix A.2's central causal lesson: the proposer's
+  first two candidates bundled structural fixes with prompt edits, both regressed, and only
+  isolating the changes revealed the confound; the eventual winner was deliberately
+  additive. spec-exec's fix path now requires retries to change only what the failure
+  record implicates, prefer additive changes over rewiring passing behavior, and diff the
+  prior attempts' traces before a second fix. This extends 0023's one-mechanism planning
+  rule to the retry loop, where it was missing.
+
+Both cite exact paper locations; the rest of the unadopted inventory (per-iteration success
+reports, Pareto frontier, interface-validation smoke test, separate evaluator agent) was
+re-checked in the same pass and remains either already-covered or rejected for standing
+reasons recorded above.
