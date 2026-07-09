@@ -47,7 +47,7 @@ is this convention's lightweight equivalent of Spec Kit/Kiro's `plan.md`.
 If the design substantially borrows from a paper, a reference implementation, or another
 open-source project, name the source here (title/repo + link if available) rather than
 presenting the mechanism as invented fresh — a reader deciding whether to trust or extend the
-approach needs to know where its evidence comes from (spec 0028).
+approach needs to know where its evidence comes from (PR #102).
 
 ## Verification
 
@@ -85,7 +85,7 @@ to git history for specs that predate the convention.
 spec primarily changes — e.g. `verification-loop`, `planning-discipline`, `tooling-rule`,
 `memory-ledger`, `dispatch`. Left `""` for specs where no single axis is a natural fit (many
 specs, especially outside `template/`'s own harness-improvement work, won't need one).
-`spec-verify` records it into `memory/spec-ledger.jsonl` on `finished`/`blocked` (spec 0025),
+`spec-verify` records it into `memory/spec-ledger.jsonl` on `finished`/`blocked`,
 and `spec-plan` checks recent axes there before drafting something in the same area
-repeatedly (spec 0027) — the label only needs to be consistent enough to `grep` for, not a
+repeatedly — the label only needs to be consistent enough to `grep` for, not a
 fixed enum.

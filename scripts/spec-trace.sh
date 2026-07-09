@@ -20,7 +20,7 @@
 # pairs of runs").
 #
 # Dependency-free bash per memory/decisions.md — grep is the query engine by design.
-# Spec: specs/template/*/0021-verification-trace-capture.md, diff added by 0031.
+# Introduced in PR #102 (trace capture; diff subcommand added in the same PR).
 
 set -euo pipefail
 

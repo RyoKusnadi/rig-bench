@@ -454,7 +454,7 @@ test("check-specs: unresolvable base ref skips the transition check (spec 0014)"
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
-test("check-specs: graded sections edited after work started warn but pass (spec 0030)", (t) => {
+test("check-specs: graded sections edited after work started warn but pass (criteria drift)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
   gitInit(repo);
@@ -467,7 +467,7 @@ test("check-specs: graded sections edited after work started warn but pass (spec
   assert.match(out.stdout, /WARN \[criteria-drift\].*0001-a\.md/);
 });
 
-test("check-specs: lifecycle move alone is not criteria drift (spec 0030)", (t) => {
+test("check-specs: lifecycle move alone is not criteria drift (criteria-drift negative)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
   gitInit(repo);
@@ -477,7 +477,7 @@ test("check-specs: lifecycle move alone is not criteria drift (spec 0030)", (t) 
   assert.doesNotMatch(out.stdout, /criteria-drift/);
 });
 
-test("check-specs: spec id absent at the base ref is skipped by the drift check (spec 0030)", (t) => {
+test("check-specs: spec id absent at the base ref is skipped by the drift check (criteria drift)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
   gitInit(repo);

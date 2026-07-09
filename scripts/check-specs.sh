@@ -387,7 +387,7 @@ if git rev-parse --verify --quiet "$TRANS_BASE" >/dev/null 2>&1; then
   fi
 fi
 
-# ── Criteria drift: the test must not change while being taken (spec 0030) ──
+# ── Criteria drift: the test must not change while being taken (PR #102) ──
 # A spec's Acceptance Criteria and Verification sections are what the implementation gets
 # graded against; silently editing them after work starts is grading against a weakened
 # test (Meta-Harness's held-out-set principle: the evaluation target is never exposed to —
@@ -418,7 +418,7 @@ if git rev-parse --verify --quiet "$DRIFT_BASE" >/dev/null 2>&1; then
     cur_sections="$(extract_graded_sections < "$f")"
     if [[ "$base_sections" != "$cur_sections" ]]; then
       echo "WARN [criteria-drift]: $f's Acceptance Criteria or Verification section differs from ${DRIFT_BASE}:${base_path}."
-      echo "  The graded sections changed after work started (spec 0030) — confirm this was a deliberate, human-approved scope change, not the implementation adjusting its own test."
+      echo "  The graded sections changed after work started (PR #102) — confirm this was a deliberate, human-approved scope change, not the implementation adjusting its own test."
     fi
   done
 fi

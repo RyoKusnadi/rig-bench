@@ -192,7 +192,7 @@ dispatched spec-executor agents (mirrored as `dispatch.max_concurrent` in
 (default `0`, see `spec-template.md`) that `spec-verify` — and only `spec-verify` — increments.
 
 When `spec-verify` finds a spec fails (any Acceptance Criterion, the Verification step, or
-the project's standing gates — the *regression gate* of spec 0029: a spec that passes its own
+the project's standing gates — the *regression gate* (PR #102): a spec that passes its own
 check while breaking `make check`/the test suite fails verification):
 
 1. Increment `verify_attempts` by 1.
@@ -249,7 +249,7 @@ committed to diff). Cycle-time metrics still work via the frontmatter `history` 
 and failure section, this record is never cleared; it's the durable, queryable history of
 what shipped or got stuck, across every spec, so `spec-plan` can check
 `scripts/spec-ledger.sh list <project> blocked` before drafting something similar from
-scratch (spec 0025).
+scratch (PR #102).
 
 ## Template
 

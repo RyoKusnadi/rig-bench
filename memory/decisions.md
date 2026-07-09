@@ -166,3 +166,14 @@ Both cite exact paper locations; the rest of the unadopted inventory (per-iterat
 reports, Pareto frontier, interface-validation smoke test, separate evaluator agent) was
 re-checked in the same pass and remains either already-covered or rejected for standing
 reasons recorded above.
+
+## 2026-07-09 — Operative files cite PR #102, not uncommitted spec ids
+
+With spec_files.tracked: false, provenance markers like "(spec 0021)" in skills, scripts,
+tests, and docs pointed at documents a fresh clone doesn't have. Cleanup pass rewrote every
+such reference in operative files to "(PR #102)" — the durable, reachable home of the
+rationale — or dropped it where the surrounding prose already carries the reasoning.
+References to tracked specs (0001-0020) stay as ids. memory/ notebooks keep spec ids
+throughout: they are the narrative record and self-contained. Convention going forward:
+in operative files, cite something a clone can resolve (a tracked spec id or a PR);
+uncommitted spec documents are working state, not citable anchors.

@@ -12,7 +12,7 @@
 #
 #   <outcome> is "finished" or "blocked".
 #   [axis] is an optional freeform label for which part of the harness this spec primarily
-#   changed (spec-template.md's optional `axis` frontmatter field, spec 0027) — used to spot
+#   changed (spec-template.md's optional `axis` frontmatter field) — used to spot
 #   when several specs in a row have targeted the same area. Omit it, or pass "", for a spec
 #   with no axis set; recorded as an empty string either way.
 #   `list` with no args prints every record; a project and/or outcome narrows it.
@@ -21,7 +21,7 @@
 # built and read with plain string handling, one flat object per line, so `grep`/`cut` work
 # directly on the file too.
 #
-# Spec: specs/template/*/0025-spec-outcome-ledger.md, extended by 0027-axis-diversity-tracking.md
+# Introduced in PR #102 (outcome ledger; the optional axis argument added in the same PR).
 
 set -euo pipefail
 
