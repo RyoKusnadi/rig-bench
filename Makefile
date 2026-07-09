@@ -1,4 +1,4 @@
-.PHONY: clean check verify status metrics worktrees
+.PHONY: clean check verify status metrics worktrees serve
 
 # Remove all files/directories ignored by .gitignore
 clean:
@@ -12,6 +12,10 @@ check:
 # Full gates in one shot: consistency checks + the test suite
 verify: check
 	npm test
+
+# Read-only web dashboard over spec.db (kanban, spec detail, metrics)
+serve:
+	@node --no-warnings scripts/spec-server.mjs
 
 # Read-only lifecycle view: per-state counts + attention items
 status:

@@ -219,3 +219,15 @@ latent bug from the never-commit decision — the skills still instructed `git m
 lifecycle moves, which fails on untracked files; all six sites are now plain `mv`. During
 dual-write the file tree remains authoritative and `import` reconciles divergence in the
 files' favor; flipping authority to the DB is the cut-over decision, deliberately separate.
+
+## 2026-07-09 — Phases 3+4: read-only HTTP layer and a zero-build dashboard
+
+scripts/spec-server.mjs is a deliberately read-only JSON API over spec.db (node:http, no
+dependencies) — every mutation still goes through the CLI gate; the server only observes.
+Endpoints mirror the CLI's queries plus a metrics rollup; /api/states serves the state
+machine straight from workflows/state.yaml so the frontend's kanban columns and the CLI's
+transition enforcement share one source. web/index.html is a single-file, no-build vanilla
+dashboard (kanban by state, spec detail with transitions/attempts/inline trace/drift
+status, metrics strip, 15s refresh), served by the same process: make serve. Read-only
+first was the plan's explicit sequencing — editing from the UI is a later decision, after
+the observed view earns trust.
