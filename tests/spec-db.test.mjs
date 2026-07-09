@@ -139,23 +139,22 @@ test("record-attempt increments attempts on FAIL only and stores the trace", (t)
   assert.match(run(dir, "show", "p", "0001").stdout, /attempts: 1[\s\S]*attempt-2: PASS/);
 });
 
-test("drift detects criteria change between snapshots and is silent otherwise", (t) => {
+test("drift detects file-side criteria tampering across a move; silent otherwise", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
   run(dir, "import", "p");
   run(dir, "move", "p", "0001", "in_progress"); // second snapshot, unchanged
   assert.match(run(dir, "drift", "p", "0001").stdout, /No drift/);
-  // weaken criteria directly in the DB body, then transition to snapshot it
-  const db = path.join(dir, "spec.db");
-  const upd = spawnSync("node", ["--no-warnings", "-e", `
-    const {DatabaseSync}=require('node:sqlite');
-    const d=new DatabaseSync(${JSON.stringify(db)});
-    d.prepare("UPDATE specs SET body_md=replace(body_md,'shall B','shall B or whatever') WHERE id='0001'").run();
-  `], { encoding: "utf8" });
-  assert.equal(upd.status, 0, upd.stderr);
+  // the realistic tampering vector: the implementer weakens the criteria ON DISK
+  // mid-implementation; move must refresh from the file (dual-write source of truth)
+  // before snapshotting, or the drift comparison sees two copies of the stale import
+  const f = path.join(dir, "specs", "p", "ready", "0001-x.md");
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("shall B.", "shall B or whatever."));
   run(dir, "move", "p", "0001", "waiting_verification");
   const out = run(dir, "drift", "p", "0001");
   assert.equal(out.code, 2);
   assert.match(out.stdout, /DRIFT: graded sections changed/);
+  // and the DB body was reconciled to the file
+  assert.match(run(dir, "show", "p", "0001").stdout, /shall B or whatever/);
 });
 
 test("export reproduces frontmatter with DB-held history", (t) => {

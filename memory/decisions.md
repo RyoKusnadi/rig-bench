@@ -231,3 +231,16 @@ dashboard (kanban by state, spec detail with transitions/attempts/inline trace/d
 status, metrics strip, 15s refresh), served by the same process: make serve. Read-only
 first was the plan's explicit sequencing — editing from the UI is a later decision, after
 the observed view earns trust.
+
+## 2026-07-09 — Dogfooding found the dual-write blind spot: move refreshes body from disk
+
+Walking one spec through the exact skill-instructed command sequence surfaced a real bug
+the unit tests missed: `spec-db.mjs move` snapshotted criteria from the DB's stored body,
+which goes stale the moment the file is edited on disk — so mid-flight criteria tampering
+produced two identical stale snapshots and drift reported nothing. Fix: during dual-write
+the file tree is the source of truth, so `move` now locates the spec's file across the
+state folders and reconciles the DB body from it before snapshotting. The old drift test
+tampered via the DB (an unrealistic vector the fix rightly reconciles away); rewritten to
+tamper via the file, doubling as the regression test. Lesson reinforced: fixture tests
+validate mechanisms; only running the integrated, skill-instructed sequence validates the
+system.

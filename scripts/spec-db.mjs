@@ -234,11 +234,36 @@ function cmdShow(db, project, id) {
   console.log(r.body_md.trimEnd());
 }
 
+function findSpecFile(project, id) {
+  const projDir = path.join(ROOT, "specs", project);
+  if (!fs.existsSync(projDir)) return null;
+  for (const state of readStates()) {
+    const dir = path.join(projDir, state.name);
+    if (!fs.existsSync(dir)) continue;
+    const hit = fs.readdirSync(dir).find((f) => f.startsWith(`${id}-`) && f.endsWith(".md"));
+    if (hit) return path.join(dir, hit);
+  }
+  return null;
+}
+
 function cmdMove(db, project, id, toState, actor = "cli") {
   const states = readStates();
   const names = states.map((s) => s.name);
   if (!names.includes(toState)) die(`'${toState}' is not a state (${names.join(", ")})`);
-  const spec = getSpec(db, project, id);
+  let spec = getSpec(db, project, id);
+  // Dual-write: the file tree is the source of truth, and the body may have been edited
+  // on disk since import. Refresh from the file (when present) before snapshotting, so a
+  // criteria snapshot records what the spec says NOW — otherwise drift compares two
+  // copies of the same stale import and mid-flight tampering is invisible.
+  const file = findSpecFile(project, id);
+  if (file) {
+    const parsed = parseSpec(fs.readFileSync(file, "utf8"));
+    if (parsed.body !== spec.body_md) {
+      db.prepare("UPDATE specs SET body_md=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?")
+        .run(parsed.body, project, id);
+      spec = { ...spec, body_md: parsed.body };
+    }
+  }
   const cur = states.find((s) => s.name === spec.status);
   if (!cur.valid_next.includes(toState)) {
     die(`illegal transition '${spec.status}' -> '${toState}' (valid: ${cur.valid_next.join(", ") || "none"})`);
