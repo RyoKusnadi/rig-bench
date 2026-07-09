@@ -55,7 +55,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 | `memory/` | Durable file-based memory (decisions, gotchas, lessons) |
 | `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
 | `lib/` | Placeholder (`.gitkeep`) |
-| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`, `spec-trace.sh` — query view over verification traces, `spec-ledger.sh` — append-only record of finished/blocked spec outcomes) |
+| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`, `spec-trace.sh` — query view over verification traces, `spec-ledger.sh` — append-only record of finished/blocked spec outcomes, `spec-db.mjs` — SQLite system of record for the lifecycle: import/list/show/move with transition + dependency enforcement, attempts, ledger, criteria-drift, export) |
 | `specs/<project>/.traces/` | Raw per-attempt verification traces written by `spec-verify`, read by `spec-exec` on a fix, cleared on success |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
 | `tests/` | `node --test` suites (run via `npm test`) |

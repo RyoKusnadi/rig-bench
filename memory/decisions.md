@@ -192,3 +192,18 @@ criteria-drift checks were deleted outright (both require committed spec history
 history has their implementations if ever needed again), their six tests removed, and
 memory/spec-ledger.jsonl is gitignored as per-machine derived state. make verify now runs
 the full gates in one command.
+
+## 2026-07-09 — Phase 1 of the DB migration: SQLite system of record (spec-db.mjs)
+
+With spec documents never committed, local markdown became per-machine state with no
+shared view. Phase 1 moves the system of record to SQLite via node:sqlite (Node 22
+built-in — zero new dependencies, keeping the no-dependency ethos in spirit): markdown
+stays the authoring format (bodies stored verbatim), the DB owns state, dependencies,
+transition history, verification attempts, terminal outcomes, and per-transition criteria
+snapshots. Two checks deleted in the never-commit decision return stronger here:
+transition legality is enforced on write from state.yaml's valid_next (data-driven, as
+before), and criteria drift is a comparison of snapshots rather than a git diff. The
+unfinished-dependency gate is enforced on moves into in_progress/finished. Next phases per
+the migration plan: skills call this CLI instead of file moves (dual-write first), then a
+read-only HTTP layer, then the frontend. spec.db is gitignored — per-machine in Phase 1;
+hosting is a Phase 3 decision.
