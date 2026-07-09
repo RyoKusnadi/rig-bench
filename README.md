@@ -50,6 +50,11 @@ flowchart TD
 It only asks about things that would actually change how the plan turns out — and when it
 does ask, it comes with a suggestion, not a blank question.
 
+Each spec also has to earn its shape: a stated "if this ships, X should happen" claim, one
+mechanism per spec (an "and also..." is a second spec, not a paragraph), a named source when
+the design borrows from a paper or another project, and a glance at the outcome ledger so
+you don't re-draft something that already shipped — or already got stuck.
+
 ---
 
 ### `/spec-exec`
@@ -74,6 +79,10 @@ flowchart TD
 If two specs you're running at the same time touch the same file, it'll give you a heads-up —
 but it won't stop you, since that gate already ran when the specs were approved.
 
+When a spec introduces a mechanism the repo doesn't already have, the implementation starts
+with a throwaway prototype in `/tmp` — validate the core idea against real inputs first,
+then build it properly. Wiring-only specs skip straight to implementation.
+
 ---
 
 ### `/spec-verify`
@@ -89,7 +98,7 @@ against them one by one, and only moves a spec to `finished/` if everything pass
 flowchart TD
     A[You ask to verify a spec<br/>or specs] --> B[It lists what's<br/>waiting on verification]
     B --> C[Checks each Acceptance<br/>Criterion against the code]
-    C --> D[Runs the Verification<br/>step and records the result]
+    C --> D[Runs the Verification step<br/>and the project's own checks,<br/>records the results]
     D --> E{All checks<br/>passed?}
     E -->|Yes| F[Moves the spec<br/>to finished]
     E -->|No| G{Failed before?}
@@ -97,8 +106,12 @@ flowchart TD
     G -->|Failed twice now| I[Moves it to blocked —<br/>needs a human look]
 ```
 
-Nothing gets marked finished on a partial pass — if even one criterion fails, the spec stays
-put and you get a clear list of what still needs fixing. Fail the same spec twice and it stops
+Nothing gets marked finished on a partial pass — if even one criterion fails, or the
+project's own checks (`make check`, the test suite) break, the spec stays put and you get a
+clear list of what still needs fixing, plus a raw trace of exactly what ran and what it
+printed (`scripts/spec-trace.sh`) for the fix to work from. Outcomes land in an append-only
+ledger (`scripts/spec-ledger.sh list`) so later planning can see what shipped and what got
+stuck. Fail the same spec twice and it stops
 looping silently: it moves to a `blocked/` folder instead, so a spec can't sit forgotten in
 limbo forever without anyone noticing.
 
@@ -177,6 +190,15 @@ fix 0001 — the rate limiter isn't returning 429s under load
 
 Fail the same spec twice and it won't loop silently: it moves to `blocked/` instead, and needs
 a human decision before another attempt.
+
+---
+
+**Spec documents and git:**
+
+Spec files are local working state and are never committed — the lifecycle
+(plan→execute→verify, the retry contract, traces) runs entirely from disk, PRs carry
+implementation changes only, and the append-only outcome ledger
+(`scripts/spec-ledger.sh list`) records what finished or got blocked on each machine.
 
 ---
 

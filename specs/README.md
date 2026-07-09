@@ -124,7 +124,7 @@ old path). Treat `finished/` as a working-set convenience (what shipped recently
 scan) rather than an archive. There is currently no separate long-term archive mechanism —
 git history is it, for now.
 
-**Transition timestamps (spec 0020):** each spec's `history` frontmatter list records when
+**Transition timestamps:** each spec's `history` frontmatter list records when
 it entered each state, as flat `- <state> <ISO-8601 UTC timestamp>` entries. Whoever writes
 the spec to `ready/` records the first entry; every later move appends one *in the same
 step* as the `git mv` and `status` edit (same-step discipline per `memory/lessons.md`
@@ -158,14 +158,6 @@ the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, e
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
 is no third hand-maintained copy.
 
-**Transition enforcement (spec 0014):** `valid_next` is enforced, not just documented —
-`scripts/check-specs.sh` diffs each spec's lifecycle folder against a base ref
-(`origin/main` by default, `TRANSITION_BASE_REF` to override) and reports an
-`[illegal-transition]` ISSUE when no `valid_next` path leads from the old folder to the new
-one. Path reachability, not single-hop membership, because one PR legitimately collapses
-multi-hop moves (`ready → in_progress → waiting_verification`) into one endpoint pair. No
-resolvable base ref (non-git fixtures, shallow clones) skips the check silently.
-
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
 | `draft` | `draft/` | `spec-plan`, drafting | `ready` |
@@ -191,13 +183,22 @@ dispatched spec-executor agents (mirrored as `dispatch.max_concurrent` in
 — see the "Machine-readable mirror" note above). Each spec's frontmatter carries a `verify_attempts` field
 (default `0`, see `spec-template.md`) that `spec-verify` — and only `spec-verify` — increments.
 
-When `spec-verify` finds a spec fails (any Acceptance Criterion or the Verification step):
+When `spec-verify` finds a spec fails (any Acceptance Criterion, the Verification step, or
+the project's standing gates — the *regression gate*: a spec that passes its own
+check while breaking `make check`/the test suite fails verification):
 
 1. Increment `verify_attempts` by 1.
 2. Write (replacing any prior run's) a `## Verification Failures` section into the spec file,
    listing each failed criterion verbatim plus the reason it failed, and the Verification
    step's output if that's what failed. This is the structured handoff — it's what `spec-exec`
    reads to know what to fix, instead of a human having to relay the failure report by hand.
+   Alongside it, `spec-verify` writes the raw run to
+   `specs/<project>/.traces/<id>/attempt-<verify_attempts>.md` — the actual commands and their
+   full output, queryable with `scripts/spec-trace.sh <project> <id>`. The failures section is
+   the compressed handoff; the trace is the uncompressed one. `spec-exec` reads both on a fix,
+   because a distilled summary drops the raw command output that often pinpoints the cause
+   (the empirical basis is the Meta-Harness finding that traces beat summaries as fix signal —
+   see `memory/decisions.md`).
 3. If `verify_attempts < MAX_VERIFY_ATTEMPTS`: leave the file in `waiting_verification/`,
    status unchanged. Report the failure and that this was attempt `{verify_attempts}` of
    `MAX_VERIFY_ATTEMPTS`.
@@ -218,9 +219,25 @@ move — a fresh attempt budget for a spec a human has just reviewed and chosen 
 rather than it re-blocking after a single additional failure.
 
 **Clearing the record on success:** once a spec passes verification, `spec-verify` removes
-the `## Verification Failures` section before moving the file to `finished/` — a shipped
-spec's file shouldn't carry stale failure history; the git history of the file is where that
-record actually lives (`git log --follow` on the spec path).
+the `## Verification Failures` section *and* the spec's `.traces/<id>/` directory before
+moving the file to `finished/` — a shipped spec shouldn't carry stale failure history, raw
+or compressed; the git history of the file (and of the trace dir) is where that record
+actually lives (`git log --follow` on the spec path).
+
+**Spec documents are never committed** (a repo invariant, recorded in CLAUDE.md's
+Non-negotiables): the plan→execute→verify folder lifecycle runs entirely from local disk,
+commits and PRs carry implementation changes only, and `memory/spec-ledger.jsonl` (local,
+gitignored) is each machine's record of what finished or got blocked. The lifecycle folders
+themselves are kept in git via `.gitkeep` so a fresh clone has the structure. Cycle-time
+metrics come from the frontmatter `history` entries; there is no git-based fallback for
+spec files.
+
+**Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
+`memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace
+and failure section, this record is never cleared; it's the durable, queryable history of
+what shipped or got stuck, across every spec, so `spec-plan` can check
+`scripts/spec-ledger.sh list <project> blocked` before drafting something similar from
+scratch.
 
 ## Template
 
@@ -263,7 +280,7 @@ worktree from the same base commit).
 earlier one in `depends_on`. This forces serial execution — the second spec
 lands on top of the first instead of diverging from the same base.
 
-**The scan is automated (spec 0013):** `scripts/check-specs.sh <project>` reports a
+**The scan is automated:** `scripts/check-specs.sh <project>` reports a
 `[file-conflict]` ISSUE for any file shared between two `ready/`/`in_progress/` specs that
 have no `depends_on` path between them (either direction, directly or transitively). It runs
 via `make check`, CI, and the post-spec-edit hook — so drift is caught at write time, not

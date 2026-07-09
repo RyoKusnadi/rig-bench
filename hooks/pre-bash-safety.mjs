@@ -36,7 +36,7 @@ const DESTRUCTIVE_PATTERNS = [
     label: "git clean (force, not limited to ignored files)",
     extra: (cmd) => /\bclean\b[^|;&]*(\s-[a-zA-Z]*d|\s--force[^|;&]*-d|\s-d)/.test(cmd),
   },
-  // ── spec 0016 additions ──
+  // ── extended ask-first patterns ──
   {
     // rm with recursive+force flags targeting anything outside the temp allowlist
     // (/tmp, /private/tmp, node_modules). Flags may be combined, separate, or long.

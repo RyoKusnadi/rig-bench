@@ -1,4 +1,4 @@
-.PHONY: clean check status metrics worktrees
+.PHONY: clean check verify status metrics worktrees
 
 # Remove all files/directories ignored by .gitignore
 clean:
@@ -8,6 +8,10 @@ clean:
 check:
 	scripts/check-state-sync.sh
 	scripts/check-specs.sh template
+
+# Full gates in one shot: consistency checks + the test suite
+verify: check
+	npm test
 
 # Read-only lifecycle view: per-state counts + attention items
 status:

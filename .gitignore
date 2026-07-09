@@ -17,4 +17,4 @@ specs/*/*/*.md
 research/
 projects/*
 !projects/.gitkeep
-specs/*/*/.gitkeep
+specs/*/*/.gitkeepmemory/spec-ledger.jsonl

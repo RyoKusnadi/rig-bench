@@ -3,7 +3,20 @@
 Surprising behaviors of this repo/tooling that cost time to discover. Entry format and
 pruning convention: see `memory/README.md`.
 
-## 2026-07-07 — Stacked PRs + squash merge silently lose content (specs 0012–0020, PRs #92–#100)
+## 2026-07-08 — Multi-line shell run under /bin/sh silently ships broken generated files (trace-generation dogfooding)
+
+A batch trace-generation command using bashisms (`declare -A`, `${map[$key]}`) was executed
+through a tool whose default shell was /bin/sh (dash). Dash rejected the bashisms line by
+line but kept executing: the loop still ran, files were still created — with their
+interpolated sections empty — and the final listing looked plausible. The command "worked"
+while writing 10 degraded artifacts; only reading stderr (a wall of `Bad substitution`)
+revealed it. This is nastier than the bash-3.2 entry below: there the script died loudly;
+here partial execution produced wrong *content* with a success-shaped exit. Rule: never
+inline bashisms into a multi-line command whose executing shell you haven't pinned — write
+the script to a file and run it with an explicit `bash script.sh`, and after any batch file
+generation, read one generated file back before building on it.
+
+## 2026-07-07 — Stacked PRs + squash merge silently lose content (specs 0012–0020)
 
 The 0012→0020 dependency chain was executed as stacked PRs — each spec's PR based on its
 dependency's feature branch, per spec-exec's "Branch base" rule. Squash-merging those PRs
@@ -28,7 +41,7 @@ silently kills the script — extract frontmatter fields with awk (`fm_field`), 
 always exits 0, so missing-id/missing-status get *reported* instead of crashing the
 checker.
 
-## 2026-07-03 — Spec files are gitignored; every add needs -f (spec 0002, PR #63–66)
+## 2026-07-03 — Spec files are gitignored; every add needs -f (spec 0002)
 
 `.gitignore` ignores `specs/*/*/*.md`, so `git add` on a spec file silently stages nothing
 and the commit reports a clean tree. The skills' documented commands all use `git add -f`

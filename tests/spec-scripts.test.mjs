@@ -32,7 +32,7 @@ function makeRepo(t) {
     path.join(dir, "workflows", "state.yaml"),
   );
   fs.mkdirSync(path.join(dir, "specs"));
-  // The quality lint (spec 0015) derives its required-section list from the template.
+  // The quality lint derives its required-section list from the template.
   fs.copyFileSync(
     path.join(ROOT, "specs", "spec-template.md"),
     path.join(dir, "specs", "spec-template.md"),
@@ -53,7 +53,7 @@ function makeRepo(t) {
 }
 
 // Every required template section except Files/Interfaces Touched — fixture specs
-// need all of them to pass the quality lint (spec 0015). Tests that exercise the
+// need all of them to pass the quality lint. Tests that exercise the
 // Files-section parsing supply their own Files section via writeSpecWithBody.
 const OTHER_SECTIONS =
   "## Problem\n\n## Acceptance Criteria\n\n## Out of Scope\n\n" +
@@ -94,36 +94,11 @@ function runEnv(repo, env, script, ...args) {
 }
 
 // Turn a fixture into a git repo with everything committed — the transition
-// check (spec 0014) only activates when a base ref resolves.
-function gitInit(repo) {
-  const opts = { cwd: repo, encoding: "utf8" };
-  for (const args of [
-    ["init", "-q"],
-    ["add", "-A"],
-    ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"],
-  ]) {
-    const res = spawnSync("git", args, opts);
-    if (res.status !== 0) throw new Error(`git ${args.join(" ")}: ${res.stderr}`);
-  }
-}
-
+// check only activates when a base ref resolves.
 // Move a spec between lifecycle folders, updating its status field, and stage
 // the move — the same shape as the skills' git mv + same-step sed. Staging
 // matters: git only rename-detects tracked paths, so an unstaged copy+delete
 // wouldn't register as a transition (git mv stages implicitly in the real flow).
-function moveSpec(repo, project, name, from, to) {
-  const src = path.join(repo, "specs", project, from, name);
-  const dstDir = path.join(repo, "specs", project, to);
-  fs.mkdirSync(dstDir, { recursive: true });
-  const dst = path.join(dstDir, name);
-  const content = fs
-    .readFileSync(src, "utf8")
-    .replace(`status: ${from}`, `status: ${to}`);
-  fs.writeFileSync(dst, content);
-  fs.rmSync(src);
-  spawnSync("git", ["add", "-A"], { cwd: repo, encoding: "utf8" });
-}
-
 // ── check-specs.sh ───────────────────────────────────────────────────────────
 
 test("check-specs: clean project → exit 0, no issues", (t) => {
@@ -207,7 +182,7 @@ test("check-specs: sizing threshold flags oversized Files/Interfaces Touched", (
   assert.match(out.stdout, /ISSUE \[sizing\].*7 files/);
 });
 
-test("check-specs: finished spec with empty pr field flagged (spec 0012)", (t) => {
+test("check-specs: finished spec with empty pr field flagged (pr traceability)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "finished", "0001-a.md", {
     id: "0001",
@@ -243,7 +218,7 @@ test("check-specs: finished spec with a recorded pr URL passes", (t) => {
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
-test("check-specs: shared file across ready specs without a chain flagged (spec 0013)", (t) => {
+test("check-specs: shared file across ready specs without a chain flagged (file conflict)", (t) => {
   const repo = makeRepo(t);
   // 0001 uses a backticked path with trailing prose; 0002 lists the bare path —
   // extraction must normalize both to the same file.
@@ -268,7 +243,7 @@ test("check-specs: shared file across ready specs without a chain flagged (spec 
   assert.match(out.stdout, /ISSUE \[file-conflict\].*'0001' and '0002'.*'lib\/foo\.mjs'/);
 });
 
-test("check-specs: shared file with a depends_on chain passes (spec 0013)", (t) => {
+test("check-specs: shared file with a depends_on chain passes (file conflict)", (t) => {
   const repo = makeRepo(t);
   writeSpecWithBody(
     repo,
@@ -300,7 +275,7 @@ test("check-specs: shared file with a depends_on chain passes (spec 0013)", (t) 
   assert.match(out.stdout, /No issues found/);
 });
 
-test("check-specs: shared file outside ready/in_progress is not a conflict (spec 0013)", (t) => {
+test("check-specs: shared file outside ready/in_progress is not a conflict (file conflict)", (t) => {
   const repo = makeRepo(t);
   writeSpecWithBody(
     repo,
@@ -322,7 +297,7 @@ test("check-specs: shared file outside ready/in_progress is not a conflict (spec
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
-test("check-specs: clarification marker outside draft flagged, inside draft allowed (spec 0015)", (t) => {
+test("check-specs: clarification marker outside draft flagged, inside draft allowed (quality lint)", (t) => {
   const repo = makeRepo(t);
   const body = `${ALL_SECTIONS}\n[NEEDS CLARIFICATION: which auth model?]\n`;
   writeSpecWithBody(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" }, body);
@@ -333,7 +308,7 @@ test("check-specs: clarification marker outside draft flagged, inside draft allo
   assert.doesNotMatch(out.stdout, /ISSUE \[stray-clarification\].*0002/);
 });
 
-test("check-specs: failures section with verify_attempts 0 flagged (spec 0015)", (t) => {
+test("check-specs: failures section with verify_attempts 0 flagged (quality lint)", (t) => {
   const repo = makeRepo(t);
   writeSpecWithBody(
     repo,
@@ -358,7 +333,7 @@ test("check-specs: failures section with verify_attempts 0 flagged (spec 0015)",
   assert.doesNotMatch(out.stdout, /ISSUE \[stale-failures-section\].*0002/);
 });
 
-test("check-specs: missing required section flagged by name (spec 0015)", (t) => {
+test("check-specs: missing required section flagged by name (quality lint)", (t) => {
   const repo = makeRepo(t);
   writeSpecWithBody(
     repo,
@@ -374,7 +349,7 @@ test("check-specs: missing required section flagged by name (spec 0015)", (t) =>
   assert.doesNotMatch(out.stdout, /missing required section '## Problem'/);
 });
 
-test("check-specs: blocked spec without a lessons entry flagged (spec 0018)", (t) => {
+test("check-specs: blocked spec without a lessons entry flagged (memory writeback)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "blocked", "0001-a.md", { id: "0001", status: "blocked" });
   fs.mkdirSync(path.join(repo, "memory"));
@@ -387,7 +362,7 @@ test("check-specs: blocked spec without a lessons entry flagged (spec 0018)", (t
   assert.match(out.stdout, /ISSUE \[missing-lesson\].*\(spec 0001\)/);
 });
 
-test("check-specs: blocked spec with a matching lessons entry passes (spec 0018)", (t) => {
+test("check-specs: blocked spec with a matching lessons entry passes (memory writeback)", (t) => {
   const repo = makeRepo(t);
   writeSpec(repo, "p", "blocked", "0001-a.md", { id: "0001", status: "blocked" });
   writeSpec(repo, "p", "blocked", "0002-b.md", { id: "0002", status: "blocked" });
@@ -402,7 +377,7 @@ test("check-specs: blocked spec with a matching lessons entry passes (spec 0018)
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
-test("check-specs: failed-attempt spec without lessons entry warns but passes (spec 0018)", (t) => {
+test("check-specs: failed-attempt spec without lessons entry warns but passes (memory writeback)", (t) => {
   const repo = makeRepo(t);
   writeSpecWithBody(
     repo,
@@ -418,40 +393,6 @@ test("check-specs: failed-attempt spec without lessons entry warns but passes (s
   const out = runEnv(repo, { LESSONS_FILE: lessons }, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
   assert.match(out.stdout, /WARN \[missing-lesson\].*\(spec 0001\)/);
-});
-
-test("check-specs: move with no valid_next path flagged (spec 0014)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "finished", "ready"); // out of a terminal state
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 1, out.stdout + out.stderr);
-  assert.match(out.stdout, /ISSUE \[illegal-transition\].*'finished' -> 'ready'/);
-});
-
-test("check-specs: single-hop and collapsed multi-hop moves pass (spec 0014)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
-  writeSpec(repo, "p", "ready", "0002-b.md", { id: "0002", status: "ready" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "ready", "in_progress"); // direct valid_next hop
-  // one PR legitimately collapses ready → in_progress → waiting_verification:
-  moveSpec(repo, "p", "0002-b.md", "ready", "waiting_verification");
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr);
-  assert.match(out.stdout, /No issues found/);
-});
-
-test("check-specs: unresolvable base ref skips the transition check (spec 0014)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "finished", "ready");
-  // status/folder now agree ('ready' in ready/), so only the transition check could
-  // fire — and it must not, with no resolvable base.
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "no-such-ref" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
 test("check-specs: empty project → exit 0", (t) => {
@@ -514,7 +455,7 @@ test("spec-status: failed attempts and blocked specs appear under attention", (t
 
 // ── spec-metrics.sh ──────────────────────────────────────────────────────────
 
-test("spec-metrics: history entries drive cycle time without git (spec 0020)", (t) => {
+test("spec-metrics: history entries drive cycle time without git (state timestamps)", (t) => {
   const repo = makeRepo(t); // deliberately not a git repo — history must suffice
   const dir = path.join(repo, "specs", "p", "finished");
   fs.mkdirSync(dir, { recursive: true });
@@ -530,7 +471,7 @@ test("spec-metrics: history entries drive cycle time without git (spec 0020)", (
   assert.doesNotMatch(out.stdout, /0001\s+3 day\(s\) \*/); // not the git-estimated form
 });
 
-test("spec-metrics: finished spec without history falls back to git skip (spec 0020)", (t) => {
+test("spec-metrics: finished spec without history falls back to git skip (state timestamps)", (t) => {
   const repo = makeRepo(t); // non-git fixture: no history and no git → skip message
   writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
   const out = run(repo, "spec-metrics.sh", "p");

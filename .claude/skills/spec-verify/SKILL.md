@@ -88,6 +88,66 @@ Capture and record the output. Mark **PASS** if the output matches what the spec
 If the `Verification` section specifies a manual step that requires human confirmation, ask
 the user to confirm that the verification step passed before continuing.
 
+**3c-2. Run the project's own gates (regression check)**
+
+A spec's Verification step proves its *own* behavior; it says nothing about what the
+implementation broke elsewhere. So after 3c, also run the target project's standing
+gates — whatever that project already defines as its full check suite (for this harness
+itself: the `check` target in the `Makefile` plus the npm test suite; for a nested project
+under `projects/<n>/`, that project's own equivalent — its declared test/lint/build
+commands, discoverable from its Makefile, package manifest, or README). Record the result
+as one more PASS/FAIL line in this spec's report and trace, labeled `Regression gate`.
+
+**A spec whose own Verification passes but whose project gates fail is a FAIL** — same
+retry contract as any criterion failure. Improving one thing while silently breaking others
+is the outcome verification exists to catch; Meta-Harness's outer loop evaluates every
+candidate on the full benchmark rather than only its target capability for exactly this
+reason.
+
+Two scoping notes: run the gates once per verification session when verifying multiple
+specs against the same working tree, not once per spec — attribute a gate failure to the
+spec(s) whose touched files plausibly caused it, and say so in each affected report. And if
+a project defines no gates at all, note that in the report and move on — absence of gates
+is a gap worth flagging, not a verification failure.
+
+**3d. Capture the verification trace**
+
+Before reporting, write the *raw* record of this verification run to
+`specs/<project>/.traces/<id>/attempt-<N>.md`, where `<N>` is this run's attempt number —
+`verify_attempts + 1` (the value it will hold if this run fails; use it whether the run
+passes or fails so a passing first run is `attempt-1`). Create the directory if needed.
+
+The trace is the raw complement to the compressed `## Verification Failures` summary: the
+Meta-Harness result this repo borrows from is that an implementer fed raw execution traces
+fixes far more than one fed only a distilled summary, and the summary cannot recover the
+dropped signal. So capture what the summary drops — the actual commands and their *full*
+output, not a paraphrase. Format:
+
+```
+# Verification trace — spec <id>, attempt <N>
+
+Run: <UTC timestamp>
+Overall: PASS | FAIL
+
+## Criteria
+- [PASS] <criterion text> — <file>:<line> that satisfies it
+- [FAIL] <criterion text> — <what was missing or wrong>
+
+## Verification step
+$ <exact command run>
+<full stdout/stderr, verbatim; truncate a single output past ~400 lines with a
+ "... (truncated, M more lines)" marker rather than paraphrasing it>
+
+## Regression gate
+$ <exact gate commands run>
+<full output, same truncation rule; or "no gates defined for this project">
+```
+
+Keep it factual and raw — this file exists so the fix loop can read what actually happened,
+not a second summary of it. For a manual/human-confirmed verification step, record the
+check described and the human's confirmation in place of command output. Writing the trace
+never blocks the verdict: if the trace can't be written, note it in the report and continue.
+
 ## Phase 4 — Report results
 
 After checking all selected specs, print a summary table:
@@ -98,6 +158,7 @@ Spec 0001 — <title>
   [FAIL] Criterion 2: <criterion text>
          Reason: <what was missing or wrong>
   [PASS] Verification: <command output>
+  [PASS] Regression gate: <project gates run, or "no gates defined">
 
 Overall: PASS / FAIL
 ```
@@ -111,11 +172,17 @@ it — a shipped spec shouldn't carry stale failure history in the working tree;
 of the file is the permanent record of what failed before, per "Clearing the record on
 success" in `specs/README.md`.
 
+In the same clearing step, remove this spec's trace directory if present
+(`git rm -r --quiet specs/<project>/.traces/<id>` when tracked, else `rm -rf`) — the traces
+are the raw form of that same failure history and clear on success for the same reason; git
+history keeps them. A spec that passes on its first attempt still wrote an `attempt-1` trace
+in Phase 3d; remove it here too so `finished/` specs never carry a trace dir.
+
 If the spec's `pr` frontmatter field is non-empty, confirm the PR's state with
 `gh pr view <url> --json state` and include it in the report — advisory only, never a FAIL:
 merging is a human action that may legitimately still be pending, and `gh` may be missing or
 unauthenticated (note which, and move on). A finished spec whose `pr` field is *empty* while
-the key exists will be flagged by `check-specs.sh` (spec 0012) — backfill it from the
+the key exists will be flagged by `check-specs.sh` — backfill it from the
 implementation report before moving the file.
 
 ```bash
@@ -124,12 +191,17 @@ git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/
 
 Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`,
 and append a `history` entry (`- finished $(date -u +%Y-%m-%dT%H:%M:%SZ)`) in the same step
-(spec 0020; see the template's `history` note — same for the `blocked` move in Phase 6b).
+(see the template's `history` note — same for the `blocked` move in Phase 6b).
 
-Then commit:
+Spec documents are never committed (a repo invariant — see CLAUDE.md's Non-negotiables),
+so the move is local working state: no add/commit of spec paths; the ledger entry below is
+the durable record of the outcome.
+
+Record the outcome in the ledger — `verify_attempts` here is whatever the frontmatter already
+holds (0 for a spec that passed first try), and `axis` is the spec's `axis` frontmatter value
+(empty string if unset):
 ```bash
-git add -f specs/<project>/finished/<filename>
-git commit -m "spec(<id>): mark <slug> as finished"
+scripts/spec-ledger.sh append <project> <id> "<title>" finished <verify_attempts> "<axis>"
 ```
 
 Report: `Spec {id} — {title}: verified and moved to finished.`
@@ -158,7 +230,10 @@ canonical description; the steps below are just this skill's execution of it.
      Reason: <how the output didn't match>
    ```
    Only list what actually failed — passing criteria don't need an entry here (Phase 4's
-   report already covers those).
+   report already covers those). This section stays compressed on purpose; the raw command
+   output behind each failed line lives in the Phase 3d trace at
+   `specs/<project>/.traces/<id>/attempt-<verify_attempts>.md`, which the fix loop reads
+   alongside this list. Point at the trace rather than pasting its output here.
 3. Append a distilled entry to `memory/lessons.md` (format per `memory/README.md`, provenance
    tag required): not a copy of the failure list, but the transferable part — what class of
    mistake this was and what a future spec or implementation should do differently. If the
@@ -171,12 +246,9 @@ canonical description; the steps below are just this skill's execution of it.
 here — if it ever changes, that's the one place to change it).
 
 - **If `verify_attempts < MAX_VERIFY_ATTEMPTS`:** leave the file in
-  `specs/<project>/waiting_verification/` — do not move it, `status` unchanged. Commit the
-  frontmatter/section update:
-  ```bash
-  git add specs/<project>/waiting_verification/<filename>
-  git commit -m "spec(<id>): record verification failure, attempt <verify_attempts>/<MAX_VERIFY_ATTEMPTS>"
-  ```
+  `specs/<project>/waiting_verification/` — do not move it, `status` unchanged. The
+  updated spec file and trace stay local (spec documents are never committed) — the fix
+  loop reads them from disk; nothing about the retry contract depends on git.
   Report: `Spec {id} — {title}: verification FAILED (attempt {verify_attempts} of
   {MAX_VERIFY_ATTEMPTS}) — see above for details. Ask spec-exec to fix and resubmit.`
 
@@ -186,10 +258,14 @@ here — if it ever changes, that's the one place to change it).
   git mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
   ```
   Update `status` to `blocked` in the frontmatter — appending the `history` entry
-  (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — then commit:
+  (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — — the
+  move is local (spec documents are never committed); the ledger entry below carries the
+  durable record of the blocked outcome, and the escalation report is what reaches the
+  human.
+  Record the outcome in the ledger, same as a finished spec (including `axis`), so a later
+  planning pass can see this was tried and blocked without re-reading the file:
   ```bash
-  git add -f specs/<project>/blocked/<filename>
-  git commit -m "spec(<id>): block after <verify_attempts> failed verification attempts"
+  scripts/spec-ledger.sh append <project> <id> "<title>" blocked <verify_attempts> "<axis>"
   ```
   Report clearly, as an escalation rather than a routine failure:
   `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked/.

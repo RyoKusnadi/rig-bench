@@ -55,6 +55,18 @@ user first:
   changes for the person who asked for this.
 - **What would the docs say if this shipped?** Draft this mentally; it becomes the `Problem`
   and `Acceptance Criteria` sections.
+- **What's the falsifiable claim this design rests on?** State it as "if this ships, X should
+  happen" — something concrete enough that it could turn out to be wrong. If the
+  honest answer is "this just adjusts an existing knob" (a limit, a threshold, a default), say
+  so plainly rather than dressing it up as a new capability — that's still a legitimate spec,
+  just a smaller one, and naming it accurately keeps the batch's `depends_on` graph and scope
+  honest.
+- **Where does this design come from?** If it substantially borrows from a paper, a reference
+  implementation, or another project — rather than being derived fresh from this repo's own
+  problem — say so and carry the citation into the spec's `Implementation Notes` (per the
+  template's note). Presenting a borrowed mechanism as if newly invented deprives a later
+  reader of the chance to go check the source when the spec's own reasoning is thin (PR
+  #102).
 - **What are the key decisions that must be made?** Significant ones are worth surfacing
   explicitly with the user even though the template doesn't have a dedicated section for
   them — fold the reasoning into `Problem` or `Implementation Notes` so it isn't lost.
@@ -76,6 +88,19 @@ spec's area go into its `Implementation Notes` with their provenance tag, so the
 inherits them instead of rediscovering them. A memory hit that *contradicts* the spec's
 direction is worth surfacing to the user before drafting continues — the point of
 `memory/decisions.md` is that overturning one should be a choice, not an accident.
+
+Also check `scripts/spec-ledger.sh list <project> blocked` — if a past spec in this area was
+already tried and blocked, that's worth surfacing before drafting a similar one from scratch
+; read the blocked spec file itself (still on disk under `blocked/`) for why it
+didn't make it, rather than only the one-line ledger record.
+
+While you're there, glance at whether the last 3 `finished` records for this project
+(`scripts/spec-ledger.sh list <project> finished`, most recent lines) share the same `axis`.
+Three in a row on the same axis isn't wrong, but it's worth a one-line note to the user before
+drafting a fourth — "the last three specs were all `<axis>`; want to keep going there or look
+elsewhere?" — rather than silently continuing down the same groove. This is
+advisory, never a block: the user may have good reason to keep going (a multi-spec sequence
+genuinely isn't done yet), and axis is optional freeform text, not every spec sets one.
 
 ### Considerations scan (skip for trivial specs)
 
@@ -140,10 +165,21 @@ mobile-first or desktop-first for your users").
   `depends_on` id doesn't exist yet and isn't a sibling being drafted in this same pass, ask
   rather than write a dangling reference.
 
+**One mechanism per spec — check even a single-deliverable spec for this.** A spec can be one
+file and still bundle two independent changes disguised as one ("and also fix X while we're in
+there"). Before drafting, check the falsifiable claim from Phase 2 against the acceptance
+criteria being assembled: does every criterion serve that one claim, or has a second,
+unrelated claim crept in? If you're tempted to add "and also..." to the Problem statement,
+that's very likely a second spec, not an extra paragraph in this one. This is
+distinct from the deliverable-count check above — a single-file spec can still fail it.
+
 Follow `specs/spec-template.md` for each spec, whether drafting one or several. The
 plan must contain the literal file content for every spec, not a description of what it would
 contain. Default `status: ready` — an approved spec goes straight to
-`specs/<project_name>/ready/`, skipping `draft/`.
+`specs/<project_name>/ready/`, skipping `draft/`. Set the frontmatter `axis` field when the
+spec clearly targets one identifiable part of the harness (see the template's note on `axis`
+for examples and guidance) — leave it `""` when nothing natural fits rather than forcing a
+label.
 
 As a quick reference, the template's sections are:
 

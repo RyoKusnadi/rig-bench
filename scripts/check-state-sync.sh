@@ -83,7 +83,7 @@ elif [[ "$YAML_MAX" != "$README_MAX" ]]; then
   ISSUES=$((ISSUES + 1))
 fi
 
-# ── Compare dispatch constant (spec 0009) ────────────────────────────────────
+# ── Compare dispatch constant ────────────────────────────────────
 YAML_DISPATCH="$(awk '/^[[:space:]]*max_concurrent:/ { print $NF; exit }' "$STATE_YAML")"
 README_DISPATCH="$(grep -Eo 'MAX_CONCURRENT_DISPATCH = [0-9]+' "$README" | head -1 | grep -Eo '[0-9]+' || true)"
 if [[ -z "$YAML_DISPATCH" ]]; then

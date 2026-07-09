@@ -152,13 +152,27 @@ For each spec (whether run concurrently or one at a time):
    - **Every move here and in step 3** updates the `status` field *and* appends a
      `history` entry (`- <entered state> $(date -u +%Y-%m-%dT%H:%M:%SZ)`, creating the
      block list from `history: []` on first append) in the same step as the `git mv` —
-     never as a separate pass (spec 0020; see the template's `history` note).
-2. **Implement.** Read the full spec content and implement every acceptance criterion: create
-   a feature branch named after the spec ID and slug, make the changes, commit, open a draft
-   PR. Once the draft PR is open, record the feature-branch name and PR URL in the spec's
-   `branch` and `pr` frontmatter fields (they default to `""` from the template) and commit
-   that with the spec's lifecycle move — the spec carries its own implementation pointers,
-   and `check-specs.sh` flags a finished spec whose `pr` field is still empty (spec 0012).
+     never as a separate pass (see the template's `history` note).
+2. **Implement.** Read the full spec content and implement every acceptance criterion.
+   **Prototype first if the spec introduces a new mechanism.** If any Acceptance Criterion or
+   Implementation Note describes a mechanism that doesn't already exist in the repo (a new
+   algorithm, a new file format, a new control-flow shape — not just wiring an existing
+   pattern into a new file or copying an existing script's structure), write a throwaway
+   script under `/tmp/` that exercises just that mechanism against 2-3 concrete inputs before
+   touching the real files. Confirm it behaves as the spec describes, then delete the
+   throwaway script — its job is to catch a broken mechanism while it's still cheap to
+   redesign, not to ship as an artifact. Skip this for specs that only wire together, extend,
+   or configure things that already work elsewhere in the repo (the empirical
+   basis is Meta-Harness's finding that unprototyped mechanism changes are disproportionately
+   the ones that ship with bugs or no effect — see `memory/decisions.md`).
+   Once that checks out: create a feature branch named after the spec ID and slug, make the
+   changes, commit, open a draft PR. Once the draft PR is open, record the feature-branch name
+   and PR URL in the spec's
+   `branch` and `pr` frontmatter fields (they default to `""` from the template) — the spec
+   carries its own implementation pointers, and `check-specs.sh` flags a finished spec whose
+   `pr` field is still empty. The frontmatter
+   update stays local like the spec file itself (spec documents are never committed) —
+   commits carry implementation changes only.
    Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).
@@ -173,8 +187,26 @@ For each spec (whether run concurrently or one at a time):
    **If the spec has a `## Verification Failures` section** (i.e. this is a fix, not a first
    implementation), read it first and treat its contents as the authoritative list of what to
    change — it's `spec-verify`'s structured report of exactly which criteria failed and why,
-   not just background context. Leave the section in the file; `spec-verify` clears it on the
-   next passing run, or replaces it if this fix still doesn't pass.
+   not just background context. That section is deliberately compressed, so also read the raw
+   verification trace behind it before editing: `scripts/spec-trace.sh <project> <id>` prints
+   the latest attempt's actual commands and their full output. The summary tells you *which*
+   criteria failed; the trace shows you the exact command output the verifier saw — the raw
+   signal a distilled list drops, and often the difference between guessing at a fix and
+   seeing the real cause. Leave the failures section in the file; `spec-verify` clears it (and
+   the trace dir) on the next passing run, or replaces it if this fix still doesn't pass.
+
+   **Fix only what failed — keep the retry attributable.** A retry that bundles the criterion
+   fix with opportunistic refactors, cleanups, or "while I'm in here" improvements can't be
+   diagnosed if it fails again: the second failure could be the original bug or any of the
+   bundled changes, and the attempt budget (`MAX_VERIFY_ATTEMPTS`) is too small to spend
+   on disentangling that. This is the confound Meta-Harness's proposer had to learn the
+   hard way (its first two candidates bundled structural fixes with prompt edits, both
+   regressed, and only isolating the changes revealed which part was harmful — Appendix
+   A.2, iterations 1-3); its eventual winner was deliberately *additive*, leaving working
+   machinery untouched. Apply both lessons: change only what the failure record implicates,
+   prefer additive changes over rewiring passing behavior, and if this is already a second
+   attempt, run `scripts/spec-trace.sh diff <project> <id>` first to see exactly what the
+   previous fix changed in observed behavior before deciding what to try next.
 3. **Move to waiting_verification.** `git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 
