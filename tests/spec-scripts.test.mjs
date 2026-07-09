@@ -454,6 +454,40 @@ test("check-specs: unresolvable base ref skips the transition check (spec 0014)"
   assert.equal(out.code, 0, out.stdout + out.stderr);
 });
 
+test("check-specs: graded sections edited after work started warn but pass (spec 0030)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
+  gitInit(repo);
+  moveSpec(repo, "p", "0001-a.md", "ready", "waiting_verification");
+  // implementer weakens the test it is graded against, post-move
+  const f = path.join(repo, "specs", "p", "waiting_verification", "0001-a.md");
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("## Verification\n", "## Verification\n\nRun true instead.\n"));
+  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr); // WARN only, not a failure
+  assert.match(out.stdout, /WARN \[criteria-drift\].*0001-a\.md/);
+});
+
+test("check-specs: lifecycle move alone is not criteria drift (spec 0030)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
+  gitInit(repo);
+  moveSpec(repo, "p", "0001-a.md", "ready", "waiting_verification"); // rename + status only
+  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.doesNotMatch(out.stdout, /criteria-drift/);
+});
+
+test("check-specs: spec id absent at the base ref is skipped by the drift check (spec 0030)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
+  gitInit(repo);
+  // drafted after the base commit — never existed at HEAD
+  writeSpec(repo, "p", "waiting_verification", "0002-b.md", { id: "0002", status: "waiting_verification" });
+  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.doesNotMatch(out.stdout, /criteria-drift/);
+});
+
 test("check-specs: empty project → exit 0", (t) => {
   const repo = makeRepo(t);
   fs.mkdirSync(path.join(repo, "specs", "p", "ready"), { recursive: true });

@@ -117,3 +117,17 @@ drafted as 0027/0028 and referenced by id across skills and the template, so the
 rather than renumbering shipped references. If a future planning pass wants to reuse 0026:
 fine — ids only need to be unique, not contiguous (check-specs.sh checks duplicates, not
 gaps).
+
+## 2026-07-08 — Criteria drift check: the test must not change while being taken (spec 0030)
+
+The one Meta-Harness mechanism the earlier passes under-weighted: the held-out test set,
+"never exposed during evolution," guarding the evaluation from the optimizing process. In a
+file-based harness the implementer can't be denied access to the spec file — but edits to
+the graded sections (Acceptance Criteria, Verification) can be made *visible*. check-specs
+now WARNs ([criteria-drift]) when those sections differ from the base ref for any spec in
+in_progress/ or waiting_verification/, finding the base file by id so lifecycle moves don't
+false-positive. WARN not ISSUE: a criteria change can be a legitimate human-approved scope
+decision; the invariant is that it can't happen silently. Reuses TRANSITION_BASE_REF and
+0014's fail-open posture. Prototyped in /tmp first per 0022 — the first spec implemented
+under the new discipline end-to-end (falsifiable claim stated, one mechanism, prototype,
+provenance cited).

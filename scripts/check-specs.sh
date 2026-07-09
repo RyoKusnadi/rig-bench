@@ -387,6 +387,42 @@ if git rev-parse --verify --quiet "$TRANS_BASE" >/dev/null 2>&1; then
   fi
 fi
 
+# ── Criteria drift: the test must not change while being taken (spec 0030) ──
+# A spec's Acceptance Criteria and Verification sections are what the implementation gets
+# graded against; silently editing them after work starts is grading against a weakened
+# test (Meta-Harness's held-out-set principle: the evaluation target is never exposed to —
+# or editable by — the optimizing process). For each spec currently in in_progress/ or
+# waiting_verification/, compare those two sections against the same spec id's content at
+# the base ref (found by id, not path, since lifecycle moves rename the file). Any
+# difference is a WARN, not an ISSUE — criteria changes can be legitimate scope decisions,
+# but they must be visible, not silent. Same base and fail-open behavior as the
+# transition check above: no resolvable base ref skips silently; a spec id absent at the
+# base ref (drafted after it) is skipped.
+DRIFT_BASE="${TRANSITION_BASE_REF:-origin/main}"
+if git rev-parse --verify --quiet "$DRIFT_BASE" >/dev/null 2>&1; then
+  extract_graded_sections() {
+    awk '
+      $0 == "## Acceptance Criteria" || $0 == "## Verification" { on=1; print; next }
+      /^## / { on=0 }
+      on { print }'
+  }
+  BASE_TREE="$(git ls-tree -r --name-only "$DRIFT_BASE" -- "$PROJECT_DIR/" 2>/dev/null || true)"
+  for f in "${SPEC_FILES[@]}"; do
+    folder="$(basename "$(dirname "$f")")"
+    [[ "$folder" == "in_progress" || "$folder" == "waiting_verification" ]] || continue
+    id="$(frontmatter "$f" | fm_field id)"
+    [[ -n "$id" ]] || continue
+    base_path="$(printf '%s\n' "$BASE_TREE" | grep "/${id}-[^/]*\.md$" | head -1 || true)"
+    [[ -n "$base_path" ]] || continue
+    base_sections="$(git show "$DRIFT_BASE:$base_path" 2>/dev/null | extract_graded_sections || true)"
+    cur_sections="$(extract_graded_sections < "$f")"
+    if [[ "$base_sections" != "$cur_sections" ]]; then
+      echo "WARN [criteria-drift]: $f's Acceptance Criteria or Verification section differs from ${DRIFT_BASE}:${base_path}."
+      echo "  The graded sections changed after work started (spec 0030) — confirm this was a deliberate, human-approved scope change, not the implementation adjusting its own test."
+    fi
+  done
+fi
+
 # ── PR traceability: a finished spec with a pr key must carry a value (spec 0012) ──
 # Specs predating the branch/pr fields have no `pr:` key at all and are exempt;
 # an empty value on a finished spec means the spec-exec recording step was skipped.
