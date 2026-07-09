@@ -47,7 +47,7 @@ is this convention's lightweight equivalent of Spec Kit/Kiro's `plan.md`.
 If the design substantially borrows from a paper, a reference implementation, or another
 open-source project, name the source here (title/repo + link if available) rather than
 presenting the mechanism as invented fresh — a reader deciding whether to trust or extend the
-approach needs to know where its evidence comes from (PR #102).
+approach needs to know where its evidence comes from.
 
 ## Verification
 

@@ -56,7 +56,7 @@ user first:
 - **What would the docs say if this shipped?** Draft this mentally; it becomes the `Problem`
   and `Acceptance Criteria` sections.
 - **What's the falsifiable claim this design rests on?** State it as "if this ships, X should
-  happen" — something concrete enough that it could turn out to be wrong (PR #102). If the
+  happen" — something concrete enough that it could turn out to be wrong. If the
   honest answer is "this just adjusts an existing knob" (a limit, a threshold, a default), say
   so plainly rather than dressing it up as a new capability — that's still a legitimate spec,
   just a smaller one, and naming it accurately keeps the batch's `depends_on` graph and scope
@@ -91,14 +91,14 @@ direction is worth surfacing to the user before drafting continues — the point
 
 Also check `scripts/spec-ledger.sh list <project> blocked` — if a past spec in this area was
 already tried and blocked, that's worth surfacing before drafting a similar one from scratch
-(PR #102); read the blocked spec file itself (still on disk under `blocked/`) for why it
+; read the blocked spec file itself (still on disk under `blocked/`) for why it
 didn't make it, rather than only the one-line ledger record.
 
 While you're there, glance at whether the last 3 `finished` records for this project
 (`scripts/spec-ledger.sh list <project> finished`, most recent lines) share the same `axis`.
 Three in a row on the same axis isn't wrong, but it's worth a one-line note to the user before
 drafting a fourth — "the last three specs were all `<axis>`; want to keep going there or look
-elsewhere?" — rather than silently continuing down the same groove (PR #102). This is
+elsewhere?" — rather than silently continuing down the same groove. This is
 advisory, never a block: the user may have good reason to keep going (a multi-spec sequence
 genuinely isn't done yet), and axis is optional freeform text, not every spec sets one.
 
@@ -170,7 +170,7 @@ file and still bundle two independent changes disguised as one ("and also fix X 
 there"). Before drafting, check the falsifiable claim from Phase 2 against the acceptance
 criteria being assembled: does every criterion serve that one claim, or has a second,
 unrelated claim crept in? If you're tempted to add "and also..." to the Problem statement,
-that's very likely a second spec, not an extra paragraph in this one (PR #102). This is
+that's very likely a second spec, not an extra paragraph in this one. This is
 distinct from the deliverable-count check above — a single-file spec can still fail it.
 
 Follow `specs/spec-template.md` for each spec, whether drafting one or several. The

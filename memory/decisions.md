@@ -167,12 +167,12 @@ reports, Pareto frontier, interface-validation smoke test, separate evaluator ag
 re-checked in the same pass and remains either already-covered or rejected for standing
 reasons recorded above.
 
-## 2026-07-09 — Operative files cite PR #102, not uncommitted spec ids
+## 2026-07-09 — Operative files carry their rationale inline, no spec-id citations
 
 With spec_files.tracked: false, provenance markers like "" in skills, scripts,
 tests, and docs pointed at documents a fresh clone doesn't have. Cleanup pass rewrote every
-such reference in operative files to "(PR #102)" — the durable, reachable home of the
-rationale — or dropped it where the surrounding prose already carries the reasoning.
+such reference in operative files to stand alone — the surrounding prose carries the
+reasoning, and this notebook plus the PR history remain the durable record.
 References to tracked specs (0001-0020) stay as ids. memory/ notebooks keep spec ids
 throughout: they are the narrative record and self-contained. Convention going forward:
 in operative files, cite something a clone can resolve (a tracked spec id or a PR);

@@ -20,7 +20,7 @@
 # pairs of runs").
 #
 # Dependency-free bash per memory/decisions.md — grep is the query engine by design.
-# Introduced in PR #102 (trace capture; diff subcommand added in the same PR).
+# Trace capture query view; diff subcommand compares attempts.
 
 set -euo pipefail
 

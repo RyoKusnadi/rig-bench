@@ -5,7 +5,7 @@
 #        scripts/check-specs.sh          (only valid if exactly one specs/<project>/ folder exists)
 #
 # Extends the file-conflict grep pattern already documented in specs/README.md
-# ("File-conflict gate") to catch the class of bug found reviewing PR #56:
+# ("File-conflict gate") to catch a class of bug found in review:
 #   - duplicate spec IDs within a project
 #   - depends_on entries that don't resolve to any spec ID in the project
 #   - specs whose Files/Interfaces Touched list has grown past the

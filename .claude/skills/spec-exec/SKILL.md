@@ -162,7 +162,7 @@ For each spec (whether run concurrently or one at a time):
    touching the real files. Confirm it behaves as the spec describes, then delete the
    throwaway script — its job is to catch a broken mechanism while it's still cheap to
    redesign, not to ship as an artifact. Skip this for specs that only wire together, extend,
-   or configure things that already work elsewhere in the repo (PR #102; the empirical
+   or configure things that already work elsewhere in the repo (the empirical
    basis is Meta-Harness's finding that unprototyped mechanism changes are disproportionately
    the ones that ship with bugs or no effect — see `memory/decisions.md`).
    Once that checks out: create a feature branch named after the spec ID and slug, make the

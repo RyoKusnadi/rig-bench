@@ -27,7 +27,7 @@ here rather than duplicating it into the skill, so there's one place to change i
   those files run for every future spec, not just the one motivating the edit. The test: would
   this rule or code path help with a spec nobody has written yet? A reference like "see spec
   0021" for provenance is fine; a conditional like "if spec id is 0021, skip this check" is
-  not (PR #102). This does not apply to the spec files themselves, which are expected to be
+  not. This does not apply to the spec files themselves, which are expected to be
   specific.
 
 ## Memory
@@ -52,7 +52,7 @@ Plain markdown, no tooling — grep is the query engine by design.
 | `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
 | `lib/` | Placeholder (`.gitkeep`) |
 | `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`, `spec-trace.sh` — query view over verification traces, `spec-ledger.sh` — append-only record of finished/blocked spec outcomes) |
-| `specs/<project>/.traces/` | Raw per-attempt verification traces written by `spec-verify`, read by `spec-exec` on a fix, cleared on success (PR #102) |
+| `specs/<project>/.traces/` | Raw per-attempt verification traces written by `spec-verify`, read by `spec-exec` on a fix, cleared on success |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
 | `tests/` | `node --test` suites (run via `npm test`) |
 | `projects/` | Placeholder (`.gitkeep`) |

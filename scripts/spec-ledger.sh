@@ -21,7 +21,7 @@
 # built and read with plain string handling, one flat object per line, so `grep`/`cut` work
 # directly on the file too.
 #
-# Introduced in PR #102 (outcome ledger; the optional axis argument added in the same PR).
+# Outcome ledger; the axis argument is an optional sixth positional.
 
 set -euo pipefail
 

@@ -102,7 +102,7 @@ as one more PASS/FAIL line in this spec's report and trace, labeled `Regression 
 retry contract as any criterion failure. Improving one thing while silently breaking others
 is the outcome verification exists to catch; Meta-Harness's outer loop evaluates every
 candidate on the full benchmark rather than only its target capability for exactly this
-reason (PR #102).
+reason.
 
 Two scoping notes: run the gates once per verification session when verifying multiple
 specs against the same working tree, not once per spec — attribute a gate failure to the
