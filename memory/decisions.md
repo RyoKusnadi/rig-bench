@@ -244,3 +244,15 @@ tampered via the DB (an unrealistic vector the fix rightly reconciles away); rew
 tamper via the file, doubling as the regression test. Lesson reinforced: fixture tests
 validate mechanisms; only running the integrated, skill-instructed sequence validates the
 system.
+
+## 2026-07-09 — CI failure root cause: Node 20 pin vs node:sqlite (needs Node >= 22.5)
+
+PR CI failed because .github/workflows/checks.yml pins Node 20 while spec-db deliberately
+uses the built-in node:sqlite (a zero-dependency choice; requires Node >= 22.5). The fix
+is a one-line workflow bump to '22' — plus deleting the workflow's now-dead "fetch base
+ref" step and its comment, which served the removed transition check. Workflow files can't
+be pushed with the current token (no workflow scope), so that edit is the owner's; shipped
+here instead: an explicit engines field (">=22.5") and a runtime guard in spec-db.mjs that
+fails with a clear version message rather than a cryptic import error. Falling back to a
+better-sqlite3 dependency was considered and rejected — it would trade the zero-dep
+decision away to accommodate an outdated CI pin.

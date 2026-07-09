@@ -24,7 +24,14 @@
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
-import { DatabaseSync } from "node:sqlite";
+const [maj, min] = process.versions.node.split(".").map(Number);
+if (maj < 22 || (maj === 22 && min < 5)) {
+  console.error(
+    `Error: spec-db requires Node >= 22.5 (node:sqlite). Current: ${process.versions.node}.`
+  );
+  process.exit(1);
+}
+const { DatabaseSync } = await import("node:sqlite");
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
