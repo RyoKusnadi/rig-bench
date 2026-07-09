@@ -204,6 +204,9 @@ summary, not the source of truth.
 2. After approval, write each spec to `specs/<project_name>/ready/{id}-{kebab-slug}.md` with
    `status: ready`, exactly as approved — no additions, removals, or reordering slipped in
    during the write.
+   Then ingest into the DB so it is queryable from the moment it exists:
+   `node scripts/spec-db.mjs import <project>` (idempotent — safe to run over the whole
+   project tree).
 3. Run `scripts/check-specs.sh <project_name>` — catches duplicate IDs, dangling
    `depends_on`, and specs that have grown past the one-deliverable sizing rule. If it
    reports issues, fix them before reporting success; don't leave a broken batch behind.

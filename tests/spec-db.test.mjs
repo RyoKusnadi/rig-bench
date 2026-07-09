@@ -169,6 +169,17 @@ test("export reproduces frontmatter with DB-held history", (t) => {
   assert.match(out.stdout, /## Acceptance Criteria/);
 });
 
+test("set records branch/pr and export carries them", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  assert.equal(run(dir, "set", "p", "0001", "branch", "feat/x").code, 0);
+  assert.equal(run(dir, "set", "p", "0001", "pr", "https://example.com/pr/1").code, 0);
+  assert.equal(run(dir, "set", "p", "0001", "status", "finished").code, 1); // not allowed
+  const out = run(dir, "export", "p", "0001");
+  assert.match(out.stdout, /branch: "feat\/x"/);
+  assert.match(out.stdout, /pr: "https:\/\/example.com\/pr\/1"/);
+});
+
 test("legacy JSONL ledger is imported when present", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "finished" }]);
   fs.mkdirSync(path.join(dir, "memory"), { recursive: true });

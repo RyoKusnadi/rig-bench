@@ -143,15 +143,19 @@ results get folded back into the spec lifecycle.
 For each spec (whether run concurrently or one at a time):
 
 1. **Move to in_progress.**
-   - Starting fresh: `git mv specs/<project>/ready/<filename> specs/<project>/in_progress/<filename>`.
+   - Starting fresh: gate the move through the DB first — `node scripts/spec-db.mjs move
+     <project> <id> in_progress spec-exec` (it enforces `valid_next` and the
+     unfinished-dependency rule and refuses illegal moves) — then
+     `mv specs/<project>/ready/<filename> specs/<project>/in_progress/<filename>`.
    - Resuming a spec already in `in_progress/`: skip this move.
-   - Fixing a spec found in `waiting_verification/` (Phase 1): `git mv
+   - Fixing a spec found in `waiting_verification/` (Phase 1): `node scripts/spec-db.mjs
+     move <project> <id> in_progress spec-exec`, then `mv
      specs/<project>/waiting_verification/<filename> specs/<project>/in_progress/<filename>` —
      it needs to go through `in_progress/` like any other implementation work, not be edited
      in place inside `waiting_verification/`.
    - **Every move here and in step 3** updates the `status` field *and* appends a
      `history` entry (`- <entered state> $(date -u +%Y-%m-%dT%H:%M:%SZ)`, creating the
-     block list from `history: []` on first append) in the same step as the `git mv` —
+     block list from `history: []` on first append) in the same step as the `mv` —
      never as a separate pass (see the template's `history` note).
 2. **Implement.** Read the full spec content and implement every acceptance criterion.
    **Prototype first if the spec introduces a new mechanism.** If any Acceptance Criterion or
@@ -172,7 +176,9 @@ For each spec (whether run concurrently or one at a time):
    carries its own implementation pointers, and `check-specs.sh` flags a finished spec whose
    `pr` field is still empty. The frontmatter
    update stays local like the spec file itself (spec documents are never committed) —
-   commits carry implementation changes only.
+   commits carry implementation changes only. Mirror both pointers into the DB:
+   `node scripts/spec-db.mjs set <project> <id> branch "<branch>"` and
+   `... set <project> <id> pr "<url>"`.
    Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).
@@ -207,7 +213,9 @@ For each spec (whether run concurrently or one at a time):
    prefer additive changes over rewiring passing behavior, and if this is already a second
    attempt, run `scripts/spec-trace.sh diff <project> <id>` first to see exactly what the
    previous fix changed in observed behavior before deciding what to try next.
-3. **Move to waiting_verification.** `git mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
+3. **Move to waiting_verification.** `node scripts/spec-db.mjs move <project> <id>
+   waiting_verification spec-exec`, then
+   `mv specs/<project>/in_progress/<filename> specs/<project>/waiting_verification/<filename>`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
 
 ## Quick reference

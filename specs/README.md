@@ -232,6 +232,15 @@ themselves are kept in git via `.gitkeep` so a fresh clone has the structure. Cy
 metrics come from the frontmatter `history` entries; there is no git-based fallback for
 spec files.
 
+**Dual-write period (DB migration, Phase 2):** the SQLite system of record
+(`scripts/spec-db.mjs`, `spec.db`, gitignored) now mirrors the file lifecycle. Every
+lifecycle move is gated through `spec-db.mjs move` first — it enforces `valid_next` and the
+unfinished-dependency rule at write time and auto-appends the ledger on terminal states —
+then the file `mv` follows. Verification attempts dual-write via `record-attempt`; new
+specs ingest at plan time via `import` (idempotent). During this period the **file tree
+remains the source of truth**: on any divergence, `spec-db.mjs import <project>`
+reconciles the DB to the files. Cut-over (DB as source, files as export) is a later phase.
+
 **Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
 `memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace
 and failure section, this record is never cleared; it's the durable, queryable history of

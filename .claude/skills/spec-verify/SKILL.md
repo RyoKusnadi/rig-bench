@@ -148,6 +148,13 @@ not a second summary of it. For a manual/human-confirmed verification step, reco
 check described and the human's confirmation in place of command output. Writing the trace
 never blocks the verdict: if the trace can't be written, note it in the report and continue.
 
+Dual-write the same attempt into the DB:
+`node scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> <trace-file>` — it
+stores the raw trace and, on FAIL, increments the DB-side attempt counter (the frontmatter
+`verify_attempts` remains the file-side counter; during the dual-write period the file tree
+is still the source of truth and the DB mirrors it — reconcile any divergence in the file's
+favor with `node scripts/spec-db.mjs import <project>`).
+
 ## Phase 4 — Report results
 
 After checking all selected specs, print a summary table:
@@ -186,7 +193,8 @@ the key exists will be flagged by `check-specs.sh` — backfill it from the
 implementation report before moving the file.
 
 ```bash
-git mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
+node scripts/spec-db.mjs move <project> <id> finished spec-verify   # gates + auto-ledgers
+mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
 ```
 
 Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`,
@@ -255,7 +263,8 @@ here — if it ever changes, that's the one place to change it).
 - **If `verify_attempts >= MAX_VERIFY_ATTEMPTS`:** move the spec to `blocked/` instead of
   leaving it to fail silently forever:
   ```bash
-  git mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
+  node scripts/spec-db.mjs move <project> <id> blocked spec-verify   # gates + auto-ledgers
+  mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
   ```
   Update `status` to `blocked` in the frontmatter — appending the `history` entry
   (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — — the

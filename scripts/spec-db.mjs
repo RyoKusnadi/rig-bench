@@ -20,6 +20,7 @@
 //   scripts/spec-db.mjs move <project> <id> <to_state> [actor]
 //   scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> [trace-file]
 //   scripts/spec-db.mjs drift <project> <id>
+//   scripts/spec-db.mjs set <project> <id> <branch|pr|axis> <value>
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
@@ -65,6 +66,8 @@ export function parseSpec(text) {
     verify_attempts: Number(get("verify_attempts") || 0),
     axis: get("axis"),
     depends_on: dep ? dep[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean) : [],
+    branch: get("branch"),
+    pr: get("pr"),
     history,
     body: body ?? "",
   };
@@ -95,6 +98,8 @@ CREATE TABLE IF NOT EXISTS specs (
   status TEXT NOT NULL,
   verify_attempts INTEGER NOT NULL DEFAULT 0,
   axis TEXT NOT NULL DEFAULT '',
+  branch TEXT NOT NULL DEFAULT '',
+  pr TEXT NOT NULL DEFAULT '',
   body_md TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
@@ -156,10 +161,11 @@ function cmdImport(db, project) {
   const states = readStates();
   let n = 0;
   const insSpec = db.prepare(
-    `INSERT INTO specs (project,id,title,status,verify_attempts,axis,body_md)
-     VALUES (?,?,?,?,?,?,?)
+    `INSERT INTO specs (project,id,title,status,verify_attempts,axis,branch,pr,body_md)
+     VALUES (?,?,?,?,?,?,?,?,?)
      ON CONFLICT(project,id) DO UPDATE SET title=excluded.title, status=excluded.status,
        verify_attempts=excluded.verify_attempts, axis=excluded.axis,
+       branch=excluded.branch, pr=excluded.pr,
        body_md=excluded.body_md, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')`
   );
   const insDep = db.prepare("INSERT OR IGNORE INTO dependencies (project,id,depends_on) VALUES (?,?,?)");
@@ -171,7 +177,7 @@ function cmdImport(db, project) {
       const spec = parseSpec(fs.readFileSync(path.join(dir, f), "utf8"));
       if (!spec.id) die(`${f}: missing id`);
       if (spec.status !== st.name) die(`${f}: status '${spec.status}' but sits in ${st.name}/`);
-      insSpec.run(project, spec.id, spec.title, spec.status, spec.verify_attempts, spec.axis, spec.body);
+      insSpec.run(project, spec.id, spec.title, spec.status, spec.verify_attempts, spec.axis, spec.branch, spec.pr, spec.body);
       for (const d of spec.depends_on) insDep.run(project, spec.id, d);
       let prev = null;
       for (const h of spec.history) { insTr.run(project, spec.id, prev, h.state, "import", h.ts); prev = h.state; }
@@ -220,6 +226,7 @@ function cmdShow(db, project, id) {
   const atts = db.prepare("SELECT n,overall,at FROM attempts WHERE project=? AND id=? ORDER BY n").all(project, id);
   console.log(`${r.project}/${r.id} — ${r.title}`);
   console.log(`status: ${r.status}   attempts: ${r.verify_attempts}   axis: ${r.axis || "(none)"}`);
+  if (r.branch || r.pr) console.log(`branch: ${r.branch || "(none)"}   pr: ${r.pr || "(none)"}`);
   console.log(`depends_on: ${deps.map((d) => d.depends_on).join(", ") || "(none)"}`);
   for (const t of trs) console.log(`  ${t.at}  ${t.from_state ?? "·"} -> ${t.to_state}  (${t.actor})`);
   for (const a of atts) console.log(`  attempt-${a.n}: ${a.overall}  ${a.at}`);
@@ -286,6 +293,15 @@ function cmdDrift(db, project, id) {
   }
 }
 
+function cmdSet(db, project, id, field, value) {
+  const allowed = ["branch", "pr", "axis"];
+  if (!allowed.includes(field)) die(`set supports only: ${allowed.join(", ")}`);
+  getSpec(db, project, id);
+  db.prepare(`UPDATE specs SET ${field}=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?`)
+    .run(value ?? "", project, id);
+  console.log(`${project}/${id}: ${field} set`);
+}
+
 function cmdLedger(db, project, outcome) {
   let sql = "SELECT project,id,title,outcome,verify_attempts,at FROM ledger";
   const where = [], args = [];
@@ -309,6 +325,8 @@ function cmdExport(db, project, id) {
     `status: ${r.status}`,
     `depends_on: [${deps.map((d) => `"${d.depends_on}"`).join(", ")}]`,
     `verify_attempts: ${r.verify_attempts}`,
+    `branch: "${r.branch}"`,
+    `pr: "${r.pr}"`,
     trs.length ? "history:" : "history: []",
     ...trs.map((t) => `  - ${t.to_state} ${t.at}`),
     `axis: "${r.axis}"`,
@@ -329,10 +347,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     case "move": cmdMove(db, args[0], args[1], args[2], args[3]); break;
     case "record-attempt": cmdRecordAttempt(db, args[0], args[1], args[2], args[3]); break;
     case "drift": cmdDrift(db, args[0], args[1]); break;
+    case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:
-      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|ledger|export> ...");
+      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|ledger|export> ...");
       process.exit(1);
   }
 }

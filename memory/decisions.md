@@ -207,3 +207,15 @@ unfinished-dependency gate is enforced on moves into in_progress/finished. Next 
 the migration plan: skills call this CLI instead of file moves (dual-write first), then a
 read-only HTTP layer, then the frontend. spec.db is gitignored — per-machine in Phase 1;
 hosting is a Phase 3 decision.
+
+## 2026-07-09 — Phase 2: skills dual-write to the DB; file tree stays source of truth
+
+The three skills now route every lifecycle move through `spec-db.mjs move` before the file
+`mv` — the DB is the gate (valid_next + unfinished-dependency enforcement at write time,
+auto-ledger on terminal states), the file move follows only if the gate passes. Attempts
+dual-write via record-attempt (trace stored; FAIL increments the DB counter); plan-time
+specs ingest via the idempotent import; branch/pr mirror via set. Fixed in the same pass: a
+latent bug from the never-commit decision — the skills still instructed `git mv` for
+lifecycle moves, which fails on untracked files; all six sites are now plain `mv`. During
+dual-write the file tree remains authoritative and `import` reconciles divergence in the
+files' favor; flipping authority to the DB is the cut-over decision, deliberately separate.
