@@ -26,10 +26,12 @@
 
 const [maj, min] = process.versions.node.split(".").map(Number);
 if (maj < 22 || (maj === 22 && min < 5)) {
-  console.error(
-    `Error: spec-db requires Node >= 22.5 (node:sqlite). Current: ${process.versions.node}.`
+  // Throw (don't process.exit) so importers — the server, the test runner — get a
+  // clean, attributable failure with this message instead of a silent process death.
+  throw new Error(
+    `spec-db requires Node >= 22.5 (node:sqlite). Current: ${process.versions.node}. ` +
+    `CI note: .github/workflows/checks.yml must pin node-version '22'.`
   );
-  process.exit(1);
 }
 const { DatabaseSync } = await import("node:sqlite");
 import fs from "node:fs";
