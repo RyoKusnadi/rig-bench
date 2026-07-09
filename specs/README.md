@@ -158,14 +158,6 @@ the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, e
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
 is no third hand-maintained copy.
 
-**Transition enforcement:** `valid_next` is enforced, not just documented —
-`scripts/check-specs.sh` diffs each spec's lifecycle folder against a base ref
-(`origin/main` by default, `TRANSITION_BASE_REF` to override) and reports an
-`[illegal-transition]` ISSUE when no `valid_next` path leads from the old folder to the new
-one. Path reachability, not single-hop membership, because one PR legitimately collapses
-multi-hop moves (`ready → in_progress → waiting_verification`) into one endpoint pair. No
-resolvable base ref (non-git fixtures, shallow clones) skips the check silently.
-
 | State | Folder | Entered by | Valid next states |
 |---|---|---|---|
 | `draft` | `draft/` | `spec-plan`, drafting | `ready` |
@@ -232,17 +224,13 @@ moving the file to `finished/` — a shipped spec shouldn't carry stale failure 
 or compressed; the git history of the file (and of the trace dir) is where that record
 actually lives (`git log --follow` on the spec path).
 
-**Tracking spec files in git:** whether spec markdown (and `.traces/`) is committed at all
-is a repo-level choice, carried as data in `workflows/state.yaml` (`spec_files.tracked`).
-With `tracked: true` — the original convention — lifecycle moves are force-added past the
-gitignore so every state change is PR-reviewable, and the base-ref checks
-([illegal-transition], [criteria-drift]) have committed spec history to compare against.
-With `tracked: false` — this repo's current setting — spec documents are local working
-state: the folder lifecycle, retry contract, traces, and fix loop all work identically from
-disk, but commits carry implementation changes only, `memory/spec-ledger.jsonl` becomes the
-durable outcome record, and the two base-ref checks are dormant for spec files (nothing
-committed to diff). Cycle-time metrics still work via the frontmatter `history` entries
-; the git-estimated fallback does not.
+**Spec documents are never committed** (a repo invariant, recorded in CLAUDE.md's
+Non-negotiables): the plan→execute→verify folder lifecycle runs entirely from local disk,
+commits and PRs carry implementation changes only, and `memory/spec-ledger.jsonl` (local,
+gitignored) is each machine's record of what finished or got blocked. The lifecycle folders
+themselves are kept in git via `.gitkeep` so a fresh clone has the structure. Cycle-time
+metrics come from the frontmatter `history` entries; there is no git-based fallback for
+spec files.
 
 **Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
 `memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace

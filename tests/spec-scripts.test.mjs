@@ -95,35 +95,10 @@ function runEnv(repo, env, script, ...args) {
 
 // Turn a fixture into a git repo with everything committed — the transition
 // check only activates when a base ref resolves.
-function gitInit(repo) {
-  const opts = { cwd: repo, encoding: "utf8" };
-  for (const args of [
-    ["init", "-q"],
-    ["add", "-A"],
-    ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"],
-  ]) {
-    const res = spawnSync("git", args, opts);
-    if (res.status !== 0) throw new Error(`git ${args.join(" ")}: ${res.stderr}`);
-  }
-}
-
 // Move a spec between lifecycle folders, updating its status field, and stage
 // the move — the same shape as the skills' git mv + same-step sed. Staging
 // matters: git only rename-detects tracked paths, so an unstaged copy+delete
 // wouldn't register as a transition (git mv stages implicitly in the real flow).
-function moveSpec(repo, project, name, from, to) {
-  const src = path.join(repo, "specs", project, from, name);
-  const dstDir = path.join(repo, "specs", project, to);
-  fs.mkdirSync(dstDir, { recursive: true });
-  const dst = path.join(dstDir, name);
-  const content = fs
-    .readFileSync(src, "utf8")
-    .replace(`status: ${from}`, `status: ${to}`);
-  fs.writeFileSync(dst, content);
-  fs.rmSync(src);
-  spawnSync("git", ["add", "-A"], { cwd: repo, encoding: "utf8" });
-}
-
 // ── check-specs.sh ───────────────────────────────────────────────────────────
 
 test("check-specs: clean project → exit 0, no issues", (t) => {
@@ -418,74 +393,6 @@ test("check-specs: failed-attempt spec without lessons entry warns but passes (m
   const out = runEnv(repo, { LESSONS_FILE: lessons }, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
   assert.match(out.stdout, /WARN \[missing-lesson\].*\(spec 0001\)/);
-});
-
-test("check-specs: move with no valid_next path flagged (transition enforcement)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "finished", "ready"); // out of a terminal state
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 1, out.stdout + out.stderr);
-  assert.match(out.stdout, /ISSUE \[illegal-transition\].*'finished' -> 'ready'/);
-});
-
-test("check-specs: single-hop and collapsed multi-hop moves pass (transition enforcement)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
-  writeSpec(repo, "p", "ready", "0002-b.md", { id: "0002", status: "ready" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "ready", "in_progress"); // direct valid_next hop
-  // one PR legitimately collapses ready → in_progress → waiting_verification:
-  moveSpec(repo, "p", "0002-b.md", "ready", "waiting_verification");
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr);
-  assert.match(out.stdout, /No issues found/);
-});
-
-test("check-specs: unresolvable base ref skips the transition check (transition enforcement)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "finished", "0001-a.md", { id: "0001", status: "finished" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "finished", "ready");
-  // status/folder now agree ('ready' in ready/), so only the transition check could
-  // fire — and it must not, with no resolvable base.
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "no-such-ref" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr);
-});
-
-test("check-specs: graded sections edited after work started warn but pass (criteria drift)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "ready", "waiting_verification");
-  // implementer weakens the test it is graded against, post-move
-  const f = path.join(repo, "specs", "p", "waiting_verification", "0001-a.md");
-  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("## Verification\n", "## Verification\n\nRun true instead.\n"));
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr); // WARN only, not a failure
-  assert.match(out.stdout, /WARN \[criteria-drift\].*0001-a\.md/);
-});
-
-test("check-specs: lifecycle move alone is not criteria drift (criteria-drift negative)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
-  gitInit(repo);
-  moveSpec(repo, "p", "0001-a.md", "ready", "waiting_verification"); // rename + status only
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr);
-  assert.doesNotMatch(out.stdout, /criteria-drift/);
-});
-
-test("check-specs: spec id absent at the base ref is skipped by the drift check (criteria drift)", (t) => {
-  const repo = makeRepo(t);
-  writeSpec(repo, "p", "ready", "0001-a.md", { id: "0001", status: "ready" });
-  gitInit(repo);
-  // drafted after the base commit — never existed at HEAD
-  writeSpec(repo, "p", "waiting_verification", "0002-b.md", { id: "0002", status: "waiting_verification" });
-  const out = runEnv(repo, { TRANSITION_BASE_REF: "HEAD" }, "check-specs.sh", "p");
-  assert.equal(out.code, 0, out.stdout + out.stderr);
-  assert.doesNotMatch(out.stdout, /criteria-drift/);
 });
 
 test("check-specs: empty project → exit 0", (t) => {

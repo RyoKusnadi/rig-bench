@@ -3,7 +3,7 @@
 What verification failures, blocked specs, and postmortems taught. Entry format and pruning
 convention: see `memory/README.md`.
 
-## 2026-07-03 — Retry contract exercised end-to-end for the first time (spec 0001, PR #63–66)
+## 2026-07-03 — Retry contract exercised end-to-end for the first time (spec 0001)
 
 Spec 0001 ran the full lifecycle including a controlled failed verification: attempt 1
 failed two criteria, the `## Verification Failures` section was written per the spec-verify
@@ -15,7 +15,7 @@ enough to fix from without re-reading the original conversation — which is the
 matters. This satisfied the "run for real" gate that later concurrent-dispatch work was
 explicitly waiting on.
 
-## 2026-07-03 — Verification steps must describe the tree at verification time (spec 0006, PR #74)
+## 2026-07-03 — Verification steps must describe the tree at verification time (spec 0006)
 
 Spec 0006's Verification step asserted exact per-state counts ("finished ≥ 5 and zero counts
 elsewhere") — a state that can't exist while the spec itself is still sitting in
@@ -24,7 +24,7 @@ Rule going forward: author Verification steps as invariants that hold at verific
 (structure, sums, fixture-driven behaviors), never as snapshots of expected future tree
 state. Spec-plan should check for this when reviewing a draft's Verification section.
 
-## 2026-07-03 — First blocked escalation: fix passes must re-check every clause (spec 0006, PR #77)
+## 2026-07-03 — First blocked escalation: fix passes must re-check every clause (spec 0006)
 
 Spec 0006 hit MAX_VERIFY_ATTEMPTS and moved to blocked/ — the first spec to exercise the
 escalation path. The attempt-1 fix corrected the flagged Verification clause but left the
@@ -34,7 +34,7 @@ failure's *class*, not just the quoted clause; (2) fixture-based verification mu
 the fixture's own delta (appears/disappears), never the absolute state around it. The
 blocked → un-block → fresh-budget path (specs/README.md) worked as designed.
 
-## 2026-07-06 — First real concurrent dispatch run (specs 0010+0011, PRs #90–#91)
+## 2026-07-06 — First real concurrent dispatch run (specs 0010+0011)
 
 Two independent specs were dispatched concurrently for the first time, per spec-exec's
 Phase 4b: dispatcher-created worktrees off main, one spec-executor agent each, results

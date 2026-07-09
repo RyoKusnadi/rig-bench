@@ -12,13 +12,13 @@ problem by recreating the complexity problem. If state.yaml ever needs nesting t
 line-oriented parsing can't handle, revisit this decision explicitly rather than bending the
 parser.
 
-## 2026-07-03 — Dispatch is prose + data + thin agents, never orchestration code (specs 0008–0009, PRs #82–#84)
+## 2026-07-03 — Dispatch is prose + data + thin agents, never orchestration code (specs 0008–0009)
 
 Concurrent dispatch was rebuilt on the opposite shape from the twice-removed workflows/*.js
 layer: the procedure lives in spec-exec's prose, the limit lives in state.yaml (sync-enforced
 against the README), and the agents are entry points that delegate to skills. The decoupling
 test is the design's invariant — deleting an agent file must break nothing but dispatch.
-Kill criterion (a standing constraint from that design, PR #82): agents accumulating
+Kill criterion (a standing constraint from that design): agents accumulating
 lifecycle prose, or an orchestration layer looking necessary, means stop and re-plan.
 
 ## 2026-07-06 — No standing plan doc at the repo root
@@ -177,3 +177,18 @@ References to tracked specs (0001-0020) stay as ids. memory/ notebooks keep spec
 throughout: they are the narrative record and self-contained. Convention going forward:
 in operative files, cite something a clone can resolve (a tracked spec id or a PR);
 uncommitted spec documents are working state, not citable anchors.
+
+## 2026-07-09 — Spec documents are never committed: knob removed, invariant adopted
+
+The spec_files.tracked knob lasted one day. Every owner direction pointed the same way
+(spec files out of the PR, then spec-id citations out, then PR-number citations out), and a
+half-state — eleven legacy specs tracked, everything newer local — meant checks guarding
+only the legacy half and docs explaining two modes. So: the legacy spec documents
+(0001-0020) are untracked (working copies remain on disk; git history retains them
+forever), .gitkeep files keep the lifecycle folder structure in clones, the knob and the
+skills' conditional commit steps are gone, and "spec documents are never committed" is a
+CLAUDE.md non-negotiable. Consequences accepted with it: the transition-enforcement and
+criteria-drift checks were deleted outright (both require committed spec history; git
+history has their implementations if ever needed again), their six tests removed, and
+memory/spec-ledger.jsonl is gitignored as per-machine derived state. make verify now runs
+the full gates in one command.

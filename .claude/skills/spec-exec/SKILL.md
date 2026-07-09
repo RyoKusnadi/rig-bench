@@ -170,9 +170,9 @@ For each spec (whether run concurrently or one at a time):
    and PR URL in the spec's
    `branch` and `pr` frontmatter fields (they default to `""` from the template) — the spec
    carries its own implementation pointers, and `check-specs.sh` flags a finished spec whose
-   `pr` field is still empty. If `workflows/state.yaml`'s `spec_files.tracked` is
-   `true`, commit that with the spec's lifecycle move; with `tracked: false`, the frontmatter
-   update stays local like the spec file itself — commits carry implementation changes only.
+   `pr` field is still empty. The frontmatter
+   update stays local like the spec file itself (spec documents are never committed) —
+   commits carry implementation changes only.
    Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).

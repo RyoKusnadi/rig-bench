@@ -16,7 +16,7 @@ inline bashisms into a multi-line command whose executing shell you haven't pinn
 the script to a file and run it with an explicit `bash script.sh`, and after any batch file
 generation, read one generated file back before building on it.
 
-## 2026-07-07 — Stacked PRs + squash merge silently lose content (specs 0012–0020, PRs #92–#100)
+## 2026-07-07 — Stacked PRs + squash merge silently lose content (specs 0012–0020)
 
 The 0012→0020 dependency chain was executed as stacked PRs — each spec's PR based on its
 dependency's feature branch, per spec-exec's "Branch base" rule. Squash-merging those PRs
@@ -41,7 +41,7 @@ silently kills the script — extract frontmatter fields with awk (`fm_field`), 
 always exits 0, so missing-id/missing-status get *reported* instead of crashing the
 checker.
 
-## 2026-07-03 — Spec files are gitignored; every add needs -f (spec 0002, PR #63–66)
+## 2026-07-03 — Spec files are gitignored; every add needs -f (spec 0002)
 
 `.gitignore` ignores `specs/*/*/*.md`, so `git add` on a spec file silently stages nothing
 and the commit reports a clean tree. The skills' documented commands all use `git add -f`

@@ -193,14 +193,9 @@ Update the `status` field in the spec frontmatter from `waiting_verification` to
 and append a `history` entry (`- finished $(date -u +%Y-%m-%dT%H:%M:%SZ)`) in the same step
 (see the template's `history` note — same for the `blocked` move in Phase 6b).
 
-Then, **if `workflows/state.yaml`'s `spec_files.tracked` is `true`**, commit the move:
-```bash
-git add -f specs/<project>/finished/<filename>
-git commit -m "spec(<id>): mark <slug> as finished"
-```
-With `tracked: false`, the move is local working state — skip the add/commit of spec paths
-entirely (the gitignore already hides them) and let the ledger entry below be the durable
-record of the outcome.
+Spec documents are never committed (a repo invariant — see CLAUDE.md's Non-negotiables),
+so the move is local working state: no add/commit of spec paths; the ledger entry below is
+the durable record of the outcome.
 
 Record the outcome in the ledger — `verify_attempts` here is whatever the frontmatter already
 holds (0 for a spec that passed first try), and `axis` is the spec's `axis` frontmatter value
@@ -251,15 +246,9 @@ canonical description; the steps below are just this skill's execution of it.
 here — if it ever changes, that's the one place to change it).
 
 - **If `verify_attempts < MAX_VERIFY_ATTEMPTS`:** leave the file in
-  `specs/<project>/waiting_verification/` — do not move it, `status` unchanged. If
-  `spec_files.tracked` is `true`, commit the frontmatter/section update together with the
-  Phase 3d trace:
-  ```bash
-  git add specs/<project>/waiting_verification/<filename> specs/<project>/.traces/<id>/
-  git commit -m "spec(<id>): record verification failure, attempt <verify_attempts>/<MAX_VERIFY_ATTEMPTS>"
-  ```
-  With `tracked: false`, the updated spec file and trace stay local — the fix loop reads
-  them from disk either way; nothing about the retry contract changes.
+  `specs/<project>/waiting_verification/` — do not move it, `status` unchanged. The
+  updated spec file and trace stay local (spec documents are never committed) — the fix
+  loop reads them from disk; nothing about the retry contract depends on git.
   Report: `Spec {id} — {title}: verification FAILED (attempt {verify_attempts} of
   {MAX_VERIFY_ATTEMPTS}) — see above for details. Ask spec-exec to fix and resubmit.`
 
@@ -269,14 +258,10 @@ here — if it ever changes, that's the one place to change it).
   git mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
   ```
   Update `status` to `blocked` in the frontmatter — appending the `history` entry
-  (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — then, if
-  `spec_files.tracked` is `true`, commit:
-  ```bash
-  git add -f specs/<project>/blocked/<filename>
-  git commit -m "spec(<id>): block after <verify_attempts> failed verification attempts"
-  ```
-  (With `tracked: false`, the move is local; the ledger entry below carries the durable
-  record of the blocked outcome, and the escalation report is what reaches the human.)
+  (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — — the
+  move is local (spec documents are never committed); the ledger entry below carries the
+  durable record of the blocked outcome, and the escalation report is what reaches the
+  human.
   Record the outcome in the ledger, same as a finished spec (including `axis`), so a later
   planning pass can see this was tried and blocked without re-reading the file:
   ```bash

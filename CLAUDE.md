@@ -19,6 +19,10 @@ here rather than duplicating it into the skill, so there's one place to change i
 - **Auth-, secrets-, or credential-touching specs need an explicit security note** in
   `Implementation Notes` — what's being trusted, what the failure mode looks like if it's
   wrong. Silence on this for such a spec is a gap, not an indication there's nothing to say.
+- **Spec documents are never committed.** Files under `specs/<project>/*/` (and their
+  `.traces/`) are local working state — the gitignore enforces this; never `git add -f` a
+  spec file. Commits and PRs carry implementation changes only; the outcome ledger and
+  `memory/` notebooks are the durable record.
 - **Never commit directly to a project's default branch.** Every change goes through a
   feature branch and a PR, even for one-line fixes — this repo's whole model depends on PRs
   being the reviewable unit.

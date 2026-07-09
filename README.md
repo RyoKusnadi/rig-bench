@@ -195,13 +195,10 @@ a human decision before another attempt.
 
 **Spec documents and git:**
 
-Whether spec markdown files are committed is a repo-level setting
-(`spec_files.tracked` in `workflows/state.yaml`). This repo runs with `tracked: false`:
-spec documents are local working state — the plan→execute→verify lifecycle works exactly
-the same from disk, but PRs carry implementation changes only, and the append-only outcome
-ledger (`scripts/spec-ledger.sh list`) is the durable record of what finished or got
-blocked. Flip it to `true` if you want lifecycle moves reviewable in PRs and the git-based
-consistency checks active for spec files.
+Spec files are local working state and are never committed — the lifecycle
+(plan→execute→verify, the retry contract, traces) runs entirely from disk, PRs carry
+implementation changes only, and the append-only outcome ledger
+(`scripts/spec-ledger.sh list`) records what finished or got blocked on each machine.
 
 ---
 
