@@ -50,6 +50,11 @@ flowchart TD
 It only asks about things that would actually change how the plan turns out — and when it
 does ask, it comes with a suggestion, not a blank question.
 
+Each spec also has to earn its shape: a stated "if this ships, X should happen" claim, one
+mechanism per spec (an "and also..." is a second spec, not a paragraph), a named source when
+the design borrows from a paper or another project, and a glance at the outcome ledger so
+you don't re-draft something that already shipped — or already got stuck.
+
 ---
 
 ### `/spec-exec`
@@ -73,6 +78,10 @@ flowchart TD
 
 If two specs you're running at the same time touch the same file, it'll give you a heads-up —
 but it won't stop you, since that gate already ran when the specs were approved.
+
+When a spec introduces a mechanism the repo doesn't already have, the implementation starts
+with a throwaway prototype in `/tmp` — validate the core idea against real inputs first,
+then build it properly. Wiring-only specs skip straight to implementation.
 
 ---
 
@@ -181,6 +190,18 @@ fix 0001 — the rate limiter isn't returning 429s under load
 
 Fail the same spec twice and it won't loop silently: it moves to `blocked/` instead, and needs
 a human decision before another attempt.
+
+---
+
+**Spec documents and git:**
+
+Whether spec markdown files are committed is a repo-level setting
+(`spec_files.tracked` in `workflows/state.yaml`). This repo runs with `tracked: false`:
+spec documents are local working state — the plan→execute→verify lifecycle works exactly
+the same from disk, but PRs carry implementation changes only, and the append-only outcome
+ledger (`scripts/spec-ledger.sh list`) is the durable record of what finished or got
+blocked. Flip it to `true` if you want lifecycle moves reviewable in PRs and the git-based
+consistency checks active for spec files.
 
 ---
 

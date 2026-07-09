@@ -131,3 +131,16 @@ decision; the invariant is that it can't happen silently. Reuses TRANSITION_BASE
 0014's fail-open posture. Prototyped in /tmp first per 0022 — the first spec implemented
 under the new discipline end-to-end (falsifiable claim stated, one mechanism, prototype,
 provenance cited).
+
+## 2026-07-08 — Spec files are not committed; convention carried as data (spec_files.tracked)
+
+The repo owner decided spec documents should not be committed — PRs carry implementation
+changes only. Rather than silently diverging the skills' prose from practice, the choice is
+now a data knob in workflows/state.yaml (`spec_files.tracked`, currently false), following
+the same "procedure in prose, limits in data" pattern as dispatch.max_concurrent. The
+skills' add/commit steps for spec and trace paths are conditional on it. Known consequences,
+accepted deliberately: with tracked: false the [illegal-transition] (0014) and
+[criteria-drift] (0030) checks are dormant for spec files (no committed base to diff),
+memory/spec-ledger.jsonl becomes the durable outcome record, and cycle-time metrics rely on
+frontmatter history entries (0020) rather than the git fallback. Flipping the knob back to
+true restores the original fully-reviewable convention without touching any prose.

@@ -232,6 +232,18 @@ moving the file to `finished/` — a shipped spec shouldn't carry stale failure 
 or compressed; the git history of the file (and of the trace dir) is where that record
 actually lives (`git log --follow` on the spec path).
 
+**Tracking spec files in git:** whether spec markdown (and `.traces/`) is committed at all
+is a repo-level choice, carried as data in `workflows/state.yaml` (`spec_files.tracked`).
+With `tracked: true` — the original convention — lifecycle moves are force-added past the
+gitignore so every state change is PR-reviewable, and the base-ref checks
+([illegal-transition], [criteria-drift]) have committed spec history to compare against.
+With `tracked: false` — this repo's current setting — spec documents are local working
+state: the folder lifecycle, retry contract, traces, and fix loop all work identically from
+disk, but commits carry implementation changes only, `memory/spec-ledger.jsonl` becomes the
+durable outcome record, and the two base-ref checks are dormant for spec files (nothing
+committed to diff). Cycle-time metrics still work via the frontmatter `history` entries
+(spec 0020); the git-estimated fallback does not.
+
 **Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
 `memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace
 and failure section, this record is never cleared; it's the durable, queryable history of
