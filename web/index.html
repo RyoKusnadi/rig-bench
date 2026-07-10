@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rig-bench · spec lifecycle</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#d7dae0; --dim:#8a93a3;
+          --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header { display:flex; gap:16px; align-items:baseline; padding:14px 18px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; font-weight:600; }
+  header .m { color:var(--dim); font-size:12px; }
+  header .m b { color:var(--text); }
+  #board { display:flex; gap:10px; padding:14px 18px; overflow-x:auto; align-items:flex-start; }
+  .col { background:var(--panel); border:1px solid var(--line); border-radius:8px; min-width:210px; flex:1; }
+  .col h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim);
+            padding:9px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
+  .cards { padding:8px; display:flex; flex-direction:column; gap:6px; min-height:34px; }
+  .card { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 9px; cursor:pointer; }
+  .card:hover { border-color:var(--accent); }
+  .card .id { color:var(--accent); font-weight:600; }
+  .card .t { display:block; color:var(--text); font-size:12.5px; margin-top:2px; }
+  .card .meta { color:var(--dim); font-size:11px; margin-top:3px; }
+  .card .meta .fail { color:var(--warn); }
+  #detail { position:fixed; inset:0 0 0 auto; width:min(680px,92vw); background:var(--panel);
+            border-left:1px solid var(--line); transform:translateX(100%); transition:transform .15s ease; overflow-y:auto; }
+  #detail.open { transform:none; }
+  #detail .inner { padding:18px; }
+  #detail h3 { font-size:15px; margin-bottom:2px; } #detail .sub { color:var(--dim); font-size:12px; margin-bottom:12px; }
+  #detail h4 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:14px 0 6px; }
+  #detail table { width:100%; border-collapse:collapse; font-size:12px; }
+  #detail td { padding:3px 6px 3px 0; color:var(--dim); vertical-align:top; }
+  #detail td:first-child { white-space:nowrap; }
+  .pill { display:inline-block; border:1px solid var(--line); border-radius:99px; padding:1px 8px; font-size:11px; }
+  .PASS { color:var(--ok); border-color:var(--ok); } .FAIL { color:var(--bad); border-color:var(--bad); }
+  .drift-yes { color:var(--warn); } .drift-no { color:var(--ok); }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px;
+        font-size:12px; overflow-x:auto; white-space:pre-wrap; color:var(--text); }
+  #close { float:right; background:none; border:1px solid var(--line); color:var(--dim);
+           border-radius:6px; padding:2px 9px; cursor:pointer; } #close:hover { color:var(--text); }
+  .empty { color:var(--dim); font-size:12px; padding:4px 2px; }
+  a { color:var(--accent); text-decoration:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>rig-bench · spec lifecycle</h1>
+  <span class="m" id="metrics">loading…</span>
+</header>
+<div id="board"></div>
+<aside id="detail"><div class="inner" id="detail-inner"></div></aside>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = (p) => fetch(p).then((r) => r.json());
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+async function board() {
+  const [states, specs, metrics] = await Promise.all([
+    api("/api/states"), api("/api/specs"), api("/api/metrics"),
+  ]);
+  $("#metrics").innerHTML =
+    `total <b>${specs.length}</b> · finished <b>${metrics.finished}</b> · ` +
+    `failure rate <b>${metrics.failure_rate_pct}%</b> (finished w/ failed attempts: ${metrics.finished_with_failed_attempts})`;
+  const byState = {};
+  for (const s of specs) (byState[s.status] ??= []).push(s);
+  $("#board").innerHTML = states.map((st) => `
+    <div class="col">
+      <h2><span>${esc(st.name)}</span><span>${(byState[st.name] ?? []).length}</span></h2>
+      <div class="cards">
+        ${(byState[st.name] ?? []).map((s) => `
+          <div class="card" onclick="detail('${esc(s.project)}','${esc(s.id)}')">
+            <span class="id">${esc(s.project)}/${esc(s.id)}</span>
+            <span class="t">${esc(s.title)}</span>
+            <span class="meta">${s.verify_attempts > 0 ? `<span class="fail">attempts ${s.verify_attempts}</span> · ` : ""}${esc(s.axis) || ""}</span>
+          </div>`).join("") || `<div class="empty">—</div>`}
+      </div>
+    </div>`).join("");
+}
+
+async function detail(project, id) {
+  const [s, drift] = await Promise.all([
+    api(`/api/specs/${project}/${id}`), api(`/api/specs/${project}/${id}/drift`),
+  ]);
+  const inner = $("#detail-inner");
+  inner.innerHTML = `
+    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
+    <h3>${esc(s.project)}/${esc(s.id)} — ${esc(s.title)}</h3>
+    <div class="sub">
+      <span class="pill">${esc(s.status)}</span>
+      ${s.axis ? `<span class="pill">${esc(s.axis)}</span>` : ""}
+      ${s.pr ? ` · <a href="${esc(s.pr)}">PR</a>` : ""} ${s.branch ? ` · ${esc(s.branch)}` : ""}
+    </div>
+    <h4>dependencies</h4>
+    <div>${s.depends_on.length ? s.depends_on.map((d) => `<span class="pill">${esc(d)}</span>`).join(" ") : '<span class="empty">none</span>'}</div>
+    <h4>criteria drift</h4>
+    <div>${!drift.comparable ? '<span class="empty">fewer than two snapshots</span>'
+        : drift.changed
+          ? `<span class="drift-yes">CHANGED between '${esc(drift.prev.at_state)}' and '${esc(drift.latest.at_state)}'</span>`
+          : `<span class="drift-no">unchanged since '${esc(drift.prev.at_state)}'</span>`}</div>
+    <h4>transitions</h4>
+    <table>${s.transitions.map((t) => `<tr><td>${esc(t.at)}</td><td>${esc(t.from_state ?? "·")} → ${esc(t.to_state)}</td><td>${esc(t.actor)}</td></tr>`).join("") || "<tr><td class='empty'>none</td></tr>"}</table>
+    <h4>verification attempts</h4>
+    <table>${s.attempts.map((a) => `<tr><td>attempt-${a.n}</td><td><span class="pill ${a.overall}">${a.overall}</span></td>
+      <td>${esc(a.at)}</td><td><a href="#" onclick="trace('${esc(project)}','${esc(id)}',${a.n});return false">trace</a></td></tr>`).join("") || "<tr><td class='empty'>none</td></tr>"}</table>
+    <div id="trace"></div>
+    <h4>spec body</h4>
+    <pre>${esc(s.body_md)}</pre>`;
+  $("#detail").classList.add("open");
+}
+
+async function trace(project, id, n) {
+  const a = await api(`/api/specs/${project}/${id}/attempts/${n}`);
+  $("#trace").innerHTML = `<h4>attempt-${n} trace</h4><pre>${esc(a.trace_md || "(empty)")}</pre>`;
+}
+
+board();
+setInterval(board, 15000);
+</script>
+</body>
+</html>

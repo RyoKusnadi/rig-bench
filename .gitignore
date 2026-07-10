@@ -18,3 +18,4 @@ research/
 projects/*
 !projects/.gitkeep
 specs/*/*/.gitkeepmemory/spec-ledger.jsonl
+spec.db*

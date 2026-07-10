@@ -193,6 +193,15 @@ a human decision before another attempt.
 
 ---
 
+**Live dashboard:**
+
+`node scripts/spec-db.mjs init && node scripts/spec-db.mjs import <project>` seeds the
+local SQLite system of record from your spec files, then `make serve` opens a read-only
+dashboard at `http://localhost:4870` — a kanban board by lifecycle state, per-spec detail
+(dependencies, transition history, verification attempts with raw traces, criteria-drift
+status), and lifecycle metrics. Every mutation goes through `scripts/spec-db.mjs`, which
+enforces the state machine and dependency rules at write time; the server only observes.
+
 **Spec documents and git:**
 
 Spec files are local working state and are never committed — the lifecycle

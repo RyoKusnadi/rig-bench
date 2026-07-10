@@ -192,3 +192,67 @@ criteria-drift checks were deleted outright (both require committed spec history
 history has their implementations if ever needed again), their six tests removed, and
 memory/spec-ledger.jsonl is gitignored as per-machine derived state. make verify now runs
 the full gates in one command.
+
+## 2026-07-09 — Phase 1 of the DB migration: SQLite system of record (spec-db.mjs)
+
+With spec documents never committed, local markdown became per-machine state with no
+shared view. Phase 1 moves the system of record to SQLite via node:sqlite (Node 22
+built-in — zero new dependencies, keeping the no-dependency ethos in spirit): markdown
+stays the authoring format (bodies stored verbatim), the DB owns state, dependencies,
+transition history, verification attempts, terminal outcomes, and per-transition criteria
+snapshots. Two checks deleted in the never-commit decision return stronger here:
+transition legality is enforced on write from state.yaml's valid_next (data-driven, as
+before), and criteria drift is a comparison of snapshots rather than a git diff. The
+unfinished-dependency gate is enforced on moves into in_progress/finished. Next phases per
+the migration plan: skills call this CLI instead of file moves (dual-write first), then a
+read-only HTTP layer, then the frontend. spec.db is gitignored — per-machine in Phase 1;
+hosting is a Phase 3 decision.
+
+## 2026-07-09 — Phase 2: skills dual-write to the DB; file tree stays source of truth
+
+The three skills now route every lifecycle move through `spec-db.mjs move` before the file
+`mv` — the DB is the gate (valid_next + unfinished-dependency enforcement at write time,
+auto-ledger on terminal states), the file move follows only if the gate passes. Attempts
+dual-write via record-attempt (trace stored; FAIL increments the DB counter); plan-time
+specs ingest via the idempotent import; branch/pr mirror via set. Fixed in the same pass: a
+latent bug from the never-commit decision — the skills still instructed `git mv` for
+lifecycle moves, which fails on untracked files; all six sites are now plain `mv`. During
+dual-write the file tree remains authoritative and `import` reconciles divergence in the
+files' favor; flipping authority to the DB is the cut-over decision, deliberately separate.
+
+## 2026-07-09 — Phases 3+4: read-only HTTP layer and a zero-build dashboard
+
+scripts/spec-server.mjs is a deliberately read-only JSON API over spec.db (node:http, no
+dependencies) — every mutation still goes through the CLI gate; the server only observes.
+Endpoints mirror the CLI's queries plus a metrics rollup; /api/states serves the state
+machine straight from workflows/state.yaml so the frontend's kanban columns and the CLI's
+transition enforcement share one source. web/index.html is a single-file, no-build vanilla
+dashboard (kanban by state, spec detail with transitions/attempts/inline trace/drift
+status, metrics strip, 15s refresh), served by the same process: make serve. Read-only
+first was the plan's explicit sequencing — editing from the UI is a later decision, after
+the observed view earns trust.
+
+## 2026-07-09 — Dogfooding found the dual-write blind spot: move refreshes body from disk
+
+Walking one spec through the exact skill-instructed command sequence surfaced a real bug
+the unit tests missed: `spec-db.mjs move` snapshotted criteria from the DB's stored body,
+which goes stale the moment the file is edited on disk — so mid-flight criteria tampering
+produced two identical stale snapshots and drift reported nothing. Fix: during dual-write
+the file tree is the source of truth, so `move` now locates the spec's file across the
+state folders and reconciles the DB body from it before snapshotting. The old drift test
+tampered via the DB (an unrealistic vector the fix rightly reconciles away); rewritten to
+tamper via the file, doubling as the regression test. Lesson reinforced: fixture tests
+validate mechanisms; only running the integrated, skill-instructed sequence validates the
+system.
+
+## 2026-07-09 — CI failure root cause: Node 20 pin vs node:sqlite (needs Node >= 22.5)
+
+PR CI failed because .github/workflows/checks.yml pins Node 20 while spec-db deliberately
+uses the built-in node:sqlite (a zero-dependency choice; requires Node >= 22.5). The fix
+is a one-line workflow bump to '22' — plus deleting the workflow's now-dead "fetch base
+ref" step and its comment, which served the removed transition check. Workflow files can't
+be pushed with the current token (no workflow scope), so that edit is the owner's; shipped
+here instead: an explicit engines field (">=22.5") and a runtime guard in spec-db.mjs that
+fails with a clear version message rather than a cryptic import error. Falling back to a
+better-sqlite3 dependency was considered and rejected — it would trade the zero-dep
+decision away to accommodate an outdated CI pin.
