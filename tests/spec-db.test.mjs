@@ -179,6 +179,25 @@ test("set records branch/pr and export carries them", (t) => {
   assert.match(out.stdout, /pr: "https:\/\/example.com\/pr\/1"/);
 });
 
+test("memory notebooks mirror into the DB with spec-id links; re-import replaces", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "finished" }]);
+  fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "memory", "lessons.md"),
+    "# Lessons\n\npreamble ignored\n\n## 2026-07-01 — First lesson (spec 0001)\n\nbody one\n\n## 2026-07-02 — General lesson\n\nbody two\n");
+  const imp = run(dir, "import", "p");
+  assert.match(imp.stdout, /2 memory entries/);
+  const bySpec = run(dir, "memory", "lessons", "0001");
+  assert.match(bySpec.stdout, /\[spec 0001\]\s+2026-07-01 — First lesson/);
+  assert.doesNotMatch(bySpec.stdout, /General lesson/);
+  // mirror semantics: shrink the file, re-import, count follows the file
+  fs.writeFileSync(path.join(dir, "memory", "lessons.md"),
+    "# Lessons\n\n## 2026-07-03 — Only lesson now\n\nbody\n");
+  run(dir, "import", "p");
+  const all = run(dir, "memory", "lessons");
+  assert.match(all.stdout, /Only lesson now/);
+  assert.doesNotMatch(all.stdout, /First lesson/);
+});
+
 test("legacy JSONL ledger is imported when present", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "finished" }]);
   fs.mkdirSync(path.join(dir, "memory"), { recursive: true });

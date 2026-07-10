@@ -256,3 +256,14 @@ here instead: an explicit engines field (">=22.5") and a runtime guard in spec-d
 fails with a clear version message rather than a cryptic import error. Falling back to a
 better-sqlite3 dependency was considered and rejected — it would trade the zero-dep
 decision away to accommodate an outdated CI pin.
+
+## 2026-07-09 — Memory notebooks mirror into the DB; markdown stays authoritative
+
+Unlike spec documents (which lost their shared home when they stopped being committed),
+the memory notebooks are committed — git already shares, versions, and greps them, so
+migrating them into a gitignored local DB would be a downgrade. Instead: import parses the
+heading-delimited entries into a memory_entries mirror (delete+reinsert per notebook, so
+the DB always reflects the files), the CLI and /api/memory expose them, and — the actual
+payoff — entries tagged (spec NNNN) become joinable: a spec's dashboard detail pane now
+shows its related lessons/gotchas/decisions inline. Authority is unchanged: write memory
+in markdown, commit it, re-import to refresh the mirror.

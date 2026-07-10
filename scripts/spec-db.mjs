@@ -21,6 +21,7 @@
 //   scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> [trace-file]
 //   scripts/spec-db.mjs drift <project> <id>
 //   scripts/spec-db.mjs set <project> <id> <branch|pr|axis> <value>
+//   scripts/spec-db.mjs memory [notebook] [spec_id]
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
@@ -82,6 +83,21 @@ export function parseSpec(text) {
   };
 }
 
+// ── memory notebook parser: "## <heading>" delimited entries; markdown stays the
+//    authoritative, committed source — the DB is a queryable mirror refreshed on import ──
+export function parseMemory(text) {
+  const entries = [];
+  const parts = text.split(/^## /m).slice(1); // drop preamble
+  for (const part of parts) {
+    const nl = part.indexOf("\n");
+    const heading = (nl === -1 ? part : part.slice(0, nl)).trim();
+    const body = (nl === -1 ? "" : part.slice(nl + 1)).trim();
+    const specId = heading.match(/\(spec (\d{4})/)?.[1] ?? "";
+    entries.push({ heading, spec_id: specId, body });
+  }
+  return entries;
+}
+
 export function extractCriteria(body) {
   const out = [];
   let on = false;
@@ -140,6 +156,15 @@ CREATE TABLE IF NOT EXISTS ledger (
   axis TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE TABLE IF NOT EXISTS memory_entries (
+  notebook TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  heading TEXT NOT NULL,
+  spec_id TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  PRIMARY KEY (notebook, seq)
+);
 CREATE TABLE IF NOT EXISTS criteria_revisions (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   project TEXT NOT NULL, id TEXT NOT NULL,
@@ -194,6 +219,21 @@ function cmdImport(db, project) {
       n++;
     }
   }
+  // memory notebooks: mirror into memory_entries (markdown stays authoritative)
+  let m = 0;
+  const memDir = path.join(ROOT, "memory");
+  if (fs.existsSync(memDir)) {
+    const insM = db.prepare("INSERT INTO memory_entries (notebook,seq,heading,spec_id,body) VALUES (?,?,?,?,?)");
+    for (const f of fs.readdirSync(memDir).filter((f) => f.endsWith(".md") && f !== "README.md")) {
+      const notebook = f.replace(/\.md$/, "");
+      db.prepare("DELETE FROM memory_entries WHERE notebook=?").run(notebook);
+      parseMemory(fs.readFileSync(path.join(memDir, f), "utf8")).forEach((e, i) => {
+        insM.run(notebook, i + 1, e.heading, e.spec_id, e.body);
+        m++;
+      });
+    }
+  }
+
   // legacy JSONL ledger, if present
   const jl = path.join(ROOT, "memory", "spec-ledger.jsonl");
   let l = 0;
@@ -205,7 +245,7 @@ function cmdImport(db, project) {
       l++;
     }
   }
-  console.log(`Imported ${n} spec(s) for '${project}'${l ? `, ${l} ledger record(s)` : ""}.`);
+  console.log(`Imported ${n} spec(s) for '${project}'${l ? `, ${l} ledger record(s)` : ""}${m ? `, ${m} memory entr${m === 1 ? "y" : "ies"}` : ""}.`);
 }
 
 function cmdList(db, project, status) {
@@ -336,6 +376,17 @@ function cmdSet(db, project, id, field, value) {
   console.log(`${project}/${id}: ${field} set`);
 }
 
+function cmdMemory(db, notebook, specId) {
+  let sql = "SELECT notebook,seq,heading,spec_id FROM memory_entries";
+  const where = [], args = [];
+  if (notebook) { where.push("notebook=?"); args.push(notebook); }
+  if (specId) { where.push("spec_id=?"); args.push(specId); }
+  if (where.length) sql += " WHERE " + where.join(" AND ");
+  const rows = db.prepare(sql + " ORDER BY notebook,seq").all(...args);
+  if (rows.length === 0) { console.log("No memory entries recorded (run import)."); return; }
+  for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
+}
+
 function cmdLedger(db, project, outcome) {
   let sql = "SELECT project,id,title,outcome,verify_attempts,at FROM ledger";
   const where = [], args = [];
@@ -382,10 +433,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     case "record-attempt": cmdRecordAttempt(db, args[0], args[1], args[2], args[3]); break;
     case "drift": cmdDrift(db, args[0], args[1]); break;
     case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
+    case "memory": cmdMemory(db, args[0], args[1]); break;
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:
-      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|ledger|export> ...");
+      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|memory|ledger|export> ...");
       process.exit(1);
   }
 }
