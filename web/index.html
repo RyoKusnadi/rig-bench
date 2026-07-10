@@ -48,8 +48,15 @@
 <header>
   <h1>rig-bench · spec lifecycle</h1>
   <span class="m" id="metrics">loading…</span>
+  <span class="m" style="margin-left:auto"><a href="#" onclick="toggleMemory();return false" id="memlink">memory ▾</a></span>
 </header>
 <div id="board"></div>
+<div id="memory" style="display:none; padding:0 18px 18px">
+  <div class="col" style="min-width:0">
+    <h2><span>memory notebooks</span><span id="memcount"></span></h2>
+    <div class="cards" id="memlist"></div>
+  </div>
+</div>
 <aside id="detail"><div class="inner" id="detail-inner"></div></aside>
 
 <script>
@@ -81,8 +88,9 @@ async function board() {
 }
 
 async function detail(project, id) {
-  const [s, drift] = await Promise.all([
+  const [s, drift, mem] = await Promise.all([
     api(`/api/specs/${project}/${id}`), api(`/api/specs/${project}/${id}/drift`),
+    api(`/api/memory?spec_id=${id}`),
   ]);
   const inner = $("#detail-inner");
   inner.innerHTML = `
@@ -106,6 +114,10 @@ async function detail(project, id) {
     <table>${s.attempts.map((a) => `<tr><td>attempt-${a.n}</td><td><span class="pill ${a.overall}">${a.overall}</span></td>
       <td>${esc(a.at)}</td><td><a href="#" onclick="trace('${esc(project)}','${esc(id)}',${a.n});return false">trace</a></td></tr>`).join("") || "<tr><td class='empty'>none</td></tr>"}</table>
     <div id="trace"></div>
+    <h4>related memory</h4>
+    ${mem.length ? mem.map((m) => `
+      <details><summary><span class="pill">${esc(m.notebook)}</span> ${esc(m.heading)}</summary>
+      <pre>${esc(m.body)}</pre></details>`).join("") : '<div class="empty">no tagged entries</div>'}
     <h4>spec body</h4>
     <pre>${esc(s.body_md)}</pre>`;
   $("#detail").classList.add("open");
@@ -114,6 +126,20 @@ async function detail(project, id) {
 async function trace(project, id, n) {
   const a = await api(`/api/specs/${project}/${id}/attempts/${n}`);
   $("#trace").innerHTML = `<h4>attempt-${n} trace</h4><pre>${esc(a.trace_md || "(empty)")}</pre>`;
+}
+
+async function toggleMemory() {
+  const el = $("#memory");
+  const open = el.style.display === "none";
+  el.style.display = open ? "block" : "none";
+  $("#memlink").textContent = open ? "memory ▴" : "memory ▾";
+  if (!open) return;
+  const entries = await api("/api/memory");
+  $("#memcount").textContent = entries.length;
+  $("#memlist").innerHTML = entries.length ? entries.map((m) => `
+    <details class="card"><summary><span class="pill">${esc(m.notebook)}</span> ${esc(m.heading)}
+      ${m.spec_id ? `<span class="pill">spec ${esc(m.spec_id)}</span>` : ""}</summary>
+      <pre>${esc(m.body)}</pre></details>`).join("") : '<div class="empty">no entries — run spec-db.mjs import / memory add</div>';
 }
 
 board();

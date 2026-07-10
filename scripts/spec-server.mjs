@@ -13,6 +13,7 @@
 //   GET /api/specs/:project/:id             detail: spec + deps + transitions + attempts
 //   GET /api/specs/:project/:id/attempts/:n full trace body
 //   GET /api/specs/:project/:id/drift       latest two criteria snapshots + changed flag
+//   GET /api/memory?notebook=&spec_id=       mirrored memory notebook entries
 //   GET /api/ledger?project=&outcome=
 //   GET /api/metrics?project=               per-state counts, attempts distribution, failure rate
 //   GET /                                   web/index.html (the dashboard)
@@ -75,6 +76,15 @@ export function buildHandlers(db) {
       return { comparable: true, changed: latest.criteria_md !== prev.criteria_md, latest, prev };
     },
 
+    memory: (notebook, specId) => {
+      let sql = "SELECT notebook,seq,heading,spec_id,body FROM memory_entries";
+      const where = [], args = [];
+      if (notebook) { where.push("notebook=?"); args.push(notebook); }
+      if (specId) { where.push("spec_id=?"); args.push(specId); }
+      if (where.length) sql += " WHERE " + where.join(" AND ");
+      return db.prepare(sql + " ORDER BY notebook,seq").all(...args);
+    },
+
     ledger: (project, outcome) => {
       let sql = "SELECT project,id,title,outcome,verify_attempts,axis,at FROM ledger";
       const where = [], args = [];
@@ -131,6 +141,7 @@ export function startServer({ port = 4870 } = {}) {
         const r = h.spec(m[1], m[2]);
         return r ? json(res, 200, r) : json(res, 404, { error: "no such spec" });
       }
+      if (p === "/api/memory") return json(res, 200, h.memory(q.get("notebook"), q.get("spec_id")));
       if (p === "/api/ledger") return json(res, 200, h.ledger(q.get("project"), q.get("outcome")));
       if (p === "/api/metrics") return json(res, 200, h.metrics(q.get("project")));
       if (p === "/") {

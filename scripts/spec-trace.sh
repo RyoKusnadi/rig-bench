@@ -19,7 +19,7 @@
 # try next (Meta-Harness, Appendix D: the log CLI should "diff code and results between
 # pairs of runs").
 #
-# Dependency-free bash per memory/decisions.md — grep is the query engine by design.
+# Dependency-free bash per the decisions notebook — grep is the query engine by design.
 # Trace capture query view; diff subcommand compares attempts.
 
 set -euo pipefail

@@ -82,20 +82,21 @@ discipline). Unlike the considerations scan below, this doesn't get skipped for 
 specs: a one-line fix can still touch a secret or need a force-push. If a spec's
 Implementation Notes would violate one, that's a blocker to flag before drafting continues.
 
-**Consult `memory/` at the same moment** — `grep -ri <key terms> memory/` (or read the three
-notebooks directly; they're short). Past decisions, gotchas, and lessons that touch this
+**Consult memory at the same moment** — `node scripts/spec-db.mjs memory search "<key term>"`
+(and `memory decisions` / `memory gotchas` / `memory lessons` to list a whole notebook;
+`memory show <notebook> <seq>` for a full entry). Past decisions, gotchas, and lessons that touch this
 spec's area go into its `Implementation Notes` with their provenance tag, so the implementer
 inherits them instead of rediscovering them. A memory hit that *contradicts* the spec's
 direction is worth surfacing to the user before drafting continues — the point of
-`memory/decisions.md` is that overturning one should be a choice, not an accident.
+the decisions notebook is that overturning one should be a choice, not an accident.
 
-Also check `scripts/spec-ledger.sh list <project> blocked` — if a past spec in this area was
+Also check `node scripts/spec-db.mjs ledger <project> blocked` — if a past spec in this area was
 already tried and blocked, that's worth surfacing before drafting a similar one from scratch
 ; read the blocked spec file itself (still on disk under `blocked/`) for why it
 didn't make it, rather than only the one-line ledger record.
 
 While you're there, glance at whether the last 3 `finished` records for this project
-(`scripts/spec-ledger.sh list <project> finished`, most recent lines) share the same `axis`.
+(`node scripts/spec-db.mjs ledger <project> finished`, most recent lines) share the same `axis`.
 Three in a row on the same axis isn't wrong, but it's worth a one-line note to the user before
 drafting a fourth — "the last three specs were all `<axis>`; want to keep going there or look
 elsewhere?" — rather than silently continuing down the same groove. This is

@@ -67,6 +67,9 @@ async function makeServer(t) {
     fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(path.join(d, `${id}-x.md`), specMd(id, status));
   }
+  fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "memory", "gotchas.md"),
+    "# Gotchas\n\n## A gotcha about 0002 (spec 0002)\n\ngotcha body\n");
   cli(dir, "import", "p");
   const tf = path.join(dir, "t.md");
   fs.writeFileSync(tf, "raw trace here\n");
@@ -113,6 +116,11 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
   const ledger = (await get(base, "/api/ledger?outcome=finished")).body;
   assert.equal(ledger.length, 1);
   assert.equal(ledger[0].id, "0002");
+
+  const mem = (await get(base, "/api/memory?spec_id=0002")).body;
+  assert.equal(mem.length, 1);
+  assert.equal(mem[0].notebook, "gotchas");
+  assert.match(mem[0].body, /gotcha body/);
 
   const metrics = (await get(base, "/api/metrics?project=p")).body;
   assert.equal(metrics.finished, 2);

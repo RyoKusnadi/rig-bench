@@ -1,58 +1,43 @@
-# memory/
+# Memory
 
-Durable, file-based memory for this harness. Three notebooks, plain markdown, grep as the
-query engine. This is the deliberately-smaller replacement for the removed TF-IDF/SQLite
-memory system: at this repo's scale, a vector store was
-complexity without daily value, and these files are what it actually needed to be.
+The repo's durable memory: what was **decided** (and why), what was **discovered the hard
+way**, and what failures **taught**. It lives in the DB (`memory_entries` in `spec.db`,
+per-machine like everything else the DB holds) in three notebooks:
 
-## The notebooks
+- **decisions** — choices with rationale; overturning one should be a choice, not an accident.
+- **gotchas** — environment and tooling surprises that cost time once and shouldn't again.
+- **lessons** — what verification failures, blocked specs, and postmortems taught.
 
-| File | What goes in it |
-|---|---|
-| `decisions.md` | Choices with a rationale that future work should respect (or knowingly overturn) |
-| `gotchas.md` | Surprising behaviors of this repo/tooling that cost time to discover |
-| `lessons.md` | What verification failures, blocked specs, and postmortems taught |
+## Commands
 
-## Entry format
-
-```
-## YYYY-MM-DD — Short imperative title (spec NNNN | PR #NN)
-
-Free prose. Say what happened, what was concluded, and what a future reader should do
-differently. A few sentences is the right size — an entry nobody reads is worse than none.
+```bash
+node scripts/spec-db.mjs memory add <notebook> "<heading>" "<body>" [spec_id]
+node scripts/spec-db.mjs memory <notebook> [spec_id]    # list (optionally by linked spec)
+node scripts/spec-db.mjs memory search "<term>"
+node scripts/spec-db.mjs memory show <notebook> <seq>
+node scripts/spec-db.mjs memory export [notebook]        # markdown out — backup/transfer
 ```
 
-The `(spec NNNN | PR #NN)` provenance tag is required — memory without a pointer back to the
-evidence decays into folklore.
+## Entry conventions
 
-## Pruning convention
+Headings are `<ISO date> — <title>`; lessons headings end with the provenance tag
+`(spec NNNN)` — the missing-lesson check in `check-specs.sh` and the dashboard's
+related-memory join both key on it (pass the id as the fourth `add` argument too, so the
+link is structural, not just textual). Bodies carry the transferable part, not a replay of
+events: what class of thing this was, and what a future spec or session should do
+differently. A lesson that teaches nothing is still worth one line saying so — once.
 
-Superseded entries are **struck through, not deleted**, with a pointer to what replaced them:
+## Lifecycle wiring
 
-```
-## ~~2026-01-01 — Old belief (spec 0004)~~
+spec-plan consults memory before drafting (`memory search`); spec-verify records a lessons
+entry on every failed verification and every blocked escalation (`memory add lessons …`);
+the dashboard's spec detail pane shows entries linked by spec id.
 
-~~Original text...~~
+## Migration note (2026-07-09)
 
-**Superseded by** the 2026-03-01 entry below / spec 0009.
-```
-
-Git history is not the pruning mechanism — the working tree should show what was once
-believed and why it changed, without archaeology.
-
-## The lifecycle loop
-
-These notebooks are wired into the spec lifecycle, not just available to it:
-
-- **Write:** `spec-verify` appends a distilled `lessons.md` entry on every failed
-  verification and every blocked escalation (and optionally on a pass that taught something
-  durable) — see its Phase 6.
-- **Read:** `spec-plan` consults `memory/` alongside the Non-negotiables check before
-  drafting, folding relevant hits into the new spec's Implementation Notes.
-
-That closes the loop: failures become lessons, lessons reach the next plan.
-
-## Querying
-
-`grep -ri <term> memory/` — that's the whole search system, on purpose. If these files ever
-grow past what grep + headings can navigate, split by topic before reaching for an index.
+The notebooks were markdown files in this directory until the DB migration. The files were
+archived and removed; `scripts/spec-db.mjs import <project>` still parses any `memory/*.md`
+present into the DB, which is both the one-time migration path and the restore path (unzip
+an archive or `memory export > memory/<notebook>.md`, then import). The DB being per-machine
+is accepted deliberately — same trade the spec documents made — with `export` as the
+portability escape hatch.
