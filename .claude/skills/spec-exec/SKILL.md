@@ -94,7 +94,7 @@ members**, the specs may be dispatched concurrently instead of processed seriall
 the default — dispatch only when the batch shape allows it and concurrency actually buys
 something (two independent one-file specs aren't worth the worktree overhead).
 
-Procedure (prose + data only, no orchestration code — see `memory/decisions.md` on the dispatch shape):
+Procedure (prose + data only, no orchestration code — see the decisions notebook — `spec-db.mjs memory decisions` — on the dispatch shape):
 
 1. **Re-check the file-conflict scan** (Phase 4 above) across exactly the batch being
    dispatched. Overlapping specs drop back to serial order; they are not dispatched together.
@@ -168,7 +168,7 @@ For each spec (whether run concurrently or one at a time):
    redesign, not to ship as an artifact. Skip this for specs that only wire together, extend,
    or configure things that already work elsewhere in the repo (the empirical
    basis is Meta-Harness's finding that unprototyped mechanism changes are disproportionately
-   the ones that ship with bugs or no effect — see `memory/decisions.md`).
+   the ones that ship with bugs or no effect — see the decisions notebook).
    Once that checks out: create a feature branch named after the spec ID and slug, make the
    changes, commit, open a draft PR. Once the draft PR is open, record the feature-branch name
    and PR URL in the spec's

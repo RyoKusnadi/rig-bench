@@ -23,7 +23,7 @@ function makeRepo(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, "scripts"));
   fs.mkdirSync(path.join(dir, "workflows"));
-  for (const s of ["check-specs.sh", "spec-status.sh", "check-state-sync.sh", "spec-metrics.sh"]) {
+  for (const s of ["check-specs.sh", "spec-status.sh", "check-state-sync.sh", "spec-metrics.sh", "spec-db.mjs"]) {
     fs.copyFileSync(path.join(ROOT, "scripts", s), path.join(dir, "scripts", s));
     fs.chmodSync(path.join(dir, "scripts", s), 0o755);
   }
@@ -393,6 +393,28 @@ test("check-specs: failed-attempt spec without lessons entry warns but passes (m
   const out = runEnv(repo, { LESSONS_FILE: lessons }, "check-specs.sh", "p");
   assert.equal(out.code, 0, out.stdout + out.stderr);
   assert.match(out.stdout, /WARN \[missing-lesson\].*\(spec 0001\)/);
+});
+
+test("blocked spec with a DB lessons entry passes the memory check (DB path)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "blocked", "0001-a.md", { id: "0001", status: "blocked", verify_attempts: 2 });
+  const env = { SPECDB_ROOT: repo, SPECDB_PATH: path.join(repo, "spec.db") };
+  const db = (...a) => spawnSync("node", ["--no-warnings", path.join(repo, "scripts", "spec-db.mjs"), ...a], { encoding: "utf8", cwd: repo, env: { ...process.env, ...env } });
+  db("init");
+  db("memory", "add", "lessons", "2026-07-09 — Blocked and learned (spec 0001)", "body", "0001");
+  const out = runEnv(repo, {}, "check-specs.sh", "p");
+  assert.equal(out.code, 0, out.stdout + out.stderr);
+  assert.doesNotMatch(out.stdout, /missing-lesson/);
+});
+
+test("blocked spec with a DB but no lessons entry is still flagged (DB path)", (t) => {
+  const repo = makeRepo(t);
+  writeSpec(repo, "p", "blocked", "0001-a.md", { id: "0001", status: "blocked", verify_attempts: 2 });
+  const env = { SPECDB_ROOT: repo, SPECDB_PATH: path.join(repo, "spec.db") };
+  spawnSync("node", ["--no-warnings", path.join(repo, "scripts", "spec-db.mjs"), "init"], { encoding: "utf8", cwd: repo, env: { ...process.env, ...env } });
+  const out = runEnv(repo, {}, "check-specs.sh", "p");
+  assert.equal(out.code, 1);
+  assert.match(out.stdout, /ISSUE \[missing-lesson\].*\(spec 0001\)/);
 });
 
 test("check-specs: empty project → exit 0", (t) => {

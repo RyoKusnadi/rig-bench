@@ -21,7 +21,11 @@
 //   scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> [trace-file]
 //   scripts/spec-db.mjs drift <project> <id>
 //   scripts/spec-db.mjs set <project> <id> <branch|pr|axis> <value>
-//   scripts/spec-db.mjs memory [notebook] [spec_id]
+//   scripts/spec-db.mjs memory [notebook] [spec_id]          (list)
+//   scripts/spec-db.mjs memory add <notebook> <heading> <body> [spec_id]
+//   scripts/spec-db.mjs memory search <term>
+//   scripts/spec-db.mjs memory show <notebook> <seq>
+//   scripts/spec-db.mjs memory export [notebook]
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
@@ -376,14 +380,53 @@ function cmdSet(db, project, id, field, value) {
   console.log(`${project}/${id}: ${field} set`);
 }
 
-function cmdMemory(db, notebook, specId) {
+function cmdMemory(db, ...args) {
+  const sub = ["add", "search", "show", "export"].includes(args[0]) ? args.shift() : "list";
+  if (sub === "add") {
+    const [notebook, heading, body, specId] = args;
+    if (!notebook || !heading) die("memory add <notebook> <heading> <body> [spec_id]");
+    const seq = (db.prepare("SELECT COALESCE(MAX(seq),0) m FROM memory_entries WHERE notebook=?").get(notebook).m) + 1;
+    db.prepare("INSERT INTO memory_entries (notebook,seq,heading,spec_id,body) VALUES (?,?,?,?,?)")
+      .run(notebook, seq, heading, specId ?? "", body ?? "");
+    console.log(`${notebook}#${seq} recorded`);
+    return;
+  }
+  if (sub === "search") {
+    const term = args[0];
+    if (!term) die("memory search <term>");
+    const rows = db.prepare(
+      "SELECT notebook,seq,heading,spec_id FROM memory_entries WHERE heading LIKE ? OR body LIKE ? ORDER BY notebook,seq"
+    ).all(`%${term}%`, `%${term}%`);
+    if (rows.length === 0) { console.log(`No memory entries match '${term}'.`); return; }
+    for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
+    return;
+  }
+  if (sub === "show") {
+    const [notebook, seq] = args;
+    const r = db.prepare("SELECT * FROM memory_entries WHERE notebook=? AND seq=?").get(notebook, Number(seq));
+    if (!r) die(`no entry ${notebook}#${seq}`);
+    console.log(`## ${r.heading}\n\n${r.body}`);
+    return;
+  }
+  if (sub === "export") {
+    const notebooks = args[0]
+      ? [args[0]]
+      : db.prepare("SELECT DISTINCT notebook FROM memory_entries ORDER BY notebook").all().map((r) => r.notebook);
+    for (const nb of notebooks) {
+      const rows = db.prepare("SELECT heading,body FROM memory_entries WHERE notebook=? ORDER BY seq").all(nb);
+      process.stdout.write(`# ${nb}\n\n` + rows.map((r) => `## ${r.heading}\n\n${r.body}\n`).join("\n") + "\n");
+    }
+    return;
+  }
+  // list [notebook] [spec_id]
+  const [notebook, specId] = args;
   let sql = "SELECT notebook,seq,heading,spec_id FROM memory_entries";
-  const where = [], args = [];
-  if (notebook) { where.push("notebook=?"); args.push(notebook); }
-  if (specId) { where.push("spec_id=?"); args.push(specId); }
+  const where = [], qargs = [];
+  if (notebook) { where.push("notebook=?"); qargs.push(notebook); }
+  if (specId) { where.push("spec_id=?"); qargs.push(specId); }
   if (where.length) sql += " WHERE " + where.join(" AND ");
-  const rows = db.prepare(sql + " ORDER BY notebook,seq").all(...args);
-  if (rows.length === 0) { console.log("No memory entries recorded (run import)."); return; }
+  const rows = db.prepare(sql + " ORDER BY notebook,seq").all(...qargs);
+  if (rows.length === 0) { console.log("No memory entries recorded."); return; }
   for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
 }
 
@@ -433,7 +476,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     case "record-attempt": cmdRecordAttempt(db, args[0], args[1], args[2], args[3]); break;
     case "drift": cmdDrift(db, args[0], args[1]); break;
     case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
-    case "memory": cmdMemory(db, args[0], args[1]); break;
+    case "memory": cmdMemory(db, ...args); break;
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:

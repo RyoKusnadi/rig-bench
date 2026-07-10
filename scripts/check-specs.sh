@@ -356,15 +356,27 @@ done
 
 # ── Memory writeback check: escalations must leave a lessons.md entry ──
 # The lifecycle loop promises every blocked escalation (and every failed verification)
-# a distilled memory/lessons.md entry — this makes the promise checkable. Provenance
+# a distilled lessons entry (DB memory notebook) — this makes the promise checkable. Provenance
 # match: a "## " heading that mentions "spec" and contains the raw id, which accepts
 # the documented tag forms — "(spec 0006)", "(spec 0006, PR #77)", "(spec 0006 | PR #77)"
 # — and the plural batch form "(specs 0010+0011, ...)". Blocked without an entry is a
 # hard ISSUE (escalations are exactly what the notebook exists for); a
 # waiting_verification spec with failed attempts is a WARN only — attempt-1 failures
-# may be mid-fix with the entry legitimately pending. LESSONS_FILE overrides the path
-# (fixtures); a missing file counts as "no entries".
+# may be mid-fix with the entry legitimately pending. Lessons live in the DB
+# (memory_entries, via scripts/spec-db.mjs); when spec.db is present the check queries
+# it, otherwise it falls back to scanning LESSONS_FILE (default memory/lessons.md —
+# fixtures and pre-migration repos). A missing DB and missing file count as "no entries".
 LESSONS_FILE="${LESSONS_FILE:-memory/lessons.md}"
+SPEC_DB_CLI="$(dirname "$0")/spec-db.mjs"
+lesson_lookup() { # $1 = spec id → prints "yes" if a tagged lessons entry exists
+  local id="$1"
+  if [[ -f "spec.db" && -f "$SPEC_DB_CLI" ]] && command -v node >/dev/null 2>&1; then
+    if node --no-warnings "$SPEC_DB_CLI" memory lessons "$id" 2>/dev/null \
+      | grep -q "\[spec ${id}\]"; then echo "yes"; return; fi
+    # fall through to the file: DB may predate the entry or be freshly initialized
+  fi
+  awk -v id="$id" '/^## / && /spec/ && index($0, id) { print "yes"; exit }' "$LESSONS_FILE" 2>/dev/null || true
+}
 for f in "${SPEC_FILES[@]}"; do
   folder="$(basename "$(dirname "$f")")"
   [[ "$folder" == "blocked" || "$folder" == "waiting_verification" ]] || continue
@@ -376,7 +388,7 @@ for f in "${SPEC_FILES[@]}"; do
   if [[ "$folder" == "waiting_verification" && "$attempts" == "0" ]]; then
     continue
   fi
-  has_lesson="$(awk -v id="$id" '/^## / && /spec/ && index($0, id) { print "yes"; exit }' "$LESSONS_FILE" 2>/dev/null || true)"
+  has_lesson="$(lesson_lookup "$id")"
   if [[ "$has_lesson" == "yes" ]]; then
     continue
   fi

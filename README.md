@@ -110,7 +110,7 @@ Nothing gets marked finished on a partial pass — if even one criterion fails, 
 project's own checks (`make check`, the test suite) break, the spec stays put and you get a
 clear list of what still needs fixing, plus a raw trace of exactly what ran and what it
 printed (`scripts/spec-trace.sh`) for the fix to work from. Outcomes land in an append-only
-ledger (`scripts/spec-ledger.sh list`) so later planning can see what shipped and what got
+ledger (`node scripts/spec-db.mjs ledger`) so later planning can see what shipped and what got
 stuck. Fail the same spec twice and it stops
 looping silently: it moves to a `blocked/` folder instead, so a spec can't sit forgotten in
 limbo forever without anyone noticing.
@@ -207,7 +207,7 @@ enforces the state machine and dependency rules at write time; the server only o
 Spec files are local working state and are never committed — the lifecycle
 (plan→execute→verify, the retry contract, traces) runs entirely from disk, PRs carry
 implementation changes only, and the append-only outcome ledger
-(`scripts/spec-ledger.sh list`) records what finished or got blocked on each machine.
+(`node scripts/spec-db.mjs ledger`) records what finished or got blocked on each machine.
 
 ---
 

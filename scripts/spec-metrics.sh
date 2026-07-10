@@ -9,8 +9,8 @@
 # Usage: scripts/spec-metrics.sh <project>
 #        scripts/spec-metrics.sh          (only valid if exactly one specs/<project>/ exists)
 #
-# Dependency-free bash/awk per memory/decisions.md, bash-3.2 compatible per
-# memory/gotchas.md. Spec: specs/template/*/0010-spec-metrics.md
+# Dependency-free bash/awk per the decisions notebook, bash-3.2 compatible per
+# the gotchas notebook.
 
 set -euo pipefail
 

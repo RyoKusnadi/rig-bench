@@ -205,12 +205,8 @@ Spec documents are never committed (a repo invariant — see CLAUDE.md's Non-neg
 so the move is local working state: no add/commit of spec paths; the ledger entry below is
 the durable record of the outcome.
 
-Record the outcome in the ledger — `verify_attempts` here is whatever the frontmatter already
-holds (0 for a spec that passed first try), and `axis` is the spec's `axis` frontmatter value
-(empty string if unset):
-```bash
-scripts/spec-ledger.sh append <project> <id> "<title>" finished <verify_attempts> "<axis>"
-```
+The `move` above already appended the outcome to the DB ledger (terminal states
+auto-ledger); confirm with `node scripts/spec-db.mjs ledger <project> finished` if needed.
 
 Report: `Spec {id} — {title}: verified and moved to finished.`
 
@@ -242,11 +238,13 @@ canonical description; the steps below are just this skill's execution of it.
    output behind each failed line lives in the Phase 3d trace at
    `specs/<project>/.traces/<id>/attempt-<verify_attempts>.md`, which the fix loop reads
    alongside this list. Point at the trace rather than pasting its output here.
-3. Append a distilled entry to `memory/lessons.md` (format per `memory/README.md`, provenance
-   tag required): not a copy of the failure list, but the transferable part — what class of
-   mistake this was and what a future spec or implementation should do differently. If the
-   failure is purely local (a typo-grade miss with nothing transferable), a one-line entry
-   is still written; deciding it teaches nothing is itself worth recording once.
+3. Record a distilled lessons entry in the DB (conventions per `memory/README.md`,
+   provenance tag in the heading required):
+   `node scripts/spec-db.mjs memory add lessons "<date> — <title> (spec <id>)" "<body>" <id>`
+   — not a copy of the failure list, but the transferable part — what class of mistake this
+   was and what a future spec or implementation should do differently. If the failure is
+   purely local (a typo-grade miss with nothing transferable), a one-line entry is still
+   written; deciding it teaches nothing is itself worth recording once.
 
 **6b. Stay in place, or escalate to blocked**
 
@@ -271,23 +269,21 @@ here — if it ever changes, that's the one place to change it).
   move is local (spec documents are never committed); the ledger entry below carries the
   durable record of the blocked outcome, and the escalation report is what reaches the
   human.
-  Record the outcome in the ledger, same as a finished spec (including `axis`), so a later
-  planning pass can see this was tried and blocked without re-reading the file:
-  ```bash
-  scripts/spec-ledger.sh append <project> <id> "<title>" blocked <verify_attempts> "<axis>"
-  ```
+  The `move` above already appended the blocked outcome to the DB ledger, so a later
+  planning pass can see this was tried and blocked (`node scripts/spec-db.mjs ledger
+  <project> blocked`).
   Report clearly, as an escalation rather than a routine failure:
   `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked/.
   This needs human review before another attempt; see specs/README.md's "Un-blocking a spec"
   for how to bring it back.`
 
-  A blocked spec always gets a `memory/lessons.md` entry (in addition to the failure-time
+  A blocked spec always gets a lessons entry via `memory add` (in addition to the failure-time
   entry from 6a): escalations are exactly the events the notebook exists for.
 
 **6c. Passing specs and memory (optional, not routine)**
 
 A pass that revealed something durable — a verification technique worth reusing, a criterion
-pattern that made checking easy or hard — may also get a `memory/lessons.md` entry. Routine
+pattern that made checking easy or hard — may also get a lessons entry via `memory add`. Routine
 passes don't; a notebook padded with "it worked" entries stops being read.
 
 Do not auto-retry within the same run — one verify pass per spec per invocation, same as a

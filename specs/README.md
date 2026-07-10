@@ -4,7 +4,7 @@ Spec-driven decomposition of a project's long-form rationale doc, when one
 exists. The rationale doc stays as the long-form "why this matters"; a spec
 here is the short-form executable unit ("what to build, scoped to one PR").
 The harness itself currently keeps no such doc — its rationale lives in
-merged PRs, git history, and `memory/`.
+merged PRs, git history, and the memory notebooks (`spec-db.mjs memory decisions`).
 
 ## Structure
 
@@ -152,7 +152,7 @@ sitting in `in_progress/`) is a bug, not a valid intermediate state, however it 
 
 **Machine-readable mirror:** `workflows/state.yaml` carries the same state/folder/transition
 facts plus the `MAX_VERIFY_ATTEMPTS` constant below, as pure data — no orchestration code, a
-deliberate design decision (see `memory/decisions.md`). It's for future tooling to read instead of parsing this
+deliberate design decision (see the decisions notebook). It's for future tooling to read instead of parsing this
 table. **Sync enforcement:** `scripts/check-state-sync.sh` (also run by `make check`) verifies
 the state set and `MAX_VERIFY_ATTEMPTS` agree between this table and the YAML, exiting 1 on
 drift. `scripts/check-specs.sh` derives its valid-state list from the YAML directly, so there
@@ -198,7 +198,7 @@ check while breaking `make check`/the test suite fails verification):
    the compressed handoff; the trace is the uncompressed one. `spec-exec` reads both on a fix,
    because a distilled summary drops the raw command output that often pinpoints the cause
    (the empirical basis is the Meta-Harness finding that traces beat summaries as fix signal —
-   see `memory/decisions.md`).
+   see the decisions notebook).
 3. If `verify_attempts < MAX_VERIFY_ATTEMPTS`: leave the file in `waiting_verification/`,
    status unchanged. Report the failure and that this was attempt `{verify_attempts}` of
    `MAX_VERIFY_ATTEMPTS`.
@@ -226,8 +226,8 @@ actually lives (`git log --follow` on the spec path).
 
 **Spec documents are never committed** (a repo invariant, recorded in CLAUDE.md's
 Non-negotiables): the plan→execute→verify folder lifecycle runs entirely from local disk,
-commits and PRs carry implementation changes only, and `memory/spec-ledger.jsonl` (local,
-gitignored) is each machine's record of what finished or got blocked. The lifecycle folders
+commits and PRs carry implementation changes only, and the DB ledger
+(`spec-db.mjs ledger`) is each machine's record of what finished or got blocked. The lifecycle folders
 themselves are kept in git via `.gitkeep` so a fresh clone has the structure. Cycle-time
 metrics come from the frontmatter `history` entries; there is no git-based fallback for
 spec files.
@@ -241,12 +241,12 @@ specs ingest at plan time via `import` (idempotent). During this period the **fi
 remains the source of truth**: on any divergence, `spec-db.mjs import <project>`
 reconciles the DB to the files. Cut-over (DB as source, files as export) is a later phase.
 
-**Outcome ledger:** both a `finished/` move and a `blocked/` move append one line to
-`memory/spec-ledger.jsonl` via `scripts/spec-ledger.sh append` — unlike the per-spec trace
-and failure section, this record is never cleared; it's the durable, queryable history of
-what shipped or got stuck, across every spec, so `spec-plan` can check
-`scripts/spec-ledger.sh list <project> blocked` before drafting something similar from
-scratch.
+**Outcome ledger:** a `finished/` or `blocked/` move auto-appends one row to the DB
+ledger (`spec-db.mjs move` does it; read with `spec-db.mjs ledger [project] [outcome]`) —
+unlike the per-spec trace and failure section, this record is never cleared; it's the
+durable history of what shipped or got stuck, consulted by spec-plan before drafting into
+a previously-blocked area. (The earlier JSONL ledger is retired; `import` still ingests a
+legacy `memory/spec-ledger.jsonl` if present.)
 
 ## Template
 
