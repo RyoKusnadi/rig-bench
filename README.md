@@ -117,6 +117,35 @@ limbo forever without anyone noticing.
 
 ---
 
+### `/research`
+
+> It kicks in when you ask to research or learn a general topic, like
+> "/research how can I learn German for A1" or "research how crypto works at a high level."
+
+Not everything in this repo is about shipping specs — this one turns a topic you want to
+learn into a durable, sourced learning guide instead of a chat answer that scrolls away. It
+runs a few web searches, reads a handful of reputable sources, and writes a structured
+markdown report (overview, key concepts, a learning path, linked resources, next steps)
+where every non-obvious claim cites a page that was actually fetched.
+
+```mermaid
+flowchart TD
+    A[You give a topic] --> B{Clear enough<br/>to research?}
+    B -->|No| C[Asks 2-3 questions —<br/>goal, level, constraints]
+    B -->|Yes| D[Web searches +<br/>reads 3-5 sources]
+    C --> D
+    D --> E[Writes a cited<br/>learning guide]
+    E --> F[Saves to spec.db via<br/>the research CLI]
+    F --> G[Readable in the dashboard's<br/>research panel]
+```
+
+Reports land in the same SQLite system of record as everything else
+(`node scripts/spec-db.mjs research list` / `show <seq|slug>` / `search <term>` /
+`export`), and the dashboard grows a **research** toggle next to **memory** — a report
+list plus a reading pane with rendered markdown and clickable sources.
+
+---
+
 ## How to Use This Repo
 
 This covers planning, execution, and verification — the three phases of the spec lifecycle,
@@ -191,6 +220,21 @@ fix 0001 — the rate limiter isn't returning 429s under load
 Fail the same spec twice and it won't loop silently: it moves to `blocked/` instead, and needs
 a human decision before another attempt.
 
+**Researching a topic:**
+
+For learning something rather than building something, just ask:
+
+```
+/research how can I learn German for A1
+```
+```
+research how crypto works at a high level
+```
+
+You get a short summary in chat, and the full cited guide is saved for later —
+`node scripts/spec-db.mjs research show <seq>` on the command line, or the **research**
+toggle in the dashboard header.
+
 ---
 
 **Live dashboard:**
@@ -199,7 +243,7 @@ a human decision before another attempt.
 local SQLite system of record from your spec files, then `make serve` opens a read-only
 dashboard at `http://localhost:4870` — a kanban board by lifecycle state, per-spec detail
 (dependencies, transition history, verification attempts with raw traces, criteria-drift
-status), and lifecycle metrics. Every mutation goes through `scripts/spec-db.mjs`, which
+status), lifecycle metrics, plus browsable memory notebooks and research reports. Every mutation goes through `scripts/spec-db.mjs`, which
 enforces the state machine and dependency rules at write time; the server only observes.
 
 **Spec documents and git:**
