@@ -54,12 +54,13 @@ prints markdown for backup or transfer; the DB is per-machine, like the specs it
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
+| `.claude/skills/research/` | `/research <topic>` — web-search-backed learning guides, saved via `spec-db.mjs research add`, browsable in the dashboard's research panel |
 | `.claude/agents/` | `spec-executor.md`, `spec-verifier.md` — thin dispatch entry points into the skills |
 | `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions") |
 | `memory/` | Memory system: notebooks (decisions, gotchas, lessons) live in the DB as `memory_entries` — write via `spec-db.mjs memory add`, read via `memory`/`memory search`/`memory show`, back up via `memory export`. `memory/README.md` documents conventions. |
 | `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
 | `lib/` | Placeholder (`.gitkeep`) |
-| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`, `spec-trace.sh` — query view over verification traces, `spec-db.mjs` — SQLite system of record for the lifecycle: import/list/show/move with transition + dependency enforcement, attempts, ledger, criteria-drift, export) |
+| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`, `spec-trace.sh` — query view over verification traces, `spec-db.mjs` — SQLite system of record for the lifecycle: import/list/show/move with transition + dependency enforcement, attempts, ledger, criteria-drift, research reports, export; `spec-server.mjs` — read-only JSON API + dashboard at `web/index.html`) |
 | `specs/<project>/.traces/` | Raw per-attempt verification traces written by `spec-verify`, read by `spec-exec` on a fix, cleared on success |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
 | `tests/` | `node --test` suites (run via `npm test`) |

@@ -14,7 +14,7 @@ specs/*.md
 !specs/README.md
 !specs/spec-template.md
 specs/*/*/*.md
-research/
+/research/
 projects/*
 !projects/.gitkeep
 memory/spec-ledger.jsonl

@@ -26,6 +26,11 @@
 //   scripts/spec-db.mjs memory search <term>
 //   scripts/spec-db.mjs memory show <notebook> <seq>
 //   scripts/spec-db.mjs memory export [notebook]
+//   scripts/spec-db.mjs research                              (list)
+//   scripts/spec-db.mjs research add <topic> <title> <body-file> [sources-json]
+//   scripts/spec-db.mjs research show <seq|slug>
+//   scripts/spec-db.mjs research search <term>
+//   scripts/spec-db.mjs research export [seq|slug]
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
@@ -175,6 +180,15 @@ CREATE TABLE IF NOT EXISTS criteria_revisions (
   at_state TEXT NOT NULL,
   criteria_md TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS research_reports (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL UNIQUE,
+  topic TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  body_md TEXT NOT NULL DEFAULT '',
+  sources TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 `;
 
@@ -430,6 +444,77 @@ function cmdMemory(db, ...args) {
   for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
 }
 
+export function slugify(title) {
+  return String(title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60)
+    .replace(/-+$/, "") || "report";
+}
+
+function cmdResearch(db, ...args) {
+  db.exec(SCHEMA); // reports must land even on a DB created before this table existed
+  const sub = ["add", "search", "show", "export"].includes(args[0]) ? args.shift() : "list";
+  const bySeqOrSlug = (key) =>
+    /^\d+$/.test(key)
+      ? db.prepare("SELECT * FROM research_reports WHERE seq=?").get(Number(key))
+      : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(key);
+  if (sub === "add") {
+    const [topic, title, bodyFile, sourcesJson] = args;
+    if (!topic || !title || !bodyFile) die("research add <topic> <title> <body-file> [sources-json]");
+    if (!fs.existsSync(bodyFile)) die(`body file '${bodyFile}' does not exist`);
+    const body = fs.readFileSync(bodyFile, "utf8");
+    let sources = "[]";
+    if (sourcesJson) {
+      let parsed;
+      try { parsed = JSON.parse(sourcesJson); } catch { die("sources-json is not valid JSON"); }
+      if (!Array.isArray(parsed)) die("sources-json must be a JSON array of URLs");
+      sources = JSON.stringify(parsed);
+    }
+    const base = slugify(title);
+    let slug = base;
+    for (let n = 2; db.prepare("SELECT 1 FROM research_reports WHERE slug=?").get(slug); n++) slug = `${base}-${n}`;
+    db.prepare("INSERT INTO research_reports (slug,topic,title,body_md,sources) VALUES (?,?,?,?,?)")
+      .run(slug, topic, title, body, sources);
+    const seq = db.prepare("SELECT seq FROM research_reports WHERE slug=?").get(slug).seq;
+    console.log(`research#${seq} (${slug}) recorded`);
+    return;
+  }
+  if (sub === "show") {
+    const key = args[0];
+    if (!key) die("research show <seq|slug>");
+    const r = bySeqOrSlug(key);
+    if (!r) die(`no report '${key}'`);
+    const sources = JSON.parse(r.sources);
+    console.log(`# ${r.title}`);
+    console.log(`topic: ${r.topic}`);
+    console.log(`created: ${r.created_at}`);
+    if (sources.length) console.log(`sources:\n${sources.map((s) => `  - ${s}`).join("\n")}`);
+    console.log(`---\n${r.body_md}`);
+    return;
+  }
+  if (sub === "search") {
+    const term = args[0];
+    if (!term) die("research search <term>");
+    const rows = db.prepare(
+      "SELECT seq,slug,topic,title,created_at FROM research_reports WHERE topic LIKE ? OR title LIKE ? OR body_md LIKE ? ORDER BY seq"
+    ).all(`%${term}%`, `%${term}%`, `%${term}%`);
+    if (rows.length === 0) { console.log(`No research reports match '${term}'.`); return; }
+    for (const r of rows) console.log(`research#${r.seq}  ${r.created_at}  ${r.title} — ${r.topic}`);
+    return;
+  }
+  if (sub === "export") {
+    const rows = args[0]
+      ? [bySeqOrSlug(args[0]) ?? die(`no report '${args[0]}'`)]
+      : db.prepare("SELECT * FROM research_reports ORDER BY seq").all();
+    for (const r of rows) {
+      process.stdout.write(`# ${r.title}\n\ntopic: ${r.topic} · created: ${r.created_at}\n\n${r.body_md}\n\n`);
+    }
+    return;
+  }
+  // list
+  const rows = db.prepare("SELECT seq,slug,topic,title,created_at FROM research_reports ORDER BY seq").all();
+  if (rows.length === 0) { console.log("No research reports recorded."); return; }
+  for (const r of rows) console.log(`research#${r.seq}  ${r.created_at}  ${r.title} — ${r.topic}`);
+}
+
 function cmdLedger(db, project, outcome) {
   let sql = "SELECT project,id,title,outcome,verify_attempts,at FROM ledger";
   const where = [], args = [];
@@ -477,10 +562,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     case "drift": cmdDrift(db, args[0], args[1]); break;
     case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
     case "memory": cmdMemory(db, ...args); break;
+    case "research": cmdResearch(db, ...args); break;
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:
-      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|memory|ledger|export> ...");
+      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|memory|research|ledger|export> ...");
       process.exit(1);
   }
 }

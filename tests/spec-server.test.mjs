@@ -75,6 +75,9 @@ async function makeServer(t) {
   fs.writeFileSync(tf, "raw trace here\n");
   cli(dir, "record-attempt", "p", "0002", "FAIL", tf);
   cli(dir, "move", "p", "0002", "finished"); // snapshots criteria, ledgers
+  const rf = path.join(dir, "r.md");
+  fs.writeFileSync(rf, "## Overview\n\nGerman A1 study guide body.\n");
+  cli(dir, "research", "add", "learn German A1", "Learning German to A1", rf, '["https://example.com/x"]');
 
   process.env.SPECDB_ROOT = dir;
   process.env.SPECDB_PATH = path.join(dir, "spec.db");
@@ -133,4 +136,25 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
 
   assert.equal((await get(base, "/api/specs/p/9999")).status, 404);
   assert.equal((await fetch(base + "/api/specs", { method: "POST" })).status, 405);
+
+  // research endpoints (same fixture: spec-db.mjs's module-level DB path binds to the
+  // first import, so a second makeServer would reopen this test's deleted DB)
+  const reports = (await get(base, "/api/research")).body;
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].title, "Learning German to A1");
+  assert.deepEqual(reports[0].sources, ["https://example.com/x"]);
+  assert.equal("body_md" in reports[0], false);
+
+  const bySeq = (await get(base, `/api/research/${reports[0].seq}`)).body;
+  assert.equal(bySeq.slug, "learning-german-to-a1");
+  assert.match(bySeq.body_md, /study guide body/);
+  assert.deepEqual(bySeq.sources, ["https://example.com/x"]);
+
+  const bySlug = await get(base, "/api/research/learning-german-to-a1");
+  assert.equal(bySlug.status, 200);
+  assert.equal(bySlug.body.seq, bySeq.seq);
+
+  assert.equal((await get(base, "/api/research?q=German")).body.length, 1);
+  assert.equal((await get(base, "/api/research?q=zzz")).body.length, 0);
+  assert.equal((await get(base, "/api/research/999")).status, 404);
 });

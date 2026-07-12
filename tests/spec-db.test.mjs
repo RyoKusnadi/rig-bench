@@ -198,6 +198,56 @@ test("memory notebooks mirror into the DB with spec-id links; re-import replaces
   assert.doesNotMatch(all.stdout, /First lesson/);
 });
 
+test("research add/list/show/search round-trip with slug and sources", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "## Overview\n\nX is a thing worth learning.\n");
+  const add = run(dir, "research", "add", "how X works", "Understanding X", bodyFile,
+    '["https://a.example","https://b.example"]');
+  assert.equal(add.code, 0, add.stderr);
+  assert.match(add.stdout, /research#1 \(understanding-x\) recorded/);
+  assert.match(run(dir, "research").stdout, /research#1\s+\S+\s+Understanding X — how X works/);
+  for (const key of ["1", "understanding-x"]) {
+    const show = run(dir, "research", "show", key);
+    assert.match(show.stdout, /# Understanding X/);
+    assert.match(show.stdout, /topic: how X works/);
+    assert.match(show.stdout, /https:\/\/a\.example[\s\S]*https:\/\/b\.example/);
+    assert.match(show.stdout, /worth learning/);
+  }
+  assert.match(run(dir, "research", "search", "worth learning").stdout, /research#1/);
+  assert.match(run(dir, "research", "search", "zzz").stdout, /No research reports match/);
+  // slug dedupe on duplicate title
+  const dup = run(dir, "research", "add", "another topic", "Understanding X", bodyFile);
+  assert.match(dup.stdout, /research#2 \(understanding-x-2\) recorded/);
+});
+
+test("research add validates args and sources JSON", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "body\n");
+  assert.equal(run(dir, "research", "add", "topic", "Title").code, 1); // missing body-file
+  assert.equal(run(dir, "research", "add", "topic", "Title", path.join(dir, "nope.md")).code, 1);
+  assert.equal(run(dir, "research", "add", "topic", "Title", bodyFile, "not json").code, 1);
+  assert.equal(run(dir, "research", "add", "topic", "Title", bodyFile, '{"a":1}').code, 1); // not an array
+  assert.equal(run(dir, "research", "show", "999").code, 1);
+});
+
+test("research export prints markdown", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "the body text\n");
+  run(dir, "research", "add", "how X works", "Understanding X", bodyFile);
+  run(dir, "research", "add", "how Y works", "Understanding Y", bodyFile);
+  const all = run(dir, "research", "export");
+  assert.match(all.stdout, /# Understanding X[\s\S]*the body text[\s\S]*# Understanding Y/);
+  const one = run(dir, "research", "export", "1");
+  assert.match(one.stdout, /# Understanding X/);
+  assert.doesNotMatch(one.stdout, /Understanding Y/);
+});
+
 test("legacy JSONL ledger is imported when present", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "finished" }]);
   fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
