@@ -130,7 +130,9 @@ gaps), with sources picked for authority over search rank. Load-bearing claims n
 independent sources before the report states them flat, and where sources disagree the
 report says so instead of silently picking a side. The result is a structured markdown
 report (overview, key concepts, a learning path, linked resources, next steps) where every
-non-obvious claim cites a page that was actually fetched.
+non-obvious claim cites a page that was actually fetched. When the topic has a process or
+structure to it, the report also carries a text diagram — and, where a fetched source
+offers one, an embedded image — both rendered in the dashboard's reading pane.
 
 ```mermaid
 flowchart TD

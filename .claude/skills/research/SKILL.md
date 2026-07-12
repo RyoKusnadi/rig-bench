@@ -129,8 +129,26 @@ explainers):
 Every non-obvious claim carries an inline `[source](url)` link to a fetched page;
 single-sourced claims are attributed in the prose. Synthesize across sources — the report
 answers the sub-questions in its own structure; it is not a sequence of per-source
-summaries. The dashboard renders headings, lists, bold, code, and http(s) links; anything
-else falls back to plain paragraphs — keep the markdown simple.
+summaries.
+
+**Diagrams and images — when the shape of the thing is the point.** If the topic has a
+process, architecture, timeline, or hierarchy (a request pipeline, a certification ladder,
+how a transaction flows), show it, don't just narrate it:
+
+- **Diagrams**: draw an ASCII/text diagram inside a fenced code block — boxes, arrows,
+  indented trees. The dashboard renders fences as preformatted text, so these work with no
+  extra tooling. Keep it under ~15 lines and label it with a one-line caption above.
+- **Images**: `![caption](https://...)` embeds an image in the dashboard. Use only a
+  direct image URL you actually saw on a page you fetched (an official chart, a spec's own
+  figure) — never construct or guess an image URL, and skip it if the source's terms make
+  hotlinking dubious. The image's page still belongs in `sources`.
+
+One good diagram beats three decorative ones; if the topic is purely conceptual, skip
+visuals entirely.
+
+The dashboard renders headings, lists, bold, code, fenced blocks, http(s) links, and
+`![...](https://...)` images; anything else falls back to plain paragraphs — keep the
+markdown simple.
 
 ## Phase 5 — Save via the CLI
 
