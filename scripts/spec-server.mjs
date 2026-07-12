@@ -14,6 +14,8 @@
 //   GET /api/specs/:project/:id/attempts/:n full trace body
 //   GET /api/specs/:project/:id/drift       latest two criteria snapshots + changed flag
 //   GET /api/memory?notebook=&spec_id=       mirrored memory notebook entries
+//   GET /api/research?q=                     research report list (no bodies)
+//   GET /api/research/:seqOrSlug             full report incl. body_md
 //   GET /api/ledger?project=&outcome=
 //   GET /api/metrics?project=               per-state counts, attempts distribution, failure rate
 //   GET /                                   web/index.html (the dashboard)
@@ -28,6 +30,15 @@ import { openDb, readStates } from "./spec-db.mjs";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX_HTML = path.join(ROOT, "web", "index.html");
+
+function safeParseArray(s) {
+  try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+// pre-upgrade DBs lack research_reports; the dashboard should see [] there, not a 500
+function hasResearchTable(db) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_reports'").get();
+}
 
 function json(res, code, body) {
   res.writeHead(code, {
@@ -83,6 +94,23 @@ export function buildHandlers(db) {
       if (specId) { where.push("spec_id=?"); args.push(specId); }
       if (where.length) sql += " WHERE " + where.join(" AND ");
       return db.prepare(sql + " ORDER BY notebook,seq").all(...args);
+    },
+
+    research: (q) => {
+      if (!hasResearchTable(db)) return [];
+      let sql = "SELECT seq,slug,topic,title,created_at,sources FROM research_reports";
+      const args = [];
+      if (q) { sql += " WHERE topic LIKE ? OR title LIKE ? OR body_md LIKE ?"; args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+      return db.prepare(sql + " ORDER BY seq DESC").all(...args)
+        .map((r) => ({ ...r, sources: safeParseArray(r.sources) }));
+    },
+
+    researchOne: (key) => {
+      if (!hasResearchTable(db)) return null;
+      const r = /^\d+$/.test(key)
+        ? db.prepare("SELECT * FROM research_reports WHERE seq=?").get(Number(key))
+        : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(key);
+      return r ? { ...r, sources: safeParseArray(r.sources) } : null;
     },
 
     ledger: (project, outcome) => {
@@ -142,6 +170,11 @@ export function startServer({ port = 4870 } = {}) {
         return r ? json(res, 200, r) : json(res, 404, { error: "no such spec" });
       }
       if (p === "/api/memory") return json(res, 200, h.memory(q.get("notebook"), q.get("spec_id")));
+      if ((m = p.match(/^\/api\/research\/([^/]+)$/))) {
+        const r = h.researchOne(m[1]);
+        return r ? json(res, 200, r) : json(res, 404, { error: "no such report" });
+      }
+      if (p === "/api/research") return json(res, 200, h.research(q.get("q")));
       if (p === "/api/ledger") return json(res, 200, h.ledger(q.get("project"), q.get("outcome")));
       if (p === "/api/metrics") return json(res, 200, h.metrics(q.get("project")));
       if (p === "/") {
