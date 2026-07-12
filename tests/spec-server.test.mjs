@@ -28,12 +28,12 @@ const STATE_YAML = `states:
     valid_next: []
 `;
 
-function specMd(id, status) {
+function specMd(id, status, deps = []) {
   return `---
 id: "${id}"
 title: Spec ${id}
 status: ${status}
-depends_on: []
+depends_on: [${deps.map((d) => `"${d}"`).join(", ")}]
 verify_attempts: 0
 history:
   - ${status} 2026-07-09T00:00:00Z
@@ -62,10 +62,11 @@ async function makeServer(t) {
   fs.writeFileSync(path.join(dir, "workflows", "state.yaml"), STATE_YAML);
   fs.mkdirSync(path.join(dir, "web"), { recursive: true });
   fs.copyFileSync(path.join(REPO, "web", "index.html"), path.join(dir, "web", "index.html"));
-  for (const [id, status] of [["0001", "finished"], ["0002", "waiting_verification"]]) {
+  // 0002 depends on 0001 so the DELETE dependency guard has something real to refuse
+  for (const [id, status, deps] of [["0001", "finished", []], ["0002", "waiting_verification", ["0001"]]]) {
     const d = path.join(dir, "specs", "p", status);
     fs.mkdirSync(d, { recursive: true });
-    fs.writeFileSync(path.join(d, `${id}-x.md`), specMd(id, status));
+    fs.writeFileSync(path.join(d, `${id}-x.md`), specMd(id, status, deps));
   }
   fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
   fs.writeFileSync(path.join(dir, "memory", "gotchas.md"),
@@ -211,4 +212,35 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
   assert.equal((await get(base, "/api/memory?spec_id=0002")).body.length, 0);
   assert.equal((await get(base, "/api/memory")).body.length, 0);
   assert.equal((await sendJson("/api/memory/gotchas/1", "DELETE")).status, 404); // already deleted
+
+  // spec mutations (spec 0036): POST creates a draft stub, PATCH edits, DELETE removes
+  const created = await sendJson("/api/specs", "POST", { project: "p", title: "Dashboard idea", axis: "demo" });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json();
+  assert.equal(createdBody.id, "0003"); // next after 0001/0002
+  assert.match(createdBody.path, /draft\/0003-dashboard-idea\.md$/);
+  assert.equal((await get(base, "/api/specs/p/0003")).body.status, "draft");
+
+  const specPatch = await sendJson("/api/specs/p/0003", "PATCH", { title: "Renamed idea", body: "## Problem\nx\n## Acceptance Criteria\n- When A, B.\n## Verification\nv\n" });
+  assert.equal(specPatch.status, 200);
+  const patchedSpec = await specPatch.json();
+  assert.equal(patchedSpec.title, "Renamed idea");
+  assert.match(patchedSpec.body_md, /When A, B/);
+
+  const statusPatch = await sendJson("/api/specs/p/0003", "PATCH", { status: "finished" });
+  assert.equal(statusPatch.status, 400);
+  assert.match((await statusPatch.json()).error, /use 'move'/);
+
+  // dependency guard: 0002 depends on 0001 in this fixture
+  const refuse = await sendJson("/api/specs/p/0001", "DELETE");
+  assert.equal(refuse.status, 409);
+  assert.match((await refuse.json()).error, /depended on by 0002/);
+
+  const specDel = await sendJson("/api/specs/p/0003", "DELETE");
+  assert.equal(specDel.status, 200);
+  assert.equal((await get(base, "/api/specs/p/0003")).status, 404);
+
+  // path-safety charset gate runs before any filesystem access
+  assert.equal((await sendJson("/api/specs", "POST", { project: "../evil", title: "T" })).status, 400);
+  assert.equal((await sendJson("/api/specs", "POST", { project: "p" })).status, 400); // missing title
 });

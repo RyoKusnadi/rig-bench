@@ -61,7 +61,7 @@
 <header>
   <h1>rig-bench · spec lifecycle</h1>
   <span class="m" id="metrics">loading…</span>
-  <span class="m" style="margin-left:auto"><a href="#" onclick="toggleMemory();return false" id="memlink">memory ▾</a> · <a href="#" onclick="toggleResearch();return false" id="reslink">research ▾</a></span>
+  <span class="m" style="margin-left:auto"><a href="#" onclick="newSpecForm();return false">+ new spec</a> · <a href="#" onclick="toggleMemory();return false" id="memlink">memory ▾</a> · <a href="#" onclick="toggleResearch();return false" id="reslink">research ▾</a></span>
 </header>
 <div id="board"></div>
 <div id="memory" style="display:none; padding:0 18px 18px">
@@ -128,6 +128,7 @@ async function detail(project, id) {
       <span class="pill">${esc(s.status)}</span>
       ${s.axis ? `<span class="pill">${esc(s.axis)}</span>` : ""}
       ${s.pr ? ` · <a href="${esc(s.pr)}">PR</a>` : ""} ${s.branch ? ` · ${esc(s.branch)}` : ""}
+      · <button class="btn" id="spec-edit">edit</button> <button class="btn danger" id="spec-delete">delete</button>
     </div>
     <h4>dependencies</h4>
     <div>${s.depends_on.length ? s.depends_on.map((d) => `<span class="pill">${esc(d)}</span>`).join(" ") : '<span class="empty">none</span>'}</div>
@@ -148,6 +149,69 @@ async function detail(project, id) {
       <pre>${esc(m.body)}</pre></details>`).join("") : '<div class="empty">no tagged entries</div>'}
     <h4>spec body</h4>
     <pre>${esc(s.body_md)}</pre>`;
+  // status is deliberately absent from the edit surface — lifecycle moves stay with
+  // `spec-db.mjs move` and its valid_next/dependency gates
+  $("#spec-edit").onclick = () => specEditForm(s);
+  $("#spec-delete").onclick = async () => {
+    if (!confirm(`Delete ${s.project}/${s.id} "${s.title}"? Removes the spec file, traces, and DB history. Ledger entries are kept. This cannot be undone.`)) return;
+    try { await send(`/api/specs/${s.project}/${s.id}`, "DELETE"); } catch (e) { alert(e.message); return; }
+    $("#detail").classList.remove("open");
+    board();
+  };
+  $("#detail").classList.add("open");
+}
+
+function specEditForm(s) {
+  $("#detail-inner").innerHTML = `
+    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
+    <h3>edit ${esc(s.project)}/${esc(s.id)}</h3>
+    <div class="sub"><span class="pill">${esc(s.status)}</span> · status changes go through 'spec-db.mjs move', not this form</div>
+    <h4>title</h4><input id="s-title">
+    <h4>axis</h4><input id="s-axis">
+    <h4>branch</h4><input id="s-branch">
+    <h4>pr</h4><input id="s-pr">
+    <h4>body (markdown)</h4><textarea id="s-body" rows="20"></textarea>
+    <div style="margin-top:10px"><button class="btn" id="s-save">save</button> <button class="btn" id="s-cancel">cancel</button></div>`;
+  $("#s-title").value = s.title;
+  $("#s-axis").value = s.axis;
+  $("#s-branch").value = s.branch;
+  $("#s-pr").value = s.pr;
+  $("#s-body").value = s.body_md;
+  $("#s-cancel").onclick = () => detail(s.project, s.id);
+  $("#s-save").onclick = async () => {
+    const patch = {
+      title: $("#s-title").value, axis: $("#s-axis").value,
+      branch: $("#s-branch").value, pr: $("#s-pr").value, body: $("#s-body").value,
+    };
+    try { await send(`/api/specs/${s.project}/${s.id}`, "PATCH", patch); } catch (e) { alert(e.message); return; }
+    board();
+    detail(s.project, s.id);
+  };
+  $("#detail").classList.add("open");
+}
+
+async function newSpecForm() {
+  const specs = await api("/api/specs");
+  $("#detail-inner").innerHTML = `
+    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
+    <h3>new spec</h3>
+    <div class="sub">creates a draft stub with the next id — flesh it out via spec-plan before it can move to ready</div>
+    <h4>project</h4><input id="n-project">
+    <h4>title</h4><input id="n-title">
+    <h4>axis (optional)</h4><input id="n-axis">
+    <h4>body (optional — template skeleton if empty)</h4><textarea id="n-body" rows="12"></textarea>
+    <div style="margin-top:10px"><button class="btn" id="n-save">create</button> <button class="btn" id="n-cancel">cancel</button></div>`;
+  $("#n-project").value = specs[0]?.project ?? "";
+  $("#n-cancel").onclick = () => $("#detail").classList.remove("open");
+  $("#n-save").onclick = async () => {
+    const body = { project: $("#n-project").value.trim(), title: $("#n-title").value.trim() };
+    if ($("#n-axis").value.trim()) body.axis = $("#n-axis").value.trim();
+    if ($("#n-body").value.trim()) body.body = $("#n-body").value;
+    let r;
+    try { r = await send("/api/specs", "POST", body); } catch (e) { alert(e.message); return; }
+    board();
+    detail(r.project, r.id);
+  };
   $("#detail").classList.add("open");
 }
 

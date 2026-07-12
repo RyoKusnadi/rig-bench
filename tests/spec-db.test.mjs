@@ -198,6 +198,109 @@ test("memory notebooks mirror into the DB with spec-id links; re-import replaces
   assert.doesNotMatch(all.stdout, /First lesson/);
 });
 
+test("add allocates next id across DB and disk", (t) => {
+  const dir = makeFixture(t, [{ id: "0002", status: "ready" }]);
+  run(dir, "import", "p");
+  // a stray, never-imported file on disk must also push the counter forward
+  fs.writeFileSync(path.join(dir, "specs", "p", "ready", "0007-stray.md"), specMd({ id: "0007", status: "ready" }));
+  const add = run(dir, "add", "p", "A new idea", "tooling");
+  assert.equal(add.code, 0, add.stderr);
+  assert.match(add.stdout, /p\/0008 created at .*draft\/0008-a-new-idea\.md \(draft\)/);
+  assert.ok(fs.existsSync(path.join(dir, "specs", "p", "draft", "0008-a-new-idea.md")));
+  assert.match(run(dir, "list", "p", "draft").stdout, /p\/0008/);
+});
+
+test("add stub round-trips through parseSpec/import and records transition + criteria", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  run(dir, "add", "p", "Stub spec");
+  const file = path.join(dir, "specs", "p", "draft", "0002-stub-spec.md");
+  const text = fs.readFileSync(file, "utf8");
+  assert.match(text, /^---\nid: "0002"\ntitle: Stub spec\nstatus: draft\ndepends_on: \[\]/);
+  assert.match(text, /history:\n  - draft \d{4}-/);
+  assert.match(text, /## Acceptance Criteria/);
+  // re-import over the stub: must not error or change anything
+  assert.equal(run(dir, "import", "p").code, 0);
+  const show = run(dir, "show", "p", "0002");
+  assert.match(show.stdout, /status: draft/);
+  assert.match(show.stdout, /· -> draft/); // NULL -> draft transition
+  // title validation: quotes and newlines can't round-trip parseSpec
+  assert.equal(run(dir, "add", "p", 'bad "quoted" title').code, 1);
+  assert.equal(run(dir, "add", "nonexistent-project", "T").code, 1);
+});
+
+test("edit rewrites frontmatter in file and DB together, filename stable", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  const edit = run(dir, "edit", "p", "0001", "title", "Renamed title");
+  assert.equal(edit.code, 0, edit.stderr);
+  const file = path.join(dir, "specs", "p", "ready", "0001-x.md"); // filename unchanged
+  assert.match(fs.readFileSync(file, "utf8"), /^title: Renamed title$/m);
+  assert.match(run(dir, "show", "p", "0001").stdout, /Renamed title/);
+  run(dir, "edit", "p", "0001", "axis", "tooling");
+  run(dir, "edit", "p", "0001", "pr", "https://example.com/pr/9");
+  const text = fs.readFileSync(file, "utf8");
+  assert.match(text, /^axis: "tooling"$/m);
+  assert.match(text, /^pr: "https:\/\/example\.com\/pr\/9"$/m);
+});
+
+test("edit body dual-writes and re-snapshots so the next move reports no drift", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  const bodyFile = path.join(dir, "new-body.md");
+  fs.writeFileSync(bodyFile, "## Problem\nnew\n## Acceptance Criteria\n- When C, the system shall D.\n## Verification\nRun make verify.\n");
+  assert.equal(run(dir, "edit", "p", "0001", "body", bodyFile).code, 0);
+  run(dir, "move", "p", "0001", "in_progress");
+  const drift = run(dir, "drift", "p", "0001");
+  assert.equal(drift.code, 0, drift.stdout); // sanctioned edit = new baseline, no drift
+  assert.match(drift.stdout, /No drift/);
+  assert.match(run(dir, "show", "p", "0001").stdout, /shall D/);
+});
+
+test("edit rejects status and quote-containing values", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  const st = run(dir, "edit", "p", "0001", "status", "finished");
+  assert.equal(st.code, 1);
+  assert.match(st.stderr, /use 'move'/);
+  assert.equal(run(dir, "edit", "p", "0001", "title", 'has "quotes"').code, 1);
+  assert.equal(run(dir, "edit", "p", "0001", "nope", "v").code, 1);
+  assert.equal(run(dir, "edit", "p", "9999", "title", "T").code, 1);
+});
+
+test("delete removes file, traces dir, and DB rows but keeps ledger", (t) => {
+  const dir = makeFixture(t, [
+    { id: "0001", status: "waiting_verification" },
+    { id: "0002", status: "ready" },
+  ]);
+  run(dir, "import", "p");
+  run(dir, "move", "p", "0001", "finished"); // writes a ledger row
+  const traces = path.join(dir, "specs", "p", ".traces", "0001");
+  fs.mkdirSync(traces, { recursive: true });
+  fs.writeFileSync(path.join(traces, "attempt-1.md"), "trace\n");
+  const del = run(dir, "delete", "p", "0001");
+  assert.equal(del.code, 0, del.stderr);
+  assert.ok(!fs.existsSync(path.join(dir, "specs", "p", "waiting_verification", "0001-x.md")));
+  assert.ok(!fs.existsSync(traces));
+  assert.equal(run(dir, "show", "p", "0001").code, 1);
+  assert.match(run(dir, "ledger", "p", "finished").stdout, /p\/0001\s+finished/); // ledger survives
+  assert.equal(run(dir, "delete", "p", "0001").code, 1); // already gone → 404/exit 1
+});
+
+test("delete refuses while another spec depends on it, succeeds after the dependent is deleted", (t) => {
+  const dir = makeFixture(t, [
+    { id: "0001", status: "ready" },
+    { id: "0002", status: "ready", deps: ["0001"] },
+  ]);
+  run(dir, "import", "p");
+  const refuse = run(dir, "delete", "p", "0001");
+  assert.equal(refuse.code, 1);
+  assert.match(refuse.stderr, /depended on by 0002/);
+  assert.equal(run(dir, "delete", "p", "0002").code, 0);
+  assert.equal(run(dir, "delete", "p", "0001").code, 0);
+  assert.match(run(dir, "list", "p").stdout, /No specs recorded/);
+});
+
 test("memory edit updates heading/body/spec_id in place", (t) => {
   const dir = makeFixture(t);
   run(dir, "init");

@@ -18,6 +18,9 @@
 //   scripts/spec-db.mjs list [project] [status]
 //   scripts/spec-db.mjs show <project> <id>
 //   scripts/spec-db.mjs move <project> <id> <to_state> [actor]
+//   scripts/spec-db.mjs add <project> <title> [axis] [body-file]   (draft stub, next id)
+//   scripts/spec-db.mjs edit <project> <id> <title|axis|branch|pr|body> <value>
+//   scripts/spec-db.mjs delete <project> <id>       (hard delete; ledger rows kept)
 //   scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> [trace-file]
 //   scripts/spec-db.mjs drift <project> <id>
 //   scripts/spec-db.mjs set <project> <id> <branch|pr|axis> <value>
@@ -377,6 +380,216 @@ function cmdMove(db, project, id, toState, actor = "cli") {
   console.log(`${project}/${id}: ${spec.status} -> ${toState}`);
 }
 
+// ── spec add/edit/delete (spec 0036) ──────────────────────────────────────────
+// Mutations on all surfaces route through these cores (decisions#4): the server's
+// POST/PATCH/DELETE handlers and the CLI verbs share the same validation. Status is
+// deliberately NOT editable here — state changes remain cmdMove's job, with its
+// valid_next and dependency gates.
+
+// parseSpec's scalar regex ([^"\n]*) cannot round-trip double quotes or newlines
+const SCALAR_OK = (v) => typeof v === "string" && !/["\n\r]/.test(v);
+const checkProjectId = (project, id) => {
+  // charset gate BEFORE any path.join — project/id arrive from a URL on the server side
+  if (!/^[A-Za-z0-9_-]+$/.test(project ?? "")) fail(400, "project must match [A-Za-z0-9_-]+");
+  if (id !== undefined && !/^\d{4}$/.test(id ?? "")) fail(400, "id must be a 4-digit spec id");
+};
+
+const STUB_BODY = `## Problem
+
+[NEEDS CLARIFICATION: current state, and why it's insufficient]
+
+## Acceptance Criteria
+
+- [NEEDS CLARIFICATION: EARS-style — When <trigger>, the <component> shall <behavior>.]
+
+## Out of Scope
+
+- [NEEDS CLARIFICATION]
+
+## Files/Interfaces Touched
+
+- [NEEDS CLARIFICATION]
+
+## Implementation Notes
+
+[NEEDS CLARIFICATION]
+
+## Verification
+
+[NEEDS CLARIFICATION: one end-to-end check that proves this is done]
+`;
+
+export function nextId(db, project) {
+  // max over BOTH the DB and every state folder on disk: covers un-imported files and
+  // deleted-from-disk rows alike
+  let max = Number(db.prepare("SELECT COALESCE(MAX(CAST(id AS INTEGER)),0) m FROM specs WHERE project=?").get(project).m);
+  const projDir = path.join(ROOT, "specs", project);
+  for (const st of readStates()) {
+    const dir = path.join(projDir, st.name);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      const m = f.match(/^(\d{4})-/);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+  }
+  return String(max + 1).padStart(4, "0");
+}
+
+export function specAdd(db, project, title, { axis = "", body = "", actor = "cli" } = {}) {
+  db.exec(SCHEMA);
+  checkProjectId(project);
+  const projDir = path.join(ROOT, "specs", project);
+  if (!fs.existsSync(projDir)) fail(400, `specs/${project} does not exist`);
+  if (!title || !SCALAR_OK(title)) fail(400, "title is required and cannot contain double quotes or newlines");
+  if (!SCALAR_OK(axis)) fail(400, "axis cannot contain double quotes or newlines");
+  if (typeof body !== "string") fail(400, "body must be a string");
+  const ts = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  let id = nextId(db, project);
+  let file = path.join(projDir, "draft", `${id}-${slugify(title)}.md`);
+  if (fs.existsSync(file)) { // lost a race with another writer — bump once, then let the PK speak
+    id = String(Number(id) + 1).padStart(4, "0");
+    file = path.join(projDir, "draft", `${id}-${slugify(title)}.md`);
+  }
+  const bodyMd = body || STUB_BODY;
+  // frontmatter quoting matches cmdExport so a later export is byte-compatible;
+  // depends_on stays an inline [] because parseSpec's history matcher would otherwise
+  // read block-list dep entries as history lines
+  const fm = [
+    "---",
+    `id: "${id}"`,
+    `title: ${title}`,
+    "status: draft",
+    "depends_on: []",
+    "verify_attempts: 0",
+    'branch: ""',
+    'pr: ""',
+    "history:",
+    `  - draft ${ts}`,
+    'source: ""',
+    `axis: "${axis}"`,
+    "---",
+  ].join("\n");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, fm + "\n" + bodyMd);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("INSERT INTO specs (project,id,title,status,axis,body_md) VALUES (?,?,?,'draft',?,?)")
+      .run(project, id, title, axis, bodyMd);
+    db.prepare("INSERT INTO transitions (project,id,from_state,to_state,actor) VALUES (?,?,NULL,'draft',?)")
+      .run(project, id, actor);
+    snapshotCriteria(db, project, id, "draft", bodyMd);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    fs.rmSync(file, { force: true }); // no orphan file when the PK insert loses a true race
+    throw e;
+  }
+  return { project, id, path: path.relative(ROOT, file) };
+}
+
+export function specEdit(db, project, id, patch) {
+  checkProjectId(project, id);
+  const allowed = ["title", "axis", "branch", "pr", "body"];
+  const keys = Object.keys(patch ?? {});
+  if (keys.length === 0) fail(400, `no editable fields in patch (editable: ${allowed.join(", ")})`);
+  if (keys.includes("status")) fail(400, "status is not editable — use 'move', which enforces valid_next and dependency gates");
+  for (const k of keys) {
+    if (!allowed.includes(k)) fail(400, `unknown field '${k}' (editable: ${allowed.join(", ")})`);
+    if (typeof patch[k] !== "string") fail(400, `${k} must be a string`);
+    if (k !== "body" && !SCALAR_OK(patch[k])) fail(400, `${k} cannot contain double quotes or newlines`);
+  }
+  const spec = db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
+  if (!spec) fail(404, `no spec ${id} in '${project}'`);
+  // file side first — the tree is the source of truth. findSpecFile prefix-matches on
+  // the id, so the filename never changes when the title does.
+  const file = findSpecFile(project, id);
+  if (file) {
+    const m = fs.readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+    if (!m) fail(400, `${path.relative(ROOT, file)}: no frontmatter block`);
+    let [, fm, body] = m;
+    for (const k of keys) {
+      if (k === "body") { body = patch.body; continue; }
+      const line = k === "title" ? `title: ${patch.title}` : `${k}: "${patch[k]}"`; // export-style quoting
+      const re = new RegExp(`^${k}:.*$`, "m");
+      fm = re.test(fm) ? fm.replace(re, line) : `${fm}\n${line}`; // insert if absent (pre-`pr` specs)
+    }
+    fs.writeFileSync(file, `---\n${fm}\n---\n${body}`);
+  } else {
+    console.warn(`warning: no on-disk file for ${project}/${id}; updating DB only`);
+  }
+  const sets = [], vals = [];
+  for (const k of keys) { sets.push(`${k === "body" ? "body_md" : k}=?`); vals.push(patch[k]); }
+  db.prepare(`UPDATE specs SET ${sets.join(", ")}, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?`)
+    .run(...vals, project, id);
+  // a sanctioned body edit becomes the new drift baseline; scalar edits don't touch criteria
+  if (keys.includes("body")) snapshotCriteria(db, project, id, spec.status, patch.body);
+  return db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
+}
+
+export function specDelete(db, project, id) {
+  checkProjectId(project, id);
+  const spec = db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
+  if (!spec) fail(404, `no spec ${id} in '${project}'`);
+  const dependents = db.prepare("SELECT id FROM dependencies WHERE project=? AND depends_on=? ORDER BY id")
+    .all(project, id).map((r) => r.id);
+  if (dependents.length) fail(409, `refusing to delete ${project}/${id}: depended on by ${dependents.join(", ")}`);
+  // files first: a crash here leaves DB rows behind and a delete re-run completes the
+  // cleanup; import can't resurrect a spec whose file is gone
+  const file = findSpecFile(project, id);
+  if (file) fs.rmSync(file, { force: true });
+  fs.rmSync(path.join(ROOT, "specs", project, ".traces", id), { recursive: true, force: true });
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // ledger is deliberately NOT in this list — it's the append-only outcome record
+    for (const t of ["specs", "dependencies", "transitions", "attempts", "criteria_revisions"]) {
+      db.prepare(`DELETE FROM ${t} WHERE project=? AND id=?`).run(project, id);
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+  return { deleted: true, project, id };
+}
+
+function cmdAdd(db, project, title, axis, bodyFile) {
+  if (!project || !title) die("add <project> <title> [axis] [body-file]");
+  let body = "";
+  if (bodyFile) {
+    if (!fs.existsSync(bodyFile)) die(`body file '${bodyFile}' does not exist`);
+    body = fs.readFileSync(bodyFile, "utf8");
+  }
+  try {
+    const r = specAdd(db, project, title, { axis: axis ?? "", body, actor: "cli" });
+    console.log(`${r.project}/${r.id} created at ${r.path} (draft)`);
+  } catch (e) { die(e.message); }
+}
+
+function cmdEdit(db, project, id, field, value) {
+  if (!project || !id || !field || value === undefined) {
+    die("edit <project> <id> <title|axis|branch|pr|body> <value>  (body: value is a file path)");
+  }
+  const patch = {};
+  if (field === "body") {
+    if (!fs.existsSync(value)) die(`body file '${value}' does not exist`);
+    patch.body = fs.readFileSync(value, "utf8");
+  } else {
+    patch[field] = value; // specEdit whitelists (and names 'move' for status)
+  }
+  try {
+    specEdit(db, project, id, patch);
+    console.log(`${project}/${id}: ${field} updated (file + DB)`);
+  } catch (e) { die(e.message); }
+}
+
+function cmdDelete(db, project, id) {
+  if (!project || !id) die("delete <project> <id>");
+  try {
+    specDelete(db, project, id);
+    console.log(`${project}/${id} deleted (file, traces, DB history removed; ledger kept)`);
+  } catch (e) { die(e.message); }
+}
+
 function cmdRecordAttempt(db, project, id, overall, traceFile) {
   if (overall !== "PASS" && overall !== "FAIL") die("overall must be PASS or FAIL");
   const spec = getSpec(db, project, id);
@@ -699,6 +912,9 @@ if (isMain) {
     case "list": cmdList(db, args[0], args[1]); break;
     case "show": cmdShow(db, args[0], args[1]); break;
     case "move": cmdMove(db, args[0], args[1], args[2], args[3]); break;
+    case "add": cmdAdd(db, args[0], args[1], args[2], args[3]); break;
+    case "edit": cmdEdit(db, args[0], args[1], args[2], args[3]); break;
+    case "delete": cmdDelete(db, args[0], args[1]); break;
     case "record-attempt": cmdRecordAttempt(db, args[0], args[1], args[2], args[3]); break;
     case "drift": cmdDrift(db, args[0], args[1]); break;
     case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
@@ -707,7 +923,7 @@ if (isMain) {
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:
-      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|memory|research|ledger|export> ...");
+      console.error("Usage: spec-db.mjs <init|import|list|show|move|add|edit|delete|record-attempt|drift|set|memory|research|ledger|export> ...");
       process.exit(1);
   }
 }

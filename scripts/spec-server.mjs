@@ -12,7 +12,10 @@
 //   GET /health
 //   GET /api/states                         state machine (from workflows/state.yaml)
 //   GET /api/specs?project=&status=         list
+//   POST /api/specs                          create a draft stub {project,title,axis?,body?}
 //   GET /api/specs/:project/:id             detail: spec + deps + transitions + attempts
+//   PATCH /api/specs/:project/:id           edit title/axis/branch/pr/body (never status)
+//   DELETE /api/specs/:project/:id          hard delete (409 if depended on; ledger kept)
 //   GET /api/specs/:project/:id/attempts/:n full trace body
 //   GET /api/specs/:project/:id/drift       latest two criteria snapshots + changed flag
 //   GET /api/memory?notebook=&spec_id=       memory notebook entries (live only)
@@ -32,7 +35,10 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { openDb, readStates, researchEdit, researchDelete, memoryEdit, memoryDelete } from "./spec-db.mjs";
+import {
+  openDb, readStates, researchEdit, researchDelete, memoryEdit, memoryDelete,
+  specAdd, specEdit, specDelete,
+} from "./spec-db.mjs";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX_HTML = path.join(ROOT, "web", "index.html");
@@ -123,6 +129,10 @@ export function buildHandlers(db) {
     memoryEdit: (notebook, seq, patch) => memoryEdit(db, notebook, seq, patch),
     memoryDelete: (notebook, seq) => memoryDelete(db, notebook, seq),
 
+    specAdd: (project, title, axis, body) => specAdd(db, project, title, { axis: axis ?? "", body: body ?? "", actor: "dashboard" }),
+    specEdit: (project, id, patch) => specEdit(db, project, id, patch),
+    specDelete: (project, id) => specDelete(db, project, id),
+
     research: (q) => {
       if (!hasResearchTable(db)) return [];
       let sql = "SELECT seq,slug,topic,title,created_at,sources FROM research_reports";
@@ -191,6 +201,8 @@ export function startServer({ port = 4870 } = {}) {
   const MUTABLE = [
     /^\/api\/research\/[^/]+$/, // PATCH, DELETE
     /^\/api\/memory\/[^/]+\/\d+$/, // PATCH, DELETE
+    /^\/api\/specs$/, // POST
+    /^\/api\/specs\/[^/]+\/[^/]+$/, // PATCH, DELETE (status stays move-only, via the CLI)
   ];
 
   const server = http.createServer(async (req, res) => {
@@ -202,7 +214,13 @@ export function startServer({ port = 4870 } = {}) {
         return json(res, 405, { error: "read-only endpoint" });
       if (p === "/health") return json(res, 200, { ok: true });
       if (p === "/api/states") return json(res, 200, h.states());
-      if (p === "/api/specs") return json(res, 200, h.specs(q.get("project"), q.get("status")));
+      if (p === "/api/specs") {
+        if (req.method === "POST") {
+          const b = await readJson(req);
+          return json(res, 201, h.specAdd(b.project, b.title, b.axis, b.body));
+        }
+        return json(res, 200, h.specs(q.get("project"), q.get("status")));
+      }
       let m;
       if ((m = p.match(/^\/api\/specs\/([^/]+)\/([^/]+)\/attempts\/(\d+)$/))) {
         const r = h.attempt(m[1], m[2], m[3]);
@@ -210,6 +228,13 @@ export function startServer({ port = 4870 } = {}) {
       }
       if ((m = p.match(/^\/api\/specs\/([^/]+)\/([^/]+)\/drift$/))) return json(res, 200, h.drift(m[1], m[2]));
       if ((m = p.match(/^\/api\/specs\/([^/]+)\/([^/]+)$/))) {
+        // stays AFTER the /drift and /attempts/:n matchers, same as GET always has
+        if (req.method === "PATCH") {
+          h.specEdit(m[1], m[2], await readJson(req));
+          return json(res, 200, h.spec(m[1], m[2]));
+        }
+        if (req.method === "DELETE") return json(res, 200, h.specDelete(m[1], m[2]));
+        if (req.method !== "GET") return json(res, 405, { error: "method not allowed" });
         const r = h.spec(m[1], m[2]);
         return r ? json(res, 200, r) : json(res, 404, { error: "no such spec" });
       }
