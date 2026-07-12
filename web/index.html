@@ -40,6 +40,12 @@
         font-size:12px; overflow-x:auto; white-space:pre-wrap; color:var(--text); }
   #close { float:right; background:none; border:1px solid var(--line); color:var(--dim);
            border-radius:6px; padding:2px 9px; cursor:pointer; } #close:hover { color:var(--text); }
+  .btn { background:none; border:1px solid var(--line); color:var(--dim); border-radius:6px;
+         padding:2px 9px; cursor:pointer; font:inherit; font-size:12px; } .btn:hover { color:var(--text); }
+  .btn.danger:hover { color:var(--bad); border-color:var(--bad); }
+  input, textarea { width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
+                    border-radius:6px; padding:6px 8px; font:inherit; font-size:12.5px; }
+  textarea { resize:vertical; }
   .empty { color:var(--dim); font-size:12px; padding:4px 2px; }
   a { color:var(--accent); text-decoration:none; }
   .md { font-size:13px; }
@@ -75,6 +81,15 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const api = (p) => fetch(p).then((r) => r.json());
+// mutation helper: throws with the server's error text so callers can alert() it
+const send = (p, method, body) => fetch(p, {
+  method,
+  headers: body ? { "content-type": "application/json" } : {},
+  body: body ? JSON.stringify(body) : undefined,
+}).then(async (r) => {
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+  return r.json();
+});
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 
 async function board() {
@@ -160,7 +175,10 @@ async function toggleResearch() {
   const open = el.style.display === "none";
   el.style.display = open ? "block" : "none";
   $("#reslink").textContent = open ? "research ▴" : "research ▾";
-  if (!open) return;
+  if (open) loadResearch();
+}
+
+async function loadResearch() {
   const reports = await api("/api/research");
   $("#rescount").textContent = reports.length;
   $("#reslist").innerHTML = reports.length ? reports.map((r) => `
@@ -171,18 +189,58 @@ async function toggleResearch() {
     </div>`).join("") : '<div class="empty">no reports — run /research &lt;topic&gt;</div>';
 }
 
+const refreshResearchIfOpen = () => { if ($("#research").style.display !== "none") loadResearch(); };
+
 async function researchDetail(seq) {
   const r = await api(`/api/research/${seq}`);
   const srcs = r.sources.filter((s) => /^https?:\/\//.test(s));
   $("#detail-inner").innerHTML = `
     <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
     <h3>${esc(r.title)}</h3>
-    <div class="sub"><span class="pill">research#${r.seq}</span> · ${esc(r.topic)} · ${esc(r.created_at)}</div>
+    <div class="sub"><span class="pill">research#${r.seq}</span> · ${esc(r.topic)} · ${esc(r.created_at)}
+      · <button class="btn" id="res-edit">edit</button> <button class="btn danger" id="res-delete">delete</button></div>
     <h4>sources</h4>
     <div>${srcs.length ? srcs.map((s) => `<div><a href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}</a></div>`).join("") : '<span class="empty">none</span>'}</div>
     <h4>report</h4>
     <div class="md">${md(r.body_md)}</div>`;
+  // handlers close over the fetched report object — form values are never harvested
+  // back out of rendered (esc()-encoded) HTML
+  $("#res-edit").onclick = () => researchEditForm(r);
+  $("#res-delete").onclick = async () => {
+    if (!confirm(`Delete research#${r.seq} (${r.slug})? This cannot be undone.`)) return;
+    try { await send(`/api/research/${r.seq}`, "DELETE"); } catch (e) { alert(e.message); return; }
+    $("#detail").classList.remove("open");
+    refreshResearchIfOpen();
+  };
   $("#detail").classList.add("open");
+}
+
+function researchEditForm(r) {
+  $("#detail-inner").innerHTML = `
+    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
+    <h3>edit research#${r.seq}</h3>
+    <div class="sub"><span class="pill">${esc(r.slug)}</span> · slug is the citation key and never changes</div>
+    <h4>title</h4><input id="f-title">
+    <h4>topic</h4><input id="f-topic">
+    <h4>sources (one URL per line)</h4><textarea id="f-sources" rows="4"></textarea>
+    <h4>report body (markdown)</h4><textarea id="f-body" rows="18"></textarea>
+    <div style="margin-top:10px"><button class="btn" id="f-save">save</button> <button class="btn" id="f-cancel">cancel</button></div>`;
+  $("#f-title").value = r.title;
+  $("#f-topic").value = r.topic;
+  $("#f-sources").value = r.sources.join("\n");
+  $("#f-body").value = r.body_md;
+  $("#f-cancel").onclick = () => researchDetail(r.seq);
+  $("#f-save").onclick = async () => {
+    const patch = {
+      title: $("#f-title").value,
+      topic: $("#f-topic").value,
+      body_md: $("#f-body").value,
+      sources: $("#f-sources").value.split("\n").map((s) => s.trim()).filter(Boolean),
+    };
+    try { await send(`/api/research/${r.seq}`, "PATCH", patch); } catch (e) { alert(e.message); return; }
+    refreshResearchIfOpen();
+    researchDetail(r.seq);
+  };
 }
 
 // minimal markdown renderer for research bodies. esc() runs over the whole source FIRST,

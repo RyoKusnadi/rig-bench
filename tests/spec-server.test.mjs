@@ -135,7 +135,12 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
   assert.match(index.body, /spec lifecycle/);
 
   assert.equal((await get(base, "/api/specs/p/9999")).status, 404);
-  assert.equal((await fetch(base + "/api/specs", { method: "POST" })).status, 405);
+  // read-only posture: non-GET on non-mutable routes stays 405, and OPTIONS is 405 on
+  // every route on purpose — no preflight support means browsers refuse cross-origin
+  // mutation (see the MUTABLE comment in spec-server.mjs)
+  assert.equal((await fetch(base + "/api/metrics", { method: "POST" })).status, 405);
+  assert.equal((await fetch(base + "/api/research/1", { method: "PUT" })).status, 405);
+  assert.equal((await fetch(base + "/api/research/1", { method: "OPTIONS" })).status, 405);
 
   // research endpoints (same fixture: spec-db.mjs's module-level DB path binds to the
   // first import, so a second makeServer would reopen this test's deleted DB)
@@ -157,4 +162,37 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
   assert.equal((await get(base, "/api/research?q=German")).body.length, 1);
   assert.equal((await get(base, "/api/research?q=zzz")).body.length, 0);
   assert.equal((await get(base, "/api/research/999")).status, 404);
+
+  // research mutations (spec 0034): PATCH edits with slug stable; DELETE removes
+  const sendJson = (p, method, body) => fetch(base + p, {
+    method,
+    headers: body ? { "content-type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const patched = await sendJson("/api/research/learning-german-to-a1", "PATCH",
+    { title: "German A1, revised", body_md: "updated body" });
+  assert.equal(patched.status, 200);
+  const patchedBody = await patched.json();
+  assert.equal(patchedBody.title, "German A1, revised");
+  assert.equal(patchedBody.slug, "learning-german-to-a1"); // slug never re-derived from title
+  const afterPatch = (await get(base, "/api/research/learning-german-to-a1")).body;
+  assert.equal(afterPatch.title, "German A1, revised");
+  assert.match(afterPatch.body_md, /updated body/);
+
+  // validation surface: bad JSON, unknown field, non-array sources, missing report
+  const badJson = await fetch(base + "/api/research/1", {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: "{nope",
+  });
+  assert.equal(badJson.status, 400);
+  assert.equal((await sendJson("/api/research/1", "PATCH", { slug: "x" })).status, 400);
+  assert.equal((await sendJson("/api/research/1", "PATCH", {})).status, 400);
+  assert.equal((await sendJson("/api/research/1", "PATCH", { sources: "not-array" })).status, 400);
+  assert.equal((await sendJson("/api/research/999", "PATCH", { title: "T" })).status, 404);
+
+  const del = await sendJson("/api/research/learning-german-to-a1", "DELETE");
+  assert.equal(del.status, 200);
+  assert.equal((await del.json()).deleted, true);
+  assert.equal((await get(base, "/api/research/learning-german-to-a1")).status, 404);
+  assert.equal((await get(base, "/api/research")).body.length, 0);
+  assert.equal((await sendJson("/api/research/1", "DELETE")).status, 404);
 });

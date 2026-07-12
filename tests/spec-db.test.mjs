@@ -234,6 +234,56 @@ test("research add validates args and sources JSON", (t) => {
   assert.equal(run(dir, "research", "show", "999").code, 1);
 });
 
+test("research edit updates fields in place and keeps slug/seq stable", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "original body\n");
+  run(dir, "research", "add", "how X works", "Understanding X", bodyFile, '["https://a.example"]');
+  const edit = run(dir, "research", "edit", "1", "title", "Understanding X, revised");
+  assert.equal(edit.code, 0, edit.stderr);
+  assert.match(edit.stdout, /research#1 \(understanding-x\) updated/); // slug unchanged
+  const show = run(dir, "research", "show", "understanding-x"); // still resolvable by old slug
+  assert.match(show.stdout, /# Understanding X, revised/);
+  fs.writeFileSync(bodyFile, "replacement body\n");
+  run(dir, "research", "edit", "understanding-x", "body", bodyFile);
+  run(dir, "research", "edit", "1", "topic", "how X really works");
+  run(dir, "research", "edit", "1", "sources", '["https://b.example"]');
+  const after = run(dir, "research", "show", "1");
+  assert.match(after.stdout, /replacement body/);
+  assert.match(after.stdout, /topic: how X really works/);
+  assert.match(after.stdout, /https:\/\/b\.example/);
+  assert.doesNotMatch(after.stdout, /original body/);
+});
+
+test("research edit validates field, sources JSON, and missing report", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "body\n");
+  run(dir, "research", "add", "topic", "Title", bodyFile);
+  assert.equal(run(dir, "research", "edit", "1", "slug", "new-slug").code, 1); // immutable field
+  assert.equal(run(dir, "research", "edit", "1", "sources", "not json").code, 1);
+  assert.equal(run(dir, "research", "edit", "1", "sources", '{"a":1}').code, 1); // not an array
+  assert.equal(run(dir, "research", "edit", "1", "body", path.join(dir, "nope.md")).code, 1);
+  assert.equal(run(dir, "research", "edit", "999", "title", "T").code, 1);
+});
+
+test("research delete removes the report and show/export fail afterward", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "body\n");
+  run(dir, "research", "add", "topic", "Title", bodyFile);
+  const del = run(dir, "research", "delete", "title");
+  assert.equal(del.code, 0, del.stderr);
+  assert.match(del.stdout, /research#1 \(title\) deleted/);
+  assert.equal(run(dir, "research", "show", "1").code, 1);
+  assert.equal(run(dir, "research", "export", "title").code, 1);
+  assert.equal(run(dir, "research", "delete", "1").code, 1); // already gone
+  assert.match(run(dir, "research").stdout, /No research reports recorded/);
+});
+
 test("research export prints markdown", (t) => {
   const dir = makeFixture(t);
   run(dir, "init");

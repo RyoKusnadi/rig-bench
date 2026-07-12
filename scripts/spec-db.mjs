@@ -31,6 +31,8 @@
 //   scripts/spec-db.mjs research show <seq|slug>
 //   scripts/spec-db.mjs research search <term>
 //   scripts/spec-db.mjs research export [seq|slug]
+//   scripts/spec-db.mjs research edit <seq|slug> <title|topic|body|sources> <value>
+//   scripts/spec-db.mjs research delete <seq|slug>
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
@@ -120,7 +122,10 @@ export function extractCriteria(body) {
 
 export function openDb() {
   const db = new DatabaseSync(DB_PATH);
-  db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
+  // busy_timeout: the server holds a long-lived connection while the CLI opens its own;
+  // WAL allows one writer at a time, and without a timeout a concurrent write throws
+  // SQLITE_BUSY immediately instead of briefly waiting its turn.
+  db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=2000;");
   return db;
 }
 
@@ -193,6 +198,10 @@ CREATE TABLE IF NOT EXISTS research_reports (
 `;
 
 function die(msg) { console.error(`Error: ${msg}`); process.exit(1); }
+
+// Mutation cores throw instead of exiting — die() would kill the server process that
+// shares them. `status` maps to the HTTP code (400/404/409); CLI wrappers catch → die().
+function fail(status, msg) { const e = new Error(msg); e.status = status; throw e; }
 
 function cmdInit(db) {
   db.exec(SCHEMA);
@@ -449,13 +458,79 @@ export function slugify(title) {
     .replace(/-+$/, "") || "report";
 }
 
+export function findResearch(db, key) {
+  return /^\d+$/.test(key)
+    ? db.prepare("SELECT * FROM research_reports WHERE seq=?").get(Number(key))
+    : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(String(key));
+}
+
+// Core mutations shared by the CLI wrappers below and the server's PATCH/DELETE handlers
+// (decisions#3: research reports are mutable; slug and seq are the stable citation keys,
+// so title edits never re-slugify, and the AUTOINCREMENT seq of a deleted report is never
+// reused — stale citations 404 instead of aliasing to a future report).
+export function researchEdit(db, key, patch) {
+  db.exec(SCHEMA); // pre-upgrade DBs lack the table; 404 beats a missing-table throw
+  const r = findResearch(db, key);
+  if (!r) fail(404, `no report '${key}'`);
+  const allowed = ["title", "topic", "body_md", "sources"];
+  const keys = Object.keys(patch ?? {});
+  if (keys.length === 0) fail(400, `no editable fields in patch (editable: ${allowed.join(", ")})`);
+  const sets = [], vals = [];
+  for (const k of keys) {
+    if (!allowed.includes(k)) fail(400, `unknown field '${k}' (editable: ${allowed.join(", ")})`);
+    let v = patch[k];
+    if (k === "sources") {
+      if (!Array.isArray(v)) fail(400, "sources must be a JSON array of URLs");
+      v = JSON.stringify(v);
+    } else if (typeof v !== "string") {
+      fail(400, `${k} must be a string`);
+    }
+    sets.push(`${k}=?`);
+    vals.push(v);
+  }
+  db.prepare(`UPDATE research_reports SET ${sets.join(", ")} WHERE seq=?`).run(...vals, r.seq);
+  return findResearch(db, String(r.seq));
+}
+
+export function researchDelete(db, key) {
+  db.exec(SCHEMA);
+  const r = findResearch(db, key);
+  if (!r) fail(404, `no report '${key}'`);
+  db.prepare("DELETE FROM research_reports WHERE seq=?").run(r.seq);
+  return { deleted: true, seq: r.seq, slug: r.slug };
+}
+
 function cmdResearch(db, ...args) {
   db.exec(SCHEMA); // reports must land even on a DB created before this table existed
-  const sub = ["add", "search", "show", "export"].includes(args[0]) ? args.shift() : "list";
-  const bySeqOrSlug = (key) =>
-    /^\d+$/.test(key)
-      ? db.prepare("SELECT * FROM research_reports WHERE seq=?").get(Number(key))
-      : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(key);
+  const sub = ["add", "search", "show", "export", "edit", "delete"].includes(args[0]) ? args.shift() : "list";
+  const bySeqOrSlug = (key) => findResearch(db, key);
+  if (sub === "edit") {
+    const [key, field, value] = args;
+    if (!key || !field || value === undefined) die("research edit <seq|slug> <title|topic|body|sources> <value>");
+    const patch = {};
+    if (field === "body") {
+      if (!fs.existsSync(value)) die(`body file '${value}' does not exist`);
+      patch.body_md = fs.readFileSync(value, "utf8");
+    } else if (field === "sources") {
+      try { patch.sources = JSON.parse(value); } catch { die("sources value is not valid JSON"); }
+    } else {
+      patch[field] = value; // researchEdit whitelists unknown fields
+    }
+    try {
+      const r = researchEdit(db, key, patch);
+      console.log(`research#${r.seq} (${r.slug}) updated`);
+    } catch (e) { die(e.message); }
+    return;
+  }
+  if (sub === "delete") {
+    const key = args[0];
+    if (!key) die("research delete <seq|slug>");
+    try {
+      const r = researchDelete(db, key);
+      console.log(`research#${r.seq} (${r.slug}) deleted`);
+    } catch (e) { die(e.message); }
+    return;
+  }
   if (sub === "add") {
     const [topic, title, bodyFile, sourcesJson] = args;
     if (!topic || !title || !bodyFile) die("research add <topic> <title> <body-file> [sources-json]");
