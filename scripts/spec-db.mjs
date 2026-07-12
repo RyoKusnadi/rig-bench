@@ -26,6 +26,8 @@
 //   scripts/spec-db.mjs memory search <term>
 //   scripts/spec-db.mjs memory show <notebook> <seq>
 //   scripts/spec-db.mjs memory export [notebook]
+//   scripts/spec-db.mjs memory edit <notebook> <seq> <heading|body|spec_id> <value>
+//   scripts/spec-db.mjs memory delete <notebook> <seq>       (soft delete; seq never reused)
 //   scripts/spec-db.mjs research                              (list)
 //   scripts/spec-db.mjs research add <topic> <title> <body-file> [sources-json]
 //   scripts/spec-db.mjs research show <seq|slug>
@@ -126,6 +128,13 @@ export function openDb() {
   // WAL allows one writer at a time, and without a timeout a concurrent write throws
   // SQLITE_BUSY immediately instead of briefly waiting its turn.
   db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=2000;");
+  // migration: pre-0035 DBs lack memory_entries.deleted — CREATE TABLE IF NOT EXISTS
+  // can't add a column to an existing table, so both the CLI and the server (which all
+  // pass through here) upgrade in place.
+  const hasMem = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_entries'").get();
+  if (hasMem && !db.prepare("PRAGMA table_info(memory_entries)").all().some((c) => c.name === "deleted")) {
+    db.exec("ALTER TABLE memory_entries ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+  }
   return db;
 }
 
@@ -177,6 +186,9 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   spec_id TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL DEFAULT '',
   imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  -- soft delete: entries are cited externally as notebook#seq, so a tombstone keeps
+  -- occupying its seq and MAX(seq)+1 in \`memory add\` can never re-issue a deleted number
+  deleted INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (notebook, seq)
 );
 CREATE TABLE IF NOT EXISTS criteria_revisions (
@@ -403,8 +415,52 @@ function cmdSet(db, project, id, field, value) {
   console.log(`${project}/${id}: ${field} set`);
 }
 
+// Core memory mutations shared by the CLI wrappers and the server's PATCH/DELETE
+// handlers. Delete is a soft delete (tombstone row) so a cited notebook#seq is never
+// re-issued to an unrelated entry — see the schema comment on memory_entries.deleted.
+export function memoryEdit(db, notebook, seq, patch) {
+  const allowed = ["heading", "body", "spec_id"];
+  const keys = Object.keys(patch ?? {});
+  if (keys.length === 0) fail(400, `no editable fields in patch (editable: ${allowed.join(", ")})`);
+  const sets = [], vals = [];
+  for (const k of keys) {
+    if (!allowed.includes(k)) fail(400, `unknown field '${k}' (editable: ${allowed.join(", ")})`);
+    if (typeof patch[k] !== "string") fail(400, `${k} must be a string`);
+    sets.push(`${k}=?`);
+    vals.push(patch[k]);
+  }
+  const live = db.prepare("SELECT 1 FROM memory_entries WHERE notebook=? AND seq=? AND deleted=0").get(notebook, seq);
+  if (!live) fail(404, `no entry ${notebook}#${seq}`);
+  db.prepare(`UPDATE memory_entries SET ${sets.join(", ")} WHERE notebook=? AND seq=?`).run(...vals, notebook, seq);
+  return db.prepare("SELECT notebook,seq,heading,spec_id,body FROM memory_entries WHERE notebook=? AND seq=?").get(notebook, seq);
+}
+
+export function memoryDelete(db, notebook, seq) {
+  const res = db.prepare("UPDATE memory_entries SET deleted=1 WHERE notebook=? AND seq=? AND deleted=0").run(notebook, seq);
+  if (res.changes === 0) fail(404, `no entry ${notebook}#${seq}`);
+  return { deleted: true };
+}
+
 function cmdMemory(db, ...args) {
-  const sub = ["add", "search", "show", "export"].includes(args[0]) ? args.shift() : "list";
+  const sub = ["add", "search", "show", "export", "edit", "delete"].includes(args[0]) ? args.shift() : "list";
+  if (sub === "edit") {
+    const [notebook, seq, field, value] = args;
+    if (!notebook || !seq || !field || value === undefined) die("memory edit <notebook> <seq> <heading|body|spec_id> <value>");
+    try {
+      memoryEdit(db, notebook, Number(seq), { [field]: value });
+      console.log(`${notebook}#${seq} updated`);
+    } catch (e) { die(e.message); }
+    return;
+  }
+  if (sub === "delete") {
+    const [notebook, seq] = args;
+    if (!notebook || !seq) die("memory delete <notebook> <seq>");
+    try {
+      memoryDelete(db, notebook, Number(seq));
+      console.log(`${notebook}#${seq} deleted (its seq will not be reused)`);
+    } catch (e) { die(e.message); }
+    return;
+  }
   if (sub === "add") {
     const [notebook, heading, body, specId] = args;
     if (!notebook || !heading) die("memory add <notebook> <heading> <body> [spec_id]");
@@ -418,7 +474,7 @@ function cmdMemory(db, ...args) {
     const term = args[0];
     if (!term) die("memory search <term>");
     const rows = db.prepare(
-      "SELECT notebook,seq,heading,spec_id FROM memory_entries WHERE heading LIKE ? OR body LIKE ? ORDER BY notebook,seq"
+      "SELECT notebook,seq,heading,spec_id FROM memory_entries WHERE (heading LIKE ? OR body LIKE ?) AND deleted=0 ORDER BY notebook,seq"
     ).all(`%${term}%`, `%${term}%`);
     if (rows.length === 0) { console.log(`No memory entries match '${term}'.`); return; }
     for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
@@ -426,7 +482,7 @@ function cmdMemory(db, ...args) {
   }
   if (sub === "show") {
     const [notebook, seq] = args;
-    const r = db.prepare("SELECT * FROM memory_entries WHERE notebook=? AND seq=?").get(notebook, Number(seq));
+    const r = db.prepare("SELECT * FROM memory_entries WHERE notebook=? AND seq=? AND deleted=0").get(notebook, Number(seq));
     if (!r) die(`no entry ${notebook}#${seq}`);
     console.log(`## ${r.heading}\n\n${r.body}`);
     return;
@@ -434,9 +490,9 @@ function cmdMemory(db, ...args) {
   if (sub === "export") {
     const notebooks = args[0]
       ? [args[0]]
-      : db.prepare("SELECT DISTINCT notebook FROM memory_entries ORDER BY notebook").all().map((r) => r.notebook);
+      : db.prepare("SELECT DISTINCT notebook FROM memory_entries WHERE deleted=0 ORDER BY notebook").all().map((r) => r.notebook);
     for (const nb of notebooks) {
-      const rows = db.prepare("SELECT heading,body FROM memory_entries WHERE notebook=? ORDER BY seq").all(nb);
+      const rows = db.prepare("SELECT heading,body FROM memory_entries WHERE notebook=? AND deleted=0 ORDER BY seq").all(nb);
       process.stdout.write(`# ${nb}\n\n` + rows.map((r) => `## ${r.heading}\n\n${r.body}\n`).join("\n") + "\n");
     }
     return;
@@ -444,10 +500,10 @@ function cmdMemory(db, ...args) {
   // list [notebook] [spec_id]
   const [notebook, specId] = args;
   let sql = "SELECT notebook,seq,heading,spec_id FROM memory_entries";
-  const where = [], qargs = [];
+  const where = ["deleted=0"], qargs = [];
   if (notebook) { where.push("notebook=?"); qargs.push(notebook); }
   if (specId) { where.push("spec_id=?"); qargs.push(specId); }
-  if (where.length) sql += " WHERE " + where.join(" AND ");
+  sql += " WHERE " + where.join(" AND ");
   const rows = db.prepare(sql + " ORDER BY notebook,seq").all(...qargs);
   if (rows.length === 0) { console.log("No memory entries recorded."); return; }
   for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);

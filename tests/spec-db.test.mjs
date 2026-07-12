@@ -198,6 +198,80 @@ test("memory notebooks mirror into the DB with spec-id links; re-import replaces
   assert.doesNotMatch(all.stdout, /First lesson/);
 });
 
+test("memory edit updates heading/body/spec_id in place", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "gotchas", "Original heading", "original body", "0001");
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "heading", "Fixed heading").code, 0);
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "body", "fixed body").code, 0);
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "spec_id", "0002").code, 0);
+  const show = run(dir, "memory", "show", "gotchas", "1");
+  assert.match(show.stdout, /## Fixed heading/);
+  assert.match(show.stdout, /fixed body/);
+  assert.doesNotMatch(show.stdout, /original/);
+  assert.match(run(dir, "memory", "gotchas", "0002").stdout, /\[spec 0002\]\s+Fixed heading/);
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "notebook", "x").code, 1); // immutable field
+});
+
+test("memory delete hides the entry from list/show/search/export", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "lessons", "Keep me", "kept body");
+  run(dir, "memory", "add", "lessons", "Drop me", "dropped body");
+  const del = run(dir, "memory", "delete", "lessons", "2");
+  assert.equal(del.code, 0, del.stderr);
+  assert.match(del.stdout, /lessons#2 deleted/);
+  assert.doesNotMatch(run(dir, "memory", "lessons").stdout, /Drop me/);
+  assert.equal(run(dir, "memory", "show", "lessons", "2").code, 1);
+  assert.match(run(dir, "memory", "search", "dropped").stdout, /No memory entries match/);
+  assert.doesNotMatch(run(dir, "memory", "export", "lessons").stdout, /Drop me/);
+  assert.match(run(dir, "memory", "export", "lessons").stdout, /Keep me/);
+});
+
+test("memory add after delete never reuses the deleted seq", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "nb", "One", "b1");
+  run(dir, "memory", "add", "nb", "Two", "b2");
+  run(dir, "memory", "add", "nb", "Three", "b3");
+  run(dir, "memory", "delete", "nb", "3");
+  const add = run(dir, "memory", "add", "nb", "Four", "b4");
+  assert.match(add.stdout, /nb#4 recorded/); // tombstone keeps seq 3 occupied
+  assert.equal(run(dir, "memory", "show", "nb", "3").code, 1);
+  assert.match(run(dir, "memory", "show", "nb", "4").stdout, /## Four/);
+});
+
+test("memory edit/delete on missing or already-deleted entry exits 1", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "nb", "H", "b");
+  assert.equal(run(dir, "memory", "edit", "nb", "9", "heading", "X").code, 1);
+  assert.equal(run(dir, "memory", "delete", "nb", "9").code, 1);
+  run(dir, "memory", "delete", "nb", "1");
+  assert.equal(run(dir, "memory", "delete", "nb", "1").code, 1); // already deleted
+  assert.equal(run(dir, "memory", "edit", "nb", "1", "heading", "X").code, 1); // tombstone not editable
+});
+
+test("openDb migrates a pre-'deleted'-column memory_entries table", (t) => {
+  const dir = makeFixture(t);
+  // build the old-shape table directly, bypassing the current SCHEMA
+  const mk = spawnSync("node", ["--no-warnings", "--input-type=module", "-e", `
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(process.env.SPECDB_PATH);
+    db.exec(\`CREATE TABLE memory_entries (
+      notebook TEXT NOT NULL, seq INTEGER NOT NULL, heading TEXT NOT NULL,
+      spec_id TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
+      imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+      PRIMARY KEY (notebook, seq));
+      INSERT INTO memory_entries (notebook,seq,heading,body) VALUES ('nb',1,'Old entry','old body');\`);
+  `], { encoding: "utf8", env: { ...process.env, SPECDB_PATH: path.join(dir, "spec.db") } });
+  assert.equal(mk.status, 0, mk.stderr);
+  // any CLI pass through openDb() must ALTER the table in place; delete then works
+  assert.match(run(dir, "memory", "nb").stdout, /Old entry/);
+  assert.equal(run(dir, "memory", "delete", "nb", "1").code, 0);
+  assert.doesNotMatch(run(dir, "memory", "nb").stdout, /Old entry/);
+});
+
 test("research add/list/show/search round-trip with slug and sources", (t) => {
   const dir = makeFixture(t);
   run(dir, "init");

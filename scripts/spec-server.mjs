@@ -15,7 +15,9 @@
 //   GET /api/specs/:project/:id             detail: spec + deps + transitions + attempts
 //   GET /api/specs/:project/:id/attempts/:n full trace body
 //   GET /api/specs/:project/:id/drift       latest two criteria snapshots + changed flag
-//   GET /api/memory?notebook=&spec_id=       mirrored memory notebook entries
+//   GET /api/memory?notebook=&spec_id=       memory notebook entries (live only)
+//   PATCH /api/memory/:notebook/:seq         edit heading/body/spec_id
+//   DELETE /api/memory/:notebook/:seq        soft-delete (the seq is never reused)
 //   GET /api/research?q=                     research report list (no bodies)
 //   GET /api/research/:seqOrSlug             full report incl. body_md
 //   PATCH /api/research/:seqOrSlug           edit title/topic/body_md/sources (slug stable)
@@ -30,7 +32,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { openDb, readStates, researchEdit, researchDelete } from "./spec-db.mjs";
+import { openDb, readStates, researchEdit, researchDelete, memoryEdit, memoryDelete } from "./spec-db.mjs";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX_HTML = path.join(ROOT, "web", "index.html");
@@ -111,12 +113,15 @@ export function buildHandlers(db) {
 
     memory: (notebook, specId) => {
       let sql = "SELECT notebook,seq,heading,spec_id,body FROM memory_entries";
-      const where = [], args = [];
+      const where = ["deleted=0"], args = [];
       if (notebook) { where.push("notebook=?"); args.push(notebook); }
       if (specId) { where.push("spec_id=?"); args.push(specId); }
-      if (where.length) sql += " WHERE " + where.join(" AND ");
+      sql += " WHERE " + where.join(" AND ");
       return db.prepare(sql + " ORDER BY notebook,seq").all(...args);
     },
+
+    memoryEdit: (notebook, seq, patch) => memoryEdit(db, notebook, seq, patch),
+    memoryDelete: (notebook, seq) => memoryDelete(db, notebook, seq),
 
     research: (q) => {
       if (!hasResearchTable(db)) return [];
@@ -185,6 +190,7 @@ export function startServer({ port = 4870 } = {}) {
   // dashboard and local non-browser tools can mutate. Do not "fix" OPTIONS support.
   const MUTABLE = [
     /^\/api\/research\/[^/]+$/, // PATCH, DELETE
+    /^\/api\/memory\/[^/]+\/\d+$/, // PATCH, DELETE
   ];
 
   const server = http.createServer(async (req, res) => {
@@ -208,6 +214,11 @@ export function startServer({ port = 4870 } = {}) {
         return r ? json(res, 200, r) : json(res, 404, { error: "no such spec" });
       }
       if (p === "/api/memory") return json(res, 200, h.memory(q.get("notebook"), q.get("spec_id")));
+      if ((m = p.match(/^\/api\/memory\/([^/]+)\/(\d+)$/)) && (req.method === "PATCH" || req.method === "DELETE")) {
+        const [notebook, seq] = [decodeURIComponent(m[1]), Number(m[2])];
+        if (req.method === "PATCH") return json(res, 200, h.memoryEdit(notebook, seq, await readJson(req)));
+        return json(res, 200, h.memoryDelete(notebook, seq));
+      }
       if ((m = p.match(/^\/api\/research\/([^/]+)$/))) {
         if (req.method === "PATCH") return json(res, 200, h.researchEdit(m[1], await readJson(req)));
         if (req.method === "DELETE") return json(res, 200, h.researchDelete(m[1]));

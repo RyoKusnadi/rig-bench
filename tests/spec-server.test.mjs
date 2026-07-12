@@ -195,4 +195,20 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
   assert.equal((await get(base, "/api/research/learning-german-to-a1")).status, 404);
   assert.equal((await get(base, "/api/research")).body.length, 0);
   assert.equal((await sendJson("/api/research/1", "DELETE")).status, 404);
+
+  // memory mutations (spec 0035): PATCH edits in place, DELETE soft-deletes
+  const memPatch = await sendJson("/api/memory/gotchas/1", "PATCH", { heading: "Edited gotcha" });
+  assert.equal(memPatch.status, 200);
+  assert.equal((await memPatch.json()).heading, "Edited gotcha");
+  const memAfter = (await get(base, "/api/memory")).body;
+  assert.equal(memAfter.length, 1);
+  assert.equal(memAfter[0].heading, "Edited gotcha");
+  assert.equal((await sendJson("/api/memory/gotchas/1", "PATCH", { notebook: "x" })).status, 400);
+  assert.equal((await sendJson("/api/memory/gotchas/9", "PATCH", { heading: "X" })).status, 404);
+
+  const memDel = await sendJson("/api/memory/gotchas/1", "DELETE");
+  assert.equal(memDel.status, 200);
+  assert.equal((await get(base, "/api/memory?spec_id=0002")).body.length, 0);
+  assert.equal((await get(base, "/api/memory")).body.length, 0);
+  assert.equal((await sendJson("/api/memory/gotchas/1", "DELETE")).status, 404); // already deleted
 });

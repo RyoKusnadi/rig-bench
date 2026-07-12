@@ -161,13 +161,54 @@ async function toggleMemory() {
   const open = el.style.display === "none";
   el.style.display = open ? "block" : "none";
   $("#memlink").textContent = open ? "memory ▴" : "memory ▾";
-  if (!open) return;
+  if (open) loadMemory();
+}
+
+async function loadMemory() {
   const entries = await api("/api/memory");
   $("#memcount").textContent = entries.length;
-  $("#memlist").innerHTML = entries.length ? entries.map((m) => `
+  $("#memlist").innerHTML = entries.length ? entries.map((m, i) => `
     <details class="card"><summary><span class="pill">${esc(m.notebook)}</span> ${esc(m.heading)}
       ${m.spec_id ? `<span class="pill">spec ${esc(m.spec_id)}</span>` : ""}</summary>
-      <pre>${esc(m.body)}</pre></details>`).join("") : '<div class="empty">no entries — run spec-db.mjs import / memory add</div>';
+      <pre>${esc(m.body)}</pre>
+      <div style="margin:6px 0 2px"><button class="btn" data-mem-edit="${i}">edit</button>
+        <button class="btn danger" data-mem-del="${i}">delete</button></div></details>`).join("")
+    : '<div class="empty">no entries — run spec-db.mjs import / memory add</div>';
+  // handlers close over the fetched entries array — notebook names and headings never
+  // pass through string-interpolated onclick attributes
+  document.querySelectorAll("[data-mem-edit]").forEach((b) => {
+    b.onclick = () => memoryEditForm(entries[Number(b.dataset.memEdit)]);
+  });
+  document.querySelectorAll("[data-mem-del]").forEach((b) => {
+    b.onclick = async () => {
+      const m = entries[Number(b.dataset.memDel)];
+      if (!confirm(`Delete ${m.notebook}#${m.seq}? Its number will not be reused.`)) return;
+      try { await send(`/api/memory/${encodeURIComponent(m.notebook)}/${m.seq}`, "DELETE"); } catch (e) { alert(e.message); return; }
+      loadMemory();
+    };
+  });
+}
+
+function memoryEditForm(m) {
+  $("#detail-inner").innerHTML = `
+    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
+    <h3>edit memory entry</h3>
+    <div class="sub"><span class="pill">${esc(m.notebook)}#${m.seq}</span></div>
+    <h4>heading</h4><input id="m-heading">
+    <h4>spec id (optional)</h4><input id="m-specid">
+    <h4>body</h4><textarea id="m-body" rows="14"></textarea>
+    <div style="margin-top:10px"><button class="btn" id="m-save">save</button> <button class="btn" id="m-cancel">cancel</button></div>`;
+  $("#m-heading").value = m.heading;
+  $("#m-specid").value = m.spec_id;
+  $("#m-body").value = m.body;
+  $("#m-cancel").onclick = () => $("#detail").classList.remove("open");
+  $("#m-save").onclick = async () => {
+    const patch = { heading: $("#m-heading").value, spec_id: $("#m-specid").value, body: $("#m-body").value };
+    try { await send(`/api/memory/${encodeURIComponent(m.notebook)}/${m.seq}`, "PATCH", patch); } catch (e) { alert(e.message); return; }
+    $("#detail").classList.remove("open");
+    loadMemory();
+  };
+  $("#detail").classList.add("open");
 }
 
 async function toggleResearch() {
