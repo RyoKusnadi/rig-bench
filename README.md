@@ -123,20 +123,28 @@ limbo forever without anyone noticing.
 > "/research how can I learn German for A1" or "research how crypto works at a high level."
 
 Not everything in this repo is about shipping specs — this one turns a topic you want to
-learn into a durable, sourced learning guide instead of a chat answer that scrolls away. It
-runs a few web searches, reads a handful of reputable sources, and writes a structured
-markdown report (overview, key concepts, a learning path, linked resources, next steps)
-where every non-obvious claim cites a page that was actually fetched.
+learn into a durable, sourced learning guide instead of a chat answer that scrolls away.
+It's a research loop, not a single search-and-summarize pass: the topic is decomposed into
+sub-questions first, then searched in rounds (broad, then narrower queries aimed at the
+gaps), with sources picked for authority over search rank. Load-bearing claims need two
+independent sources before the report states them flat, and where sources disagree the
+report says so instead of silently picking a side. The result is a structured markdown
+report (overview, key concepts, a learning path, linked resources, next steps) where every
+non-obvious claim cites a page that was actually fetched.
 
 ```mermaid
 flowchart TD
     A[You give a topic] --> B{Clear enough<br/>to research?}
     B -->|No| C[Asks 2-3 questions —<br/>goal, level, constraints]
-    B -->|Yes| D[Web searches +<br/>reads 3-5 sources]
+    B -->|Yes| D[Decomposes into<br/>3-6 sub-questions]
     C --> D
-    D --> E[Writes a cited<br/>learning guide]
-    E --> F[Saves to spec.db via<br/>the research CLI]
-    F --> G[Readable in the dashboard's<br/>research panel]
+    D --> E[Search rounds: broad first,<br/>then drill into gaps]
+    E --> F{All sub-questions<br/>covered?}
+    F -->|No| E
+    F -->|Yes| G[Cross-checks key claims<br/>across independent sources]
+    G --> H[Writes a cited<br/>learning guide]
+    H --> I[Saves to spec.db via<br/>the research CLI]
+    I --> J[Readable in the dashboard's<br/>research panel]
 ```
 
 Reports land in the same SQLite system of record as everything else
