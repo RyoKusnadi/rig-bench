@@ -18,6 +18,9 @@
 //   scripts/spec-db.mjs list [project] [status]
 //   scripts/spec-db.mjs show <project> <id>
 //   scripts/spec-db.mjs move <project> <id> <to_state> [actor]
+//   scripts/spec-db.mjs add <project> <title> [axis] [body-file]   (draft stub, next id)
+//   scripts/spec-db.mjs edit <project> <id> <title|axis|branch|pr|body> <value>
+//   scripts/spec-db.mjs delete <project> <id>       (hard delete; ledger rows kept)
 //   scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> [trace-file]
 //   scripts/spec-db.mjs drift <project> <id>
 //   scripts/spec-db.mjs set <project> <id> <branch|pr|axis> <value>
@@ -26,11 +29,15 @@
 //   scripts/spec-db.mjs memory search <term>
 //   scripts/spec-db.mjs memory show <notebook> <seq>
 //   scripts/spec-db.mjs memory export [notebook]
+//   scripts/spec-db.mjs memory edit <notebook> <seq> <heading|body|spec_id> <value>
+//   scripts/spec-db.mjs memory delete <notebook> <seq>       (soft delete; seq never reused)
 //   scripts/spec-db.mjs research                              (list)
 //   scripts/spec-db.mjs research add <topic> <title> <body-file> [sources-json]
 //   scripts/spec-db.mjs research show <seq|slug>
 //   scripts/spec-db.mjs research search <term>
 //   scripts/spec-db.mjs research export [seq|slug]
+//   scripts/spec-db.mjs research edit <seq|slug> <title|topic|body|sources> <value>
+//   scripts/spec-db.mjs research delete <seq|slug>
 //   scripts/spec-db.mjs ledger [project] [outcome]
 //   scripts/spec-db.mjs export <project> <id>
 
@@ -46,7 +53,7 @@ if (maj < 22 || (maj === 22 && min < 5)) {
 const { DatabaseSync } = await import("node:sqlite");
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = process.env.SPECDB_PATH ?? path.join(ROOT, "spec.db");
@@ -120,7 +127,17 @@ export function extractCriteria(body) {
 
 export function openDb() {
   const db = new DatabaseSync(DB_PATH);
-  db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
+  // busy_timeout: the server holds a long-lived connection while the CLI opens its own;
+  // WAL allows one writer at a time, and without a timeout a concurrent write throws
+  // SQLITE_BUSY immediately instead of briefly waiting its turn.
+  db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=2000;");
+  // migration: pre-0035 DBs lack memory_entries.deleted — CREATE TABLE IF NOT EXISTS
+  // can't add a column to an existing table, so both the CLI and the server (which all
+  // pass through here) upgrade in place.
+  const hasMem = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_entries'").get();
+  if (hasMem && !db.prepare("PRAGMA table_info(memory_entries)").all().some((c) => c.name === "deleted")) {
+    db.exec("ALTER TABLE memory_entries ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+  }
   return db;
 }
 
@@ -172,6 +189,9 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   spec_id TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL DEFAULT '',
   imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  -- soft delete: entries are cited externally as notebook#seq, so a tombstone keeps
+  -- occupying its seq and MAX(seq)+1 in \`memory add\` can never re-issue a deleted number
+  deleted INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (notebook, seq)
 );
 CREATE TABLE IF NOT EXISTS criteria_revisions (
@@ -193,6 +213,10 @@ CREATE TABLE IF NOT EXISTS research_reports (
 `;
 
 function die(msg) { console.error(`Error: ${msg}`); process.exit(1); }
+
+// Mutation cores throw instead of exiting — die() would kill the server process that
+// shares them. `status` maps to the HTTP code (400/404/409); CLI wrappers catch → die().
+function fail(status, msg) { const e = new Error(msg); e.status = status; throw e; }
 
 function cmdInit(db) {
   db.exec(SCHEMA);
@@ -356,6 +380,216 @@ function cmdMove(db, project, id, toState, actor = "cli") {
   console.log(`${project}/${id}: ${spec.status} -> ${toState}`);
 }
 
+// ── spec add/edit/delete (spec 0036) ──────────────────────────────────────────
+// Mutations on all surfaces route through these cores (decisions#4): the server's
+// POST/PATCH/DELETE handlers and the CLI verbs share the same validation. Status is
+// deliberately NOT editable here — state changes remain cmdMove's job, with its
+// valid_next and dependency gates.
+
+// parseSpec's scalar regex ([^"\n]*) cannot round-trip double quotes or newlines
+const SCALAR_OK = (v) => typeof v === "string" && !/["\n\r]/.test(v);
+const checkProjectId = (project, id) => {
+  // charset gate BEFORE any path.join — project/id arrive from a URL on the server side
+  if (!/^[A-Za-z0-9_-]+$/.test(project ?? "")) fail(400, "project must match [A-Za-z0-9_-]+");
+  if (id !== undefined && !/^\d{4}$/.test(id ?? "")) fail(400, "id must be a 4-digit spec id");
+};
+
+const STUB_BODY = `## Problem
+
+[NEEDS CLARIFICATION: current state, and why it's insufficient]
+
+## Acceptance Criteria
+
+- [NEEDS CLARIFICATION: EARS-style — When <trigger>, the <component> shall <behavior>.]
+
+## Out of Scope
+
+- [NEEDS CLARIFICATION]
+
+## Files/Interfaces Touched
+
+- [NEEDS CLARIFICATION]
+
+## Implementation Notes
+
+[NEEDS CLARIFICATION]
+
+## Verification
+
+[NEEDS CLARIFICATION: one end-to-end check that proves this is done]
+`;
+
+export function nextId(db, project) {
+  // max over BOTH the DB and every state folder on disk: covers un-imported files and
+  // deleted-from-disk rows alike
+  let max = Number(db.prepare("SELECT COALESCE(MAX(CAST(id AS INTEGER)),0) m FROM specs WHERE project=?").get(project).m);
+  const projDir = path.join(ROOT, "specs", project);
+  for (const st of readStates()) {
+    const dir = path.join(projDir, st.name);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      const m = f.match(/^(\d{4})-/);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+  }
+  return String(max + 1).padStart(4, "0");
+}
+
+export function specAdd(db, project, title, { axis = "", body = "", actor = "cli" } = {}) {
+  db.exec(SCHEMA);
+  checkProjectId(project);
+  const projDir = path.join(ROOT, "specs", project);
+  if (!fs.existsSync(projDir)) fail(400, `specs/${project} does not exist`);
+  if (!title || !SCALAR_OK(title)) fail(400, "title is required and cannot contain double quotes or newlines");
+  if (!SCALAR_OK(axis)) fail(400, "axis cannot contain double quotes or newlines");
+  if (typeof body !== "string") fail(400, "body must be a string");
+  const ts = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  let id = nextId(db, project);
+  let file = path.join(projDir, "draft", `${id}-${slugify(title)}.md`);
+  if (fs.existsSync(file)) { // lost a race with another writer — bump once, then let the PK speak
+    id = String(Number(id) + 1).padStart(4, "0");
+    file = path.join(projDir, "draft", `${id}-${slugify(title)}.md`);
+  }
+  const bodyMd = body || STUB_BODY;
+  // frontmatter quoting matches cmdExport so a later export is byte-compatible;
+  // depends_on stays an inline [] because parseSpec's history matcher would otherwise
+  // read block-list dep entries as history lines
+  const fm = [
+    "---",
+    `id: "${id}"`,
+    `title: ${title}`,
+    "status: draft",
+    "depends_on: []",
+    "verify_attempts: 0",
+    'branch: ""',
+    'pr: ""',
+    "history:",
+    `  - draft ${ts}`,
+    'source: ""',
+    `axis: "${axis}"`,
+    "---",
+  ].join("\n");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, fm + "\n" + bodyMd);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("INSERT INTO specs (project,id,title,status,axis,body_md) VALUES (?,?,?,'draft',?,?)")
+      .run(project, id, title, axis, bodyMd);
+    db.prepare("INSERT INTO transitions (project,id,from_state,to_state,actor) VALUES (?,?,NULL,'draft',?)")
+      .run(project, id, actor);
+    snapshotCriteria(db, project, id, "draft", bodyMd);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    fs.rmSync(file, { force: true }); // no orphan file when the PK insert loses a true race
+    throw e;
+  }
+  return { project, id, path: path.relative(ROOT, file) };
+}
+
+export function specEdit(db, project, id, patch) {
+  checkProjectId(project, id);
+  const allowed = ["title", "axis", "branch", "pr", "body"];
+  const keys = Object.keys(patch ?? {});
+  if (keys.length === 0) fail(400, `no editable fields in patch (editable: ${allowed.join(", ")})`);
+  if (keys.includes("status")) fail(400, "status is not editable — use 'move', which enforces valid_next and dependency gates");
+  for (const k of keys) {
+    if (!allowed.includes(k)) fail(400, `unknown field '${k}' (editable: ${allowed.join(", ")})`);
+    if (typeof patch[k] !== "string") fail(400, `${k} must be a string`);
+    if (k !== "body" && !SCALAR_OK(patch[k])) fail(400, `${k} cannot contain double quotes or newlines`);
+  }
+  const spec = db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
+  if (!spec) fail(404, `no spec ${id} in '${project}'`);
+  // file side first — the tree is the source of truth. findSpecFile prefix-matches on
+  // the id, so the filename never changes when the title does.
+  const file = findSpecFile(project, id);
+  if (file) {
+    const m = fs.readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+    if (!m) fail(400, `${path.relative(ROOT, file)}: no frontmatter block`);
+    let [, fm, body] = m;
+    for (const k of keys) {
+      if (k === "body") { body = patch.body; continue; }
+      const line = k === "title" ? `title: ${patch.title}` : `${k}: "${patch[k]}"`; // export-style quoting
+      const re = new RegExp(`^${k}:.*$`, "m");
+      fm = re.test(fm) ? fm.replace(re, line) : `${fm}\n${line}`; // insert if absent (pre-`pr` specs)
+    }
+    fs.writeFileSync(file, `---\n${fm}\n---\n${body}`);
+  } else {
+    console.warn(`warning: no on-disk file for ${project}/${id}; updating DB only`);
+  }
+  const sets = [], vals = [];
+  for (const k of keys) { sets.push(`${k === "body" ? "body_md" : k}=?`); vals.push(patch[k]); }
+  db.prepare(`UPDATE specs SET ${sets.join(", ")}, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?`)
+    .run(...vals, project, id);
+  // a sanctioned body edit becomes the new drift baseline; scalar edits don't touch criteria
+  if (keys.includes("body")) snapshotCriteria(db, project, id, spec.status, patch.body);
+  return db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
+}
+
+export function specDelete(db, project, id) {
+  checkProjectId(project, id);
+  const spec = db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
+  if (!spec) fail(404, `no spec ${id} in '${project}'`);
+  const dependents = db.prepare("SELECT id FROM dependencies WHERE project=? AND depends_on=? ORDER BY id")
+    .all(project, id).map((r) => r.id);
+  if (dependents.length) fail(409, `refusing to delete ${project}/${id}: depended on by ${dependents.join(", ")}`);
+  // files first: a crash here leaves DB rows behind and a delete re-run completes the
+  // cleanup; import can't resurrect a spec whose file is gone
+  const file = findSpecFile(project, id);
+  if (file) fs.rmSync(file, { force: true });
+  fs.rmSync(path.join(ROOT, "specs", project, ".traces", id), { recursive: true, force: true });
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // ledger is deliberately NOT in this list — it's the append-only outcome record
+    for (const t of ["specs", "dependencies", "transitions", "attempts", "criteria_revisions"]) {
+      db.prepare(`DELETE FROM ${t} WHERE project=? AND id=?`).run(project, id);
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+  return { deleted: true, project, id };
+}
+
+function cmdAdd(db, project, title, axis, bodyFile) {
+  if (!project || !title) die("add <project> <title> [axis] [body-file]");
+  let body = "";
+  if (bodyFile) {
+    if (!fs.existsSync(bodyFile)) die(`body file '${bodyFile}' does not exist`);
+    body = fs.readFileSync(bodyFile, "utf8");
+  }
+  try {
+    const r = specAdd(db, project, title, { axis: axis ?? "", body, actor: "cli" });
+    console.log(`${r.project}/${r.id} created at ${r.path} (draft)`);
+  } catch (e) { die(e.message); }
+}
+
+function cmdEdit(db, project, id, field, value) {
+  if (!project || !id || !field || value === undefined) {
+    die("edit <project> <id> <title|axis|branch|pr|body> <value>  (body: value is a file path)");
+  }
+  const patch = {};
+  if (field === "body") {
+    if (!fs.existsSync(value)) die(`body file '${value}' does not exist`);
+    patch.body = fs.readFileSync(value, "utf8");
+  } else {
+    patch[field] = value; // specEdit whitelists (and names 'move' for status)
+  }
+  try {
+    specEdit(db, project, id, patch);
+    console.log(`${project}/${id}: ${field} updated (file + DB)`);
+  } catch (e) { die(e.message); }
+}
+
+function cmdDelete(db, project, id) {
+  if (!project || !id) die("delete <project> <id>");
+  try {
+    specDelete(db, project, id);
+    console.log(`${project}/${id} deleted (file, traces, DB history removed; ledger kept)`);
+  } catch (e) { die(e.message); }
+}
+
 function cmdRecordAttempt(db, project, id, overall, traceFile) {
   if (overall !== "PASS" && overall !== "FAIL") die("overall must be PASS or FAIL");
   const spec = getSpec(db, project, id);
@@ -394,8 +628,52 @@ function cmdSet(db, project, id, field, value) {
   console.log(`${project}/${id}: ${field} set`);
 }
 
+// Core memory mutations shared by the CLI wrappers and the server's PATCH/DELETE
+// handlers. Delete is a soft delete (tombstone row) so a cited notebook#seq is never
+// re-issued to an unrelated entry — see the schema comment on memory_entries.deleted.
+export function memoryEdit(db, notebook, seq, patch) {
+  const allowed = ["heading", "body", "spec_id"];
+  const keys = Object.keys(patch ?? {});
+  if (keys.length === 0) fail(400, `no editable fields in patch (editable: ${allowed.join(", ")})`);
+  const sets = [], vals = [];
+  for (const k of keys) {
+    if (!allowed.includes(k)) fail(400, `unknown field '${k}' (editable: ${allowed.join(", ")})`);
+    if (typeof patch[k] !== "string") fail(400, `${k} must be a string`);
+    sets.push(`${k}=?`);
+    vals.push(patch[k]);
+  }
+  const live = db.prepare("SELECT 1 FROM memory_entries WHERE notebook=? AND seq=? AND deleted=0").get(notebook, seq);
+  if (!live) fail(404, `no entry ${notebook}#${seq}`);
+  db.prepare(`UPDATE memory_entries SET ${sets.join(", ")} WHERE notebook=? AND seq=?`).run(...vals, notebook, seq);
+  return db.prepare("SELECT notebook,seq,heading,spec_id,body FROM memory_entries WHERE notebook=? AND seq=?").get(notebook, seq);
+}
+
+export function memoryDelete(db, notebook, seq) {
+  const res = db.prepare("UPDATE memory_entries SET deleted=1 WHERE notebook=? AND seq=? AND deleted=0").run(notebook, seq);
+  if (res.changes === 0) fail(404, `no entry ${notebook}#${seq}`);
+  return { deleted: true };
+}
+
 function cmdMemory(db, ...args) {
-  const sub = ["add", "search", "show", "export"].includes(args[0]) ? args.shift() : "list";
+  const sub = ["add", "search", "show", "export", "edit", "delete"].includes(args[0]) ? args.shift() : "list";
+  if (sub === "edit") {
+    const [notebook, seq, field, value] = args;
+    if (!notebook || !seq || !field || value === undefined) die("memory edit <notebook> <seq> <heading|body|spec_id> <value>");
+    try {
+      memoryEdit(db, notebook, Number(seq), { [field]: value });
+      console.log(`${notebook}#${seq} updated`);
+    } catch (e) { die(e.message); }
+    return;
+  }
+  if (sub === "delete") {
+    const [notebook, seq] = args;
+    if (!notebook || !seq) die("memory delete <notebook> <seq>");
+    try {
+      memoryDelete(db, notebook, Number(seq));
+      console.log(`${notebook}#${seq} deleted (its seq will not be reused)`);
+    } catch (e) { die(e.message); }
+    return;
+  }
   if (sub === "add") {
     const [notebook, heading, body, specId] = args;
     if (!notebook || !heading) die("memory add <notebook> <heading> <body> [spec_id]");
@@ -409,7 +687,7 @@ function cmdMemory(db, ...args) {
     const term = args[0];
     if (!term) die("memory search <term>");
     const rows = db.prepare(
-      "SELECT notebook,seq,heading,spec_id FROM memory_entries WHERE heading LIKE ? OR body LIKE ? ORDER BY notebook,seq"
+      "SELECT notebook,seq,heading,spec_id FROM memory_entries WHERE (heading LIKE ? OR body LIKE ?) AND deleted=0 ORDER BY notebook,seq"
     ).all(`%${term}%`, `%${term}%`);
     if (rows.length === 0) { console.log(`No memory entries match '${term}'.`); return; }
     for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
@@ -417,7 +695,7 @@ function cmdMemory(db, ...args) {
   }
   if (sub === "show") {
     const [notebook, seq] = args;
-    const r = db.prepare("SELECT * FROM memory_entries WHERE notebook=? AND seq=?").get(notebook, Number(seq));
+    const r = db.prepare("SELECT * FROM memory_entries WHERE notebook=? AND seq=? AND deleted=0").get(notebook, Number(seq));
     if (!r) die(`no entry ${notebook}#${seq}`);
     console.log(`## ${r.heading}\n\n${r.body}`);
     return;
@@ -425,9 +703,9 @@ function cmdMemory(db, ...args) {
   if (sub === "export") {
     const notebooks = args[0]
       ? [args[0]]
-      : db.prepare("SELECT DISTINCT notebook FROM memory_entries ORDER BY notebook").all().map((r) => r.notebook);
+      : db.prepare("SELECT DISTINCT notebook FROM memory_entries WHERE deleted=0 ORDER BY notebook").all().map((r) => r.notebook);
     for (const nb of notebooks) {
-      const rows = db.prepare("SELECT heading,body FROM memory_entries WHERE notebook=? ORDER BY seq").all(nb);
+      const rows = db.prepare("SELECT heading,body FROM memory_entries WHERE notebook=? AND deleted=0 ORDER BY seq").all(nb);
       process.stdout.write(`# ${nb}\n\n` + rows.map((r) => `## ${r.heading}\n\n${r.body}\n`).join("\n") + "\n");
     }
     return;
@@ -435,10 +713,10 @@ function cmdMemory(db, ...args) {
   // list [notebook] [spec_id]
   const [notebook, specId] = args;
   let sql = "SELECT notebook,seq,heading,spec_id FROM memory_entries";
-  const where = [], qargs = [];
+  const where = ["deleted=0"], qargs = [];
   if (notebook) { where.push("notebook=?"); qargs.push(notebook); }
   if (specId) { where.push("spec_id=?"); qargs.push(specId); }
-  if (where.length) sql += " WHERE " + where.join(" AND ");
+  sql += " WHERE " + where.join(" AND ");
   const rows = db.prepare(sql + " ORDER BY notebook,seq").all(...qargs);
   if (rows.length === 0) { console.log("No memory entries recorded."); return; }
   for (const r of rows) console.log(`${r.notebook}#${r.seq}${r.spec_id ? ` [spec ${r.spec_id}]` : ""}  ${r.heading}`);
@@ -449,13 +727,79 @@ export function slugify(title) {
     .replace(/-+$/, "") || "report";
 }
 
+export function findResearch(db, key) {
+  return /^\d+$/.test(key)
+    ? db.prepare("SELECT * FROM research_reports WHERE seq=?").get(Number(key))
+    : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(String(key));
+}
+
+// Core mutations shared by the CLI wrappers below and the server's PATCH/DELETE handlers
+// (decisions#3: research reports are mutable; slug and seq are the stable citation keys,
+// so title edits never re-slugify, and the AUTOINCREMENT seq of a deleted report is never
+// reused — stale citations 404 instead of aliasing to a future report).
+export function researchEdit(db, key, patch) {
+  db.exec(SCHEMA); // pre-upgrade DBs lack the table; 404 beats a missing-table throw
+  const r = findResearch(db, key);
+  if (!r) fail(404, `no report '${key}'`);
+  const allowed = ["title", "topic", "body_md", "sources"];
+  const keys = Object.keys(patch ?? {});
+  if (keys.length === 0) fail(400, `no editable fields in patch (editable: ${allowed.join(", ")})`);
+  const sets = [], vals = [];
+  for (const k of keys) {
+    if (!allowed.includes(k)) fail(400, `unknown field '${k}' (editable: ${allowed.join(", ")})`);
+    let v = patch[k];
+    if (k === "sources") {
+      if (!Array.isArray(v)) fail(400, "sources must be a JSON array of URLs");
+      v = JSON.stringify(v);
+    } else if (typeof v !== "string") {
+      fail(400, `${k} must be a string`);
+    }
+    sets.push(`${k}=?`);
+    vals.push(v);
+  }
+  db.prepare(`UPDATE research_reports SET ${sets.join(", ")} WHERE seq=?`).run(...vals, r.seq);
+  return findResearch(db, String(r.seq));
+}
+
+export function researchDelete(db, key) {
+  db.exec(SCHEMA);
+  const r = findResearch(db, key);
+  if (!r) fail(404, `no report '${key}'`);
+  db.prepare("DELETE FROM research_reports WHERE seq=?").run(r.seq);
+  return { deleted: true, seq: r.seq, slug: r.slug };
+}
+
 function cmdResearch(db, ...args) {
   db.exec(SCHEMA); // reports must land even on a DB created before this table existed
-  const sub = ["add", "search", "show", "export"].includes(args[0]) ? args.shift() : "list";
-  const bySeqOrSlug = (key) =>
-    /^\d+$/.test(key)
-      ? db.prepare("SELECT * FROM research_reports WHERE seq=?").get(Number(key))
-      : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(key);
+  const sub = ["add", "search", "show", "export", "edit", "delete"].includes(args[0]) ? args.shift() : "list";
+  const bySeqOrSlug = (key) => findResearch(db, key);
+  if (sub === "edit") {
+    const [key, field, value] = args;
+    if (!key || !field || value === undefined) die("research edit <seq|slug> <title|topic|body|sources> <value>");
+    const patch = {};
+    if (field === "body") {
+      if (!fs.existsSync(value)) die(`body file '${value}' does not exist`);
+      patch.body_md = fs.readFileSync(value, "utf8");
+    } else if (field === "sources") {
+      try { patch.sources = JSON.parse(value); } catch { die("sources value is not valid JSON"); }
+    } else {
+      patch[field] = value; // researchEdit whitelists unknown fields
+    }
+    try {
+      const r = researchEdit(db, key, patch);
+      console.log(`research#${r.seq} (${r.slug}) updated`);
+    } catch (e) { die(e.message); }
+    return;
+  }
+  if (sub === "delete") {
+    const key = args[0];
+    if (!key) die("research delete <seq|slug>");
+    try {
+      const r = researchDelete(db, key);
+      console.log(`research#${r.seq} (${r.slug}) deleted`);
+    } catch (e) { die(e.message); }
+    return;
+  }
   if (sub === "add") {
     const [topic, title, bodyFile, sourcesJson] = args;
     if (!topic || !title || !bodyFile) die("research add <topic> <title> <body-file> [sources-json]");
@@ -549,8 +893,18 @@ function cmdExport(db, project, id) {
 }
 
 // ── dispatch ──────────────────────────────────────────────────────────────────
+// Realpath-based main-module guard (mirrors the es-main npm package, kept inline —
+// zero-dependency repo). Node resolves the ESM entry point to its realpath, so a naive
+// `import.meta.url === file://argv[1]` comparison fails when the invocation path has a
+// symlinked component (macOS tmpdir) or characters needing URL encoding, silently
+// turning every CLI command into a no-op.
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try { return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href; }
+  catch { return false; } // argv[1] not resolvable on disk → not our entry
+})();
 const [cmd, ...args] = process.argv.slice(2);
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain) {
   const db = openDb();
   switch (cmd) {
     case "init": cmdInit(db); break;
@@ -558,6 +912,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     case "list": cmdList(db, args[0], args[1]); break;
     case "show": cmdShow(db, args[0], args[1]); break;
     case "move": cmdMove(db, args[0], args[1], args[2], args[3]); break;
+    case "add": cmdAdd(db, args[0], args[1], args[2], args[3]); break;
+    case "edit": cmdEdit(db, args[0], args[1], args[2], args[3]); break;
+    case "delete": cmdDelete(db, args[0], args[1]); break;
     case "record-attempt": cmdRecordAttempt(db, args[0], args[1], args[2], args[3]); break;
     case "drift": cmdDrift(db, args[0], args[1]); break;
     case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
@@ -566,7 +923,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:
-      console.error("Usage: spec-db.mjs <init|import|list|show|move|record-attempt|drift|set|memory|research|ledger|export> ...");
+      console.error("Usage: spec-db.mjs <init|import|list|show|move|add|edit|delete|record-attempt|drift|set|memory|research|ledger|export> ...");
       process.exit(1);
   }
 }

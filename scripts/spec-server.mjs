@@ -1,21 +1,30 @@
 #!/usr/bin/env node
-// spec-server.mjs — read-only HTTP layer over spec.db, plus the static frontend.
+// spec-server.mjs — HTTP layer over spec.db, plus the static frontend.
 //
 // Phase 3 of the DB migration: a thin JSON API over the same queries the CLI runs.
-// Deliberately read-only — every mutation still goes through scripts/spec-db.mjs (the
-// gate that enforces valid_next and the dependency rule); this server only observes.
+// Read-only by default — the MUTABLE allowlist below names the few endpoints that accept
+// mutations, and every one of them routes through the same exported spec-db.mjs core
+// functions the CLI uses, so validation (field whitelists, valid_next, dependency rules)
+// is enforced identically on both surfaces (decisions#3/#4).
 // Zero dependencies: node:http + node:sqlite via spec-db.mjs's exports.
 //
 // Endpoints:
 //   GET /health
 //   GET /api/states                         state machine (from workflows/state.yaml)
 //   GET /api/specs?project=&status=         list
+//   POST /api/specs                          create a draft stub {project,title,axis?,body?}
 //   GET /api/specs/:project/:id             detail: spec + deps + transitions + attempts
+//   PATCH /api/specs/:project/:id           edit title/axis/branch/pr/body (never status)
+//   DELETE /api/specs/:project/:id          hard delete (409 if depended on; ledger kept)
 //   GET /api/specs/:project/:id/attempts/:n full trace body
 //   GET /api/specs/:project/:id/drift       latest two criteria snapshots + changed flag
-//   GET /api/memory?notebook=&spec_id=       mirrored memory notebook entries
+//   GET /api/memory?notebook=&spec_id=       memory notebook entries (live only)
+//   PATCH /api/memory/:notebook/:seq         edit heading/body/spec_id
+//   DELETE /api/memory/:notebook/:seq        soft-delete (the seq is never reused)
 //   GET /api/research?q=                     research report list (no bodies)
 //   GET /api/research/:seqOrSlug             full report incl. body_md
+//   PATCH /api/research/:seqOrSlug           edit title/topic/body_md/sources (slug stable)
+//   DELETE /api/research/:seqOrSlug          delete a report
 //   GET /api/ledger?project=&outcome=
 //   GET /api/metrics?project=               per-state counts, attempts distribution, failure rate
 //   GET /                                   web/index.html (the dashboard)
@@ -25,8 +34,11 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { openDb, readStates } from "./spec-db.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  openDb, readStates, researchEdit, researchDelete, memoryEdit, memoryDelete,
+  specAdd, specEdit, specDelete,
+} from "./spec-db.mjs";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX_HTML = path.join(ROOT, "web", "index.html");
@@ -46,6 +58,24 @@ function json(res, code, body) {
     "access-control-allow-origin": "*",
   });
   res.end(JSON.stringify(body));
+}
+
+const httpErr = (status, msg) => Object.assign(new Error(msg), { status });
+
+// JSON body reader for the mutation endpoints: capped, parsed, and required to be a
+// plain object — a bad body is a 400 from here, never a 500 from destructuring later.
+async function readJson(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > 1_000_000) throw httpErr(400, "body too large (1 MB cap)");
+    chunks.push(c);
+  }
+  let v;
+  try { v = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw httpErr(400, "invalid JSON body"); }
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw httpErr(400, "body must be a JSON object");
+  return v;
 }
 
 export function buildHandlers(db) {
@@ -89,12 +119,19 @@ export function buildHandlers(db) {
 
     memory: (notebook, specId) => {
       let sql = "SELECT notebook,seq,heading,spec_id,body FROM memory_entries";
-      const where = [], args = [];
+      const where = ["deleted=0"], args = [];
       if (notebook) { where.push("notebook=?"); args.push(notebook); }
       if (specId) { where.push("spec_id=?"); args.push(specId); }
-      if (where.length) sql += " WHERE " + where.join(" AND ");
+      sql += " WHERE " + where.join(" AND ");
       return db.prepare(sql + " ORDER BY notebook,seq").all(...args);
     },
+
+    memoryEdit: (notebook, seq, patch) => memoryEdit(db, notebook, seq, patch),
+    memoryDelete: (notebook, seq) => memoryDelete(db, notebook, seq),
+
+    specAdd: (project, title, axis, body) => specAdd(db, project, title, { axis: axis ?? "", body: body ?? "", actor: "dashboard" }),
+    specEdit: (project, id, patch) => specEdit(db, project, id, patch),
+    specDelete: (project, id) => specDelete(db, project, id),
 
     research: (q) => {
       if (!hasResearchTable(db)) return [];
@@ -112,6 +149,13 @@ export function buildHandlers(db) {
         : db.prepare("SELECT * FROM research_reports WHERE slug=?").get(key);
       return r ? { ...r, sources: safeParseArray(r.sources) } : null;
     },
+
+    // mutation delegates — validation lives in spec-db.mjs's exported cores, never here
+    researchEdit: (key, patch) => {
+      const r = researchEdit(db, key, patch);
+      return { ...r, sources: safeParseArray(r.sources) };
+    },
+    researchDelete: (key) => researchDelete(db, key),
 
     ledger: (project, outcome) => {
       let sql = "SELECT project,id,title,outcome,verify_attempts,axis,at FROM ledger";
@@ -150,15 +194,33 @@ export function startServer({ port = 4870 } = {}) {
   const db = openDb();
   const h = buildHandlers(db);
 
-  const server = http.createServer((req, res) => {
+  // Routes that accept mutations; everything else stays GET-only. OPTIONS is deliberately
+  // NOT handled anywhere: PATCH/DELETE (and POST with a JSON content-type) always trigger
+  // a CORS preflight, so browsers refuse cross-origin mutation — only the same-origin
+  // dashboard and local non-browser tools can mutate. Do not "fix" OPTIONS support.
+  const MUTABLE = [
+    /^\/api\/research\/[^/]+$/, // PATCH, DELETE
+    /^\/api\/memory\/[^/]+\/\d+$/, // PATCH, DELETE
+    /^\/api\/specs$/, // POST
+    /^\/api\/specs\/[^/]+\/[^/]+$/, // PATCH, DELETE (status stays move-only, via the CLI)
+  ];
+
+  const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, "http://x");
     const p = u.pathname.replace(/\/+$/, "") || "/";
     const q = u.searchParams;
     try {
-      if (req.method !== "GET") return json(res, 405, { error: "read-only server" });
+      if (req.method !== "GET" && !MUTABLE.some((re) => re.test(p)))
+        return json(res, 405, { error: "read-only endpoint" });
       if (p === "/health") return json(res, 200, { ok: true });
       if (p === "/api/states") return json(res, 200, h.states());
-      if (p === "/api/specs") return json(res, 200, h.specs(q.get("project"), q.get("status")));
+      if (p === "/api/specs") {
+        if (req.method === "POST") {
+          const b = await readJson(req);
+          return json(res, 201, h.specAdd(b.project, b.title, b.axis, b.body));
+        }
+        return json(res, 200, h.specs(q.get("project"), q.get("status")));
+      }
       let m;
       if ((m = p.match(/^\/api\/specs\/([^/]+)\/([^/]+)\/attempts\/(\d+)$/))) {
         const r = h.attempt(m[1], m[2], m[3]);
@@ -166,11 +228,26 @@ export function startServer({ port = 4870 } = {}) {
       }
       if ((m = p.match(/^\/api\/specs\/([^/]+)\/([^/]+)\/drift$/))) return json(res, 200, h.drift(m[1], m[2]));
       if ((m = p.match(/^\/api\/specs\/([^/]+)\/([^/]+)$/))) {
+        // stays AFTER the /drift and /attempts/:n matchers, same as GET always has
+        if (req.method === "PATCH") {
+          h.specEdit(m[1], m[2], await readJson(req));
+          return json(res, 200, h.spec(m[1], m[2]));
+        }
+        if (req.method === "DELETE") return json(res, 200, h.specDelete(m[1], m[2]));
+        if (req.method !== "GET") return json(res, 405, { error: "method not allowed" });
         const r = h.spec(m[1], m[2]);
         return r ? json(res, 200, r) : json(res, 404, { error: "no such spec" });
       }
       if (p === "/api/memory") return json(res, 200, h.memory(q.get("notebook"), q.get("spec_id")));
+      if ((m = p.match(/^\/api\/memory\/([^/]+)\/(\d+)$/)) && (req.method === "PATCH" || req.method === "DELETE")) {
+        const [notebook, seq] = [decodeURIComponent(m[1]), Number(m[2])];
+        if (req.method === "PATCH") return json(res, 200, h.memoryEdit(notebook, seq, await readJson(req)));
+        return json(res, 200, h.memoryDelete(notebook, seq));
+      }
       if ((m = p.match(/^\/api\/research\/([^/]+)$/))) {
+        if (req.method === "PATCH") return json(res, 200, h.researchEdit(m[1], await readJson(req)));
+        if (req.method === "DELETE") return json(res, 200, h.researchDelete(m[1]));
+        if (req.method !== "GET") return json(res, 405, { error: "method not allowed" });
         const r = h.researchOne(m[1]);
         return r ? json(res, 200, r) : json(res, 404, { error: "no such report" });
       }
@@ -183,7 +260,7 @@ export function startServer({ port = 4870 } = {}) {
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
-      return json(res, 500, { error: String(e.message ?? e) });
+      return json(res, e.status ?? 500, { error: String(e.message ?? e) });
     }
   });
 
@@ -191,7 +268,14 @@ export function startServer({ port = 4870 } = {}) {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Realpath-based main-module guard — same rationale and shape as spec-db.mjs's; kept
+// inline because these are separate processes and the repo has no shared lib module.
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try { return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href; }
+  catch { return false; } // argv[1] not resolvable on disk → not our entry
+})();
+if (isMain) {
   const port = Number(process.argv[2] ?? 4870);
   const server = startServer({ port });
   server.on("listening", () => console.log(`spec-server: http://localhost:${server.address().port}`));

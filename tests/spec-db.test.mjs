@@ -198,6 +198,183 @@ test("memory notebooks mirror into the DB with spec-id links; re-import replaces
   assert.doesNotMatch(all.stdout, /First lesson/);
 });
 
+test("add allocates next id across DB and disk", (t) => {
+  const dir = makeFixture(t, [{ id: "0002", status: "ready" }]);
+  run(dir, "import", "p");
+  // a stray, never-imported file on disk must also push the counter forward
+  fs.writeFileSync(path.join(dir, "specs", "p", "ready", "0007-stray.md"), specMd({ id: "0007", status: "ready" }));
+  const add = run(dir, "add", "p", "A new idea", "tooling");
+  assert.equal(add.code, 0, add.stderr);
+  assert.match(add.stdout, /p\/0008 created at .*draft\/0008-a-new-idea\.md \(draft\)/);
+  assert.ok(fs.existsSync(path.join(dir, "specs", "p", "draft", "0008-a-new-idea.md")));
+  assert.match(run(dir, "list", "p", "draft").stdout, /p\/0008/);
+});
+
+test("add stub round-trips through parseSpec/import and records transition + criteria", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  run(dir, "add", "p", "Stub spec");
+  const file = path.join(dir, "specs", "p", "draft", "0002-stub-spec.md");
+  const text = fs.readFileSync(file, "utf8");
+  assert.match(text, /^---\nid: "0002"\ntitle: Stub spec\nstatus: draft\ndepends_on: \[\]/);
+  assert.match(text, /history:\n  - draft \d{4}-/);
+  assert.match(text, /## Acceptance Criteria/);
+  // re-import over the stub: must not error or change anything
+  assert.equal(run(dir, "import", "p").code, 0);
+  const show = run(dir, "show", "p", "0002");
+  assert.match(show.stdout, /status: draft/);
+  assert.match(show.stdout, /· -> draft/); // NULL -> draft transition
+  // title validation: quotes and newlines can't round-trip parseSpec
+  assert.equal(run(dir, "add", "p", 'bad "quoted" title').code, 1);
+  assert.equal(run(dir, "add", "nonexistent-project", "T").code, 1);
+});
+
+test("edit rewrites frontmatter in file and DB together, filename stable", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  const edit = run(dir, "edit", "p", "0001", "title", "Renamed title");
+  assert.equal(edit.code, 0, edit.stderr);
+  const file = path.join(dir, "specs", "p", "ready", "0001-x.md"); // filename unchanged
+  assert.match(fs.readFileSync(file, "utf8"), /^title: Renamed title$/m);
+  assert.match(run(dir, "show", "p", "0001").stdout, /Renamed title/);
+  run(dir, "edit", "p", "0001", "axis", "tooling");
+  run(dir, "edit", "p", "0001", "pr", "https://example.com/pr/9");
+  const text = fs.readFileSync(file, "utf8");
+  assert.match(text, /^axis: "tooling"$/m);
+  assert.match(text, /^pr: "https:\/\/example\.com\/pr\/9"$/m);
+});
+
+test("edit body dual-writes and re-snapshots so the next move reports no drift", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  const bodyFile = path.join(dir, "new-body.md");
+  fs.writeFileSync(bodyFile, "## Problem\nnew\n## Acceptance Criteria\n- When C, the system shall D.\n## Verification\nRun make verify.\n");
+  assert.equal(run(dir, "edit", "p", "0001", "body", bodyFile).code, 0);
+  run(dir, "move", "p", "0001", "in_progress");
+  const drift = run(dir, "drift", "p", "0001");
+  assert.equal(drift.code, 0, drift.stdout); // sanctioned edit = new baseline, no drift
+  assert.match(drift.stdout, /No drift/);
+  assert.match(run(dir, "show", "p", "0001").stdout, /shall D/);
+});
+
+test("edit rejects status and quote-containing values", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
+  run(dir, "import", "p");
+  const st = run(dir, "edit", "p", "0001", "status", "finished");
+  assert.equal(st.code, 1);
+  assert.match(st.stderr, /use 'move'/);
+  assert.equal(run(dir, "edit", "p", "0001", "title", 'has "quotes"').code, 1);
+  assert.equal(run(dir, "edit", "p", "0001", "nope", "v").code, 1);
+  assert.equal(run(dir, "edit", "p", "9999", "title", "T").code, 1);
+});
+
+test("delete removes file, traces dir, and DB rows but keeps ledger", (t) => {
+  const dir = makeFixture(t, [
+    { id: "0001", status: "waiting_verification" },
+    { id: "0002", status: "ready" },
+  ]);
+  run(dir, "import", "p");
+  run(dir, "move", "p", "0001", "finished"); // writes a ledger row
+  const traces = path.join(dir, "specs", "p", ".traces", "0001");
+  fs.mkdirSync(traces, { recursive: true });
+  fs.writeFileSync(path.join(traces, "attempt-1.md"), "trace\n");
+  const del = run(dir, "delete", "p", "0001");
+  assert.equal(del.code, 0, del.stderr);
+  assert.ok(!fs.existsSync(path.join(dir, "specs", "p", "waiting_verification", "0001-x.md")));
+  assert.ok(!fs.existsSync(traces));
+  assert.equal(run(dir, "show", "p", "0001").code, 1);
+  assert.match(run(dir, "ledger", "p", "finished").stdout, /p\/0001\s+finished/); // ledger survives
+  assert.equal(run(dir, "delete", "p", "0001").code, 1); // already gone → 404/exit 1
+});
+
+test("delete refuses while another spec depends on it, succeeds after the dependent is deleted", (t) => {
+  const dir = makeFixture(t, [
+    { id: "0001", status: "ready" },
+    { id: "0002", status: "ready", deps: ["0001"] },
+  ]);
+  run(dir, "import", "p");
+  const refuse = run(dir, "delete", "p", "0001");
+  assert.equal(refuse.code, 1);
+  assert.match(refuse.stderr, /depended on by 0002/);
+  assert.equal(run(dir, "delete", "p", "0002").code, 0);
+  assert.equal(run(dir, "delete", "p", "0001").code, 0);
+  assert.match(run(dir, "list", "p").stdout, /No specs recorded/);
+});
+
+test("memory edit updates heading/body/spec_id in place", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "gotchas", "Original heading", "original body", "0001");
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "heading", "Fixed heading").code, 0);
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "body", "fixed body").code, 0);
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "spec_id", "0002").code, 0);
+  const show = run(dir, "memory", "show", "gotchas", "1");
+  assert.match(show.stdout, /## Fixed heading/);
+  assert.match(show.stdout, /fixed body/);
+  assert.doesNotMatch(show.stdout, /original/);
+  assert.match(run(dir, "memory", "gotchas", "0002").stdout, /\[spec 0002\]\s+Fixed heading/);
+  assert.equal(run(dir, "memory", "edit", "gotchas", "1", "notebook", "x").code, 1); // immutable field
+});
+
+test("memory delete hides the entry from list/show/search/export", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "lessons", "Keep me", "kept body");
+  run(dir, "memory", "add", "lessons", "Drop me", "dropped body");
+  const del = run(dir, "memory", "delete", "lessons", "2");
+  assert.equal(del.code, 0, del.stderr);
+  assert.match(del.stdout, /lessons#2 deleted/);
+  assert.doesNotMatch(run(dir, "memory", "lessons").stdout, /Drop me/);
+  assert.equal(run(dir, "memory", "show", "lessons", "2").code, 1);
+  assert.match(run(dir, "memory", "search", "dropped").stdout, /No memory entries match/);
+  assert.doesNotMatch(run(dir, "memory", "export", "lessons").stdout, /Drop me/);
+  assert.match(run(dir, "memory", "export", "lessons").stdout, /Keep me/);
+});
+
+test("memory add after delete never reuses the deleted seq", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "nb", "One", "b1");
+  run(dir, "memory", "add", "nb", "Two", "b2");
+  run(dir, "memory", "add", "nb", "Three", "b3");
+  run(dir, "memory", "delete", "nb", "3");
+  const add = run(dir, "memory", "add", "nb", "Four", "b4");
+  assert.match(add.stdout, /nb#4 recorded/); // tombstone keeps seq 3 occupied
+  assert.equal(run(dir, "memory", "show", "nb", "3").code, 1);
+  assert.match(run(dir, "memory", "show", "nb", "4").stdout, /## Four/);
+});
+
+test("memory edit/delete on missing or already-deleted entry exits 1", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "memory", "add", "nb", "H", "b");
+  assert.equal(run(dir, "memory", "edit", "nb", "9", "heading", "X").code, 1);
+  assert.equal(run(dir, "memory", "delete", "nb", "9").code, 1);
+  run(dir, "memory", "delete", "nb", "1");
+  assert.equal(run(dir, "memory", "delete", "nb", "1").code, 1); // already deleted
+  assert.equal(run(dir, "memory", "edit", "nb", "1", "heading", "X").code, 1); // tombstone not editable
+});
+
+test("openDb migrates a pre-'deleted'-column memory_entries table", (t) => {
+  const dir = makeFixture(t);
+  // build the old-shape table directly, bypassing the current SCHEMA
+  const mk = spawnSync("node", ["--no-warnings", "--input-type=module", "-e", `
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(process.env.SPECDB_PATH);
+    db.exec(\`CREATE TABLE memory_entries (
+      notebook TEXT NOT NULL, seq INTEGER NOT NULL, heading TEXT NOT NULL,
+      spec_id TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
+      imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+      PRIMARY KEY (notebook, seq));
+      INSERT INTO memory_entries (notebook,seq,heading,body) VALUES ('nb',1,'Old entry','old body');\`);
+  `], { encoding: "utf8", env: { ...process.env, SPECDB_PATH: path.join(dir, "spec.db") } });
+  assert.equal(mk.status, 0, mk.stderr);
+  // any CLI pass through openDb() must ALTER the table in place; delete then works
+  assert.match(run(dir, "memory", "nb").stdout, /Old entry/);
+  assert.equal(run(dir, "memory", "delete", "nb", "1").code, 0);
+  assert.doesNotMatch(run(dir, "memory", "nb").stdout, /Old entry/);
+});
+
 test("research add/list/show/search round-trip with slug and sources", (t) => {
   const dir = makeFixture(t);
   run(dir, "init");
@@ -234,6 +411,56 @@ test("research add validates args and sources JSON", (t) => {
   assert.equal(run(dir, "research", "show", "999").code, 1);
 });
 
+test("research edit updates fields in place and keeps slug/seq stable", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "original body\n");
+  run(dir, "research", "add", "how X works", "Understanding X", bodyFile, '["https://a.example"]');
+  const edit = run(dir, "research", "edit", "1", "title", "Understanding X, revised");
+  assert.equal(edit.code, 0, edit.stderr);
+  assert.match(edit.stdout, /research#1 \(understanding-x\) updated/); // slug unchanged
+  const show = run(dir, "research", "show", "understanding-x"); // still resolvable by old slug
+  assert.match(show.stdout, /# Understanding X, revised/);
+  fs.writeFileSync(bodyFile, "replacement body\n");
+  run(dir, "research", "edit", "understanding-x", "body", bodyFile);
+  run(dir, "research", "edit", "1", "topic", "how X really works");
+  run(dir, "research", "edit", "1", "sources", '["https://b.example"]');
+  const after = run(dir, "research", "show", "1");
+  assert.match(after.stdout, /replacement body/);
+  assert.match(after.stdout, /topic: how X really works/);
+  assert.match(after.stdout, /https:\/\/b\.example/);
+  assert.doesNotMatch(after.stdout, /original body/);
+});
+
+test("research edit validates field, sources JSON, and missing report", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "body\n");
+  run(dir, "research", "add", "topic", "Title", bodyFile);
+  assert.equal(run(dir, "research", "edit", "1", "slug", "new-slug").code, 1); // immutable field
+  assert.equal(run(dir, "research", "edit", "1", "sources", "not json").code, 1);
+  assert.equal(run(dir, "research", "edit", "1", "sources", '{"a":1}').code, 1); // not an array
+  assert.equal(run(dir, "research", "edit", "1", "body", path.join(dir, "nope.md")).code, 1);
+  assert.equal(run(dir, "research", "edit", "999", "title", "T").code, 1);
+});
+
+test("research delete removes the report and show/export fail afterward", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  const bodyFile = path.join(dir, "report.md");
+  fs.writeFileSync(bodyFile, "body\n");
+  run(dir, "research", "add", "topic", "Title", bodyFile);
+  const del = run(dir, "research", "delete", "title");
+  assert.equal(del.code, 0, del.stderr);
+  assert.match(del.stdout, /research#1 \(title\) deleted/);
+  assert.equal(run(dir, "research", "show", "1").code, 1);
+  assert.equal(run(dir, "research", "export", "title").code, 1);
+  assert.equal(run(dir, "research", "delete", "1").code, 1); // already gone
+  assert.match(run(dir, "research").stdout, /No research reports recorded/);
+});
+
 test("research export prints markdown", (t) => {
   const dir = makeFixture(t);
   run(dir, "init");
@@ -246,6 +473,23 @@ test("research export prints markdown", (t) => {
   const one = run(dir, "research", "export", "1");
   assert.match(one.stdout, /# Understanding X/);
   assert.doesNotMatch(one.stdout, /Understanding Y/);
+});
+
+test("CLI dispatch runs when invoked through a symlinked path (main-module guard)", (t) => {
+  // The old guard compared import.meta.url (realpath-resolved by Node's ESM loader)
+  // against a naive file://argv[1]; through a symlink they differ and every command
+  // became a silent no-op with exit 0. The symlink is constructed explicitly so this
+  // fails against the old guard on any platform, not just symlinked-tmpdir macOS.
+  const dir = makeFixture(t);
+  const link = path.join(dir, "scripts-link");
+  fs.symlinkSync(path.join(REPO, "scripts"), link);
+  const res = spawnSync("node", ["--no-warnings", path.join(link, "spec-db.mjs"), "init"], {
+    encoding: "utf8",
+    env: { ...process.env, SPECDB_ROOT: dir, SPECDB_PATH: path.join(dir, "spec.db") },
+  });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Initialized spec\.db/);
+  assert.ok(fs.existsSync(path.join(dir, "spec.db")), "DB file must actually be created");
 });
 
 test("legacy JSONL ledger is imported when present", (t) => {
