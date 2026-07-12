@@ -248,6 +248,23 @@ test("research export prints markdown", (t) => {
   assert.doesNotMatch(one.stdout, /Understanding Y/);
 });
 
+test("CLI dispatch runs when invoked through a symlinked path (main-module guard)", (t) => {
+  // The old guard compared import.meta.url (realpath-resolved by Node's ESM loader)
+  // against a naive file://argv[1]; through a symlink they differ and every command
+  // became a silent no-op with exit 0. The symlink is constructed explicitly so this
+  // fails against the old guard on any platform, not just symlinked-tmpdir macOS.
+  const dir = makeFixture(t);
+  const link = path.join(dir, "scripts-link");
+  fs.symlinkSync(path.join(REPO, "scripts"), link);
+  const res = spawnSync("node", ["--no-warnings", path.join(link, "spec-db.mjs"), "init"], {
+    encoding: "utf8",
+    env: { ...process.env, SPECDB_ROOT: dir, SPECDB_PATH: path.join(dir, "spec.db") },
+  });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Initialized spec\.db/);
+  assert.ok(fs.existsSync(path.join(dir, "spec.db")), "DB file must actually be created");
+});
+
 test("legacy JSONL ledger is imported when present", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "finished" }]);
   fs.mkdirSync(path.join(dir, "memory"), { recursive: true });

@@ -25,7 +25,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { openDb, readStates } from "./spec-db.mjs";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -191,7 +191,14 @@ export function startServer({ port = 4870 } = {}) {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Realpath-based main-module guard — same rationale and shape as spec-db.mjs's; kept
+// inline because these are separate processes and the repo has no shared lib module.
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try { return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href; }
+  catch { return false; } // argv[1] not resolvable on disk → not our entry
+})();
+if (isMain) {
   const port = Number(process.argv[2] ?? 4870);
   const server = startServer({ port });
   server.on("listening", () => console.log(`spec-server: http://localhost:${server.address().port}`));

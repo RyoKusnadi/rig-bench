@@ -46,7 +46,7 @@ if (maj < 22 || (maj === 22 && min < 5)) {
 const { DatabaseSync } = await import("node:sqlite");
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = process.env.SPECDB_PATH ?? path.join(ROOT, "spec.db");
@@ -549,8 +549,18 @@ function cmdExport(db, project, id) {
 }
 
 // ── dispatch ──────────────────────────────────────────────────────────────────
+// Realpath-based main-module guard (mirrors the es-main npm package, kept inline —
+// zero-dependency repo). Node resolves the ESM entry point to its realpath, so a naive
+// `import.meta.url === file://argv[1]` comparison fails when the invocation path has a
+// symlinked component (macOS tmpdir) or characters needing URL encoding, silently
+// turning every CLI command into a no-op.
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try { return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href; }
+  catch { return false; } // argv[1] not resolvable on disk → not our entry
+})();
 const [cmd, ...args] = process.argv.slice(2);
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain) {
   const db = openDb();
   switch (cmd) {
     case "init": cmdInit(db); break;
