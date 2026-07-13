@@ -5,83 +5,229 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>rig-bench · spec lifecycle</title>
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#d7dae0; --dim:#8a93a3;
-          --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+  :root {
+    /* surfaces: elevation 0 -> 3 */
+    --bg:#08090a; --surface-1:#0f1011; --surface-2:#16171a; --surface-3:#1d1f23;
+    /* hairline borders instead of shadows */
+    --line:#1f2126; --line-hi:#2e3138;
+    /* text tiers */
+    --text-1:#e6e8eb; --text-2:#9ba1aa; --text-3:#5f646c;
+    /* one accent, used sparingly */
+    --accent:#828fff; --accent-tint:rgba(130,143,255,.13);
+    /* semantic = status only */
+    --ok:#3dd68c; --ok-tint:rgba(61,214,140,.12);
+    --warn:#e2b340; --warn-tint:rgba(226,179,64,.12);
+    --bad:#f2555a; --bad-tint:rgba(242,85,90,.12);
+    --r-1:6px; --r-2:12px;
+    --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:24px; --s-6:32px;
+    --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
   * { box-sizing:border-box; margin:0; }
-  body { background:var(--bg); color:var(--text); font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
-  header { display:flex; gap:16px; align-items:baseline; padding:14px 18px; border-bottom:1px solid var(--line); }
-  header h1 { font-size:15px; font-weight:600; }
-  header .m { color:var(--dim); font-size:12px; }
-  header .m b { color:var(--text); }
-  #board { display:flex; gap:10px; padding:14px 18px; overflow-x:auto; align-items:flex-start; }
-  .col { background:var(--panel); border:1px solid var(--line); border-radius:8px; min-width:210px; flex:1; }
-  .col h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim);
-            padding:9px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
-  .cards { padding:8px; display:flex; flex-direction:column; gap:6px; min-height:34px; }
-  .card { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 9px; cursor:pointer; }
-  .card:hover { border-color:var(--accent); }
-  .card .id { color:var(--accent); font-weight:600; }
-  .card .t { display:block; color:var(--text); font-size:12.5px; margin-top:2px; }
-  .card .meta { color:var(--dim); font-size:11px; margin-top:3px; }
-  .card .meta .fail { color:var(--warn); }
-  #detail { position:fixed; inset:0 0 0 auto; width:min(680px,92vw); background:var(--panel);
-            border-left:1px solid var(--line); transform:translateX(100%); transition:transform .15s ease; overflow-y:auto; }
-  #detail.open { transform:none; }
-  #detail .inner { padding:18px; }
-  #detail h3 { font-size:15px; margin-bottom:2px; } #detail .sub { color:var(--dim); font-size:12px; margin-bottom:12px; }
-  #detail h4 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:14px 0 6px; }
-  #detail table { width:100%; border-collapse:collapse; font-size:12px; }
-  #detail td { padding:3px 6px 3px 0; color:var(--dim); vertical-align:top; }
-  #detail td:first-child { white-space:nowrap; }
-  .pill { display:inline-block; border:1px solid var(--line); border-radius:99px; padding:1px 8px; font-size:11px; }
-  .PASS { color:var(--ok); border-color:var(--ok); } .FAIL { color:var(--bad); border-color:var(--bad); }
-  .drift-yes { color:var(--warn); } .drift-no { color:var(--ok); }
-  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px;
-        font-size:12px; overflow-x:auto; white-space:pre-wrap; color:var(--text); }
-  #close { float:right; background:none; border:1px solid var(--line); color:var(--dim);
-           border-radius:6px; padding:2px 9px; cursor:pointer; } #close:hover { color:var(--text); }
-  .btn { background:none; border:1px solid var(--line); color:var(--dim); border-radius:6px;
-         padding:2px 9px; cursor:pointer; font:inherit; font-size:12px; } .btn:hover { color:var(--text); }
-  .btn.danger:hover { color:var(--bad); border-color:var(--bad); }
-  input, textarea { width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
-                    border-radius:6px; padding:6px 8px; font:inherit; font-size:12.5px; }
-  textarea { resize:vertical; }
-  .empty { color:var(--dim); font-size:12px; padding:4px 2px; }
+  body { background:var(--bg); color:var(--text-1); font:400 13px/1.55 var(--font-ui); -webkit-font-smoothing:antialiased; }
   a { color:var(--accent); text-decoration:none; }
-  .md { font-size:13px; }
-  .md h1 { font-size:15px; margin:14px 0 6px; } .md h2 { font-size:13px; margin:12px 0 5px; }
-  .md h3 { font-size:12px; margin:10px 0 4px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
-  .md p { margin:0 0 8px; } .md ul, .md ol { margin:0 0 8px 18px; padding:0; } .md li { margin:2px 0; }
-  .md code { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:12px; }
-  .md pre { margin:0 0 8px; }
-  .md img { max-width:100%; display:block; margin:6px 0 8px; border:1px solid var(--line); border-radius:6px; }
+  a:hover { text-decoration:underline; }
+  .mono { font-family:var(--font-mono); font-size:12px; }
+  .dim { color:var(--text-3); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+  /* header */
+  header { display:flex; align-items:center; gap:var(--s-4); height:48px; padding:0 var(--s-4);
+           border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font-size:13px; font-weight:600; letter-spacing:-.01em; white-space:nowrap; }
+  header h1 span { color:var(--text-3); font-weight:400; }
+  .tabs { display:flex; gap:var(--s-1); }
+  .tab { color:var(--text-2); padding:5px 10px; border-radius:var(--r-1); font-weight:500; white-space:nowrap; }
+  .tab:hover { color:var(--text-1); background:var(--surface-2); text-decoration:none; }
+  .tab.active { color:var(--text-1); background:var(--surface-3); }
+  #filter { margin-left:auto; width:220px; flex:none; }
+
+  /* inputs & buttons */
+  input, textarea, select { width:100%; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text-1); border-radius:var(--r-1); padding:6px 10px; font:inherit; }
+  input::placeholder { color:var(--text-3); }
+  input:focus, textarea:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-tint); outline:none; }
+  textarea { resize:vertical; }
+  textarea.mono { font:12px/1.5 var(--font-mono); }
+  select { width:auto; padding:4px 8px; font-size:12px; color:var(--text-2); }
+  .btn, .btn-primary, .btn-danger { border-radius:var(--r-1); padding:4px 12px; cursor:pointer;
+    font:inherit; font-size:13px; white-space:nowrap; }
+  .btn { background:none; border:1px solid var(--line); color:var(--text-2); }
+  .btn:hover { color:var(--text-1); border-color:var(--line-hi); }
+  .btn-primary { background:var(--accent); border:1px solid var(--accent); color:#0b0d1f; font-weight:500; }
+  .btn-primary:hover { filter:brightness(1.08); }
+  .btn-danger { background:none; border:1px solid var(--line); color:var(--bad); }
+  .btn-danger:hover { background:var(--bad-tint); border-color:var(--bad); }
+  .btn-danger.armed { background:var(--bad-tint); border-color:var(--bad); font-weight:500; }
+  .confirm-note { flex-basis:100%; color:var(--text-3); font-size:12px; }
+
+  /* views */
+  .view { display:none; }
+  .view.active { display:block; }
+  .wrap { max-width:960px; margin:0 auto; padding:var(--s-5) var(--s-4) var(--s-6); }
+  .empty { color:var(--text-3); font-size:12px; padding:var(--s-3); text-align:center; }
+
+  /* stat tiles */
+  #tiles { display:flex; gap:var(--s-3); padding:var(--s-4) var(--s-4) 0; flex-wrap:wrap; }
+  .tile { background:var(--surface-1); border:1px solid var(--line); border-radius:var(--r-2);
+          padding:var(--s-3) var(--s-4); min-width:150px; }
+  .tile .lbl { font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }
+  .tile .val { font-size:22px; font-weight:500; margin-top:2px; }
+  .tile .sub { font-size:12px; color:var(--text-3); margin-top:2px; }
+  .tile.clickable { cursor:pointer; }
+  .tile.clickable:hover { border-color:var(--line-hi); }
+  .tile.active { border-color:var(--accent); }
+  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; flex:none; vertical-align:2px; }
+
+  /* board */
+  #board { display:flex; gap:var(--s-3); padding:var(--s-4); overflow-x:auto; align-items:flex-start; }
+  .col { background:var(--surface-1); border:1px solid var(--line); border-radius:var(--r-2);
+         min-width:240px; max-width:340px; flex:1; }
+  .col h2 { font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3);
+            padding:var(--s-3); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:var(--s-2); }
+  .col h2 .cnt { margin-left:auto; background:var(--surface-3); color:var(--text-2);
+                 border-radius:99px; padding:0 8px; font-size:11px; letter-spacing:0; }
+  .cards { padding:var(--s-2); display:flex; flex-direction:column; gap:var(--s-2); min-height:44px; }
+  .card { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-1);
+          padding:var(--s-3); cursor:pointer; }
+  .card:hover { border-color:var(--line-hi); background:var(--surface-3); }
+  .card.sel { border-color:var(--accent); }
+  .card .id { color:var(--text-2); }
+  .card .t { color:var(--text-1); font-size:13px; font-weight:500; margin-top:3px;
+             display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .card .meta { display:flex; gap:var(--s-2); align-items:center; color:var(--text-3); font-size:12px; margin-top:6px; flex-wrap:wrap; }
+  .badge-warn { background:var(--warn-tint); color:var(--warn); border-radius:var(--r-1); padding:1px 6px; font-size:11px; }
+
+  /* pills */
+  .pill { display:inline-block; background:var(--surface-3); color:var(--text-2); border-radius:99px;
+          padding:2px 10px; font-size:11px; }
+  .pill.ok, .pill.PASS { background:var(--ok-tint); color:var(--ok); }
+  .pill.warn { background:var(--warn-tint); color:var(--warn); }
+  .pill.bad, .pill.FAIL { background:var(--bad-tint); color:var(--bad); }
+  .pill.accent { background:var(--accent-tint); color:var(--accent); }
+
+  /* panels (memory groups, insights) */
+  .panel { background:var(--surface-1); border:1px solid var(--line); border-radius:var(--r-2); margin-bottom:var(--s-4); }
+  .panel-h { display:flex; align-items:center; gap:var(--s-2); padding:var(--s-3) var(--s-4);
+             border-bottom:1px solid var(--line); font-size:11px; font-weight:500;
+             text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }
+  .panel-h .cnt { margin-left:auto; background:var(--surface-3); color:var(--text-2);
+                  border-radius:99px; padding:0 8px; font-size:11px; letter-spacing:0; }
+  .panel-b { padding:var(--s-3); display:flex; flex-direction:column; gap:var(--s-2); }
+
+  details.card { cursor:default; }
+  details.card summary { cursor:pointer; display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap; list-style:none; }
+  details.card summary::-webkit-details-marker { display:none; }
+  details.card .heading { font-weight:500; }
+  details.card[open] summary { margin-bottom:var(--s-2); }
+  .actions { display:flex; gap:var(--s-2); align-items:center; flex-wrap:wrap; }
+  details.card .actions { margin-top:var(--s-2); }
+
+  /* drawer */
+  #scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); opacity:0; pointer-events:none;
+           transition:opacity .15s ease; z-index:8; }
+  #scrim.open { opacity:1; pointer-events:auto; }
+  #detail { position:fixed; inset:0 0 0 auto; width:min(720px,94vw); background:var(--surface-1);
+            border-left:1px solid var(--line-hi); transform:translateX(100%); transition:transform .18s ease;
+            overflow-y:auto; z-index:9; box-shadow:-24px 0 48px rgba(0,0,0,.4); }
+  #detail.open { transform:none; }
+  #detail .inner { padding:var(--s-5); }
+  #detail .eyebrow { color:var(--text-2); margin-bottom:2px; }
+  #detail h3 { font-size:16px; font-weight:500; letter-spacing:-.012em; margin-bottom:var(--s-2); }
+  #detail .sub { display:flex; flex-wrap:wrap; gap:var(--s-2); align-items:center; color:var(--text-2);
+                 font-size:12px; margin-bottom:var(--s-3); }
+  #detail .sub .actions { margin-left:auto; }
+  #detail h4 { font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.06em;
+               color:var(--text-3); margin:var(--s-5) 0 var(--s-2); }
+  #detail table { width:100%; border-collapse:collapse; font-size:12px; }
+  #detail td { padding:6px 8px 6px 0; color:var(--text-2); vertical-align:top; border-bottom:1px solid var(--line); }
+  #detail tr:last-child td { border-bottom:none; }
+  td.ts { white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--text-3); }
+  #close { float:right; background:none; border:1px solid var(--line); color:var(--text-2);
+           border-radius:var(--r-1); width:28px; height:28px; cursor:pointer; font:inherit; line-height:1; }
+  #close:hover { color:var(--text-1); border-color:var(--line-hi); }
+  .tlink { color:var(--accent); cursor:pointer; }
+  .tlink:hover { text-decoration:underline; }
+
+  /* forms */
+  .field { margin-bottom:var(--s-4); }
+  .field label { display:block; font-size:11px; font-weight:500; text-transform:uppercase;
+                 letter-spacing:.06em; color:var(--text-3); margin-bottom:var(--s-1); }
+  .form-actions { display:flex; gap:var(--s-2); margin-top:var(--s-4); flex-wrap:wrap; align-items:center; }
+
+  pre { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-1);
+        padding:var(--s-3); font:12px/1.5 var(--font-mono); overflow-x:auto; white-space:pre-wrap; color:var(--text-1); }
+
+  /* prose */
+  .md { font-size:13px; line-height:1.65; color:var(--text-1); max-width:68ch; }
+  .md h1 { font-size:17px; font-weight:600; letter-spacing:-.01em; margin:1.4em 0 .5em; }
+  .md h2 { font-size:15px; font-weight:600; letter-spacing:-.01em; margin:1.4em 0 .5em; }
+  .md h3 { font-size:13px; font-weight:600; letter-spacing:-.01em; margin:1.4em 0 .5em; }
+  .md h1:first-child, .md h2:first-child, .md h3:first-child { margin-top:0; }
+  .md p { margin:0 0 .8em; }
+  .md ul, .md ol { margin:0 0 .8em; padding-left:1.4em; }
+  .md li { margin:2px 0; }
+  .md b { font-weight:600; }
+  .md code { background:var(--surface-2); border:1px solid var(--line); border-radius:4px;
+             padding:0 4px; font:12px var(--font-mono); }
+  .md pre { margin:0 0 .8em; }
+  .md img { max-width:100%; display:block; margin:6px 0 8px; border:1px solid var(--line); border-radius:var(--r-1); }
+
+  /* insights bars */
+  .bars { display:flex; flex-direction:column; gap:var(--s-2); padding:var(--s-2) var(--s-1); }
+  .bar-row { display:flex; align-items:center; gap:var(--s-3); }
+  .bar-row .bl { width:150px; flex:none; font-size:12px; color:var(--text-2); text-align:right; }
+  .bar-row .track { flex:1; display:flex; align-items:center; gap:var(--s-2); }
+  .bar { height:10px; background:var(--accent); border-radius:0 4px 4px 0; min-width:2px; }
+  .bar-row .bv { font-size:12px; color:var(--text-2); font-variant-numeric:tabular-nums; }
+
+  /* ledger table */
+  table.lt { width:100%; border-collapse:collapse; font-size:12px; }
+  .lt th { text-align:left; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.06em;
+           color:var(--text-3); padding:6px 8px 6px 0; border-bottom:1px solid var(--line); }
+  .lt td { padding:6px 8px 6px 0; color:var(--text-2); border-bottom:1px solid var(--line); vertical-align:top; }
+  .lt tr:last-child td { border-bottom:none; }
+  .lt td .t1 { color:var(--text-1); }
+
+  /* toasts */
+  #toasts { position:fixed; right:var(--s-4); bottom:var(--s-4); display:flex; flex-direction:column;
+            gap:var(--s-2); z-index:20; }
+  .toast { background:var(--surface-3); border:1px solid var(--line-hi); border-left:3px solid var(--bad);
+           border-radius:var(--r-1); padding:var(--s-2) var(--s-3); font-size:13px; cursor:pointer;
+           max-width:360px; animation:rise .12s ease; }
+  .toast.ok { border-left-color:var(--ok); }
+  @keyframes rise { from { transform:translateY(6px); opacity:0; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>rig-bench · spec lifecycle</h1>
-  <span class="m" id="metrics">loading…</span>
-  <span class="m" style="margin-left:auto"><a href="#" onclick="newSpecForm();return false">+ new spec</a> · <a href="#" onclick="toggleMemory();return false" id="memlink">memory ▾</a> · <a href="#" onclick="toggleResearch();return false" id="reslink">research ▾</a></span>
+  <h1>rig-bench <span>· spec lifecycle</span></h1>
+  <nav class="tabs">
+    <a class="tab" href="#board" data-view="board">Board</a>
+    <a class="tab" href="#memory" data-view="memory">Memory</a>
+    <a class="tab" href="#research" data-view="research">Research</a>
+    <a class="tab" href="#insights" data-view="insights">Insights</a>
+  </nav>
+  <input id="filter" type="search" placeholder="Filter — press /">
+  <button class="btn-primary" id="new-spec-btn">+ New spec</button>
 </header>
-<div id="board"></div>
-<div id="memory" style="display:none; padding:0 18px 18px">
-  <div class="col" style="min-width:0">
-    <h2><span>memory notebooks</span><span id="memcount"></span></h2>
-    <div class="cards" id="memlist"></div>
-  </div>
-</div>
-<div id="research" style="display:none; padding:0 18px 18px">
-  <div class="col" style="min-width:0">
-    <h2><span>research reports</span><span id="rescount"></span></h2>
-    <div class="cards" id="reslist"></div>
-  </div>
-</div>
+
+<section class="view" id="view-board">
+  <div id="tiles"></div>
+  <div id="board"><div class="empty">Loading…</div></div>
+</section>
+<section class="view" id="view-memory"><div class="wrap"><div id="memlist"><div class="empty">Loading…</div></div></div></section>
+<section class="view" id="view-research"><div class="wrap"><div id="reslist" class="cards" style="padding:0"><div class="empty">Loading…</div></div></div></section>
+<section class="view" id="view-insights"><div class="wrap" id="insights"><div class="empty">Loading…</div></div></section>
+
+<div id="scrim"></div>
 <aside id="detail"><div class="inner" id="detail-inner"></div></aside>
+<div id="toasts"></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
 const api = (p) => fetch(p).then((r) => r.json());
-// mutation helper: throws with the server's error text so callers can alert() it
+// mutation helper: throws with the server's error text so callers can toast() it
 const send = (p, method, body) => fetch(p, {
   method,
   headers: body ? { "content-type": "application/json" } : {},
@@ -92,86 +238,249 @@ const send = (p, method, body) => fetch(p, {
 });
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 
-async function board() {
+// ---------- app state, cache, paint-skip ----------
+const VIEWS = ["board", "memory", "research", "insights"];
+// mirrors attention.verify_failure_rate_threshold_pct in workflows/state.yaml
+// (the API does not expose it)
+const FAILURE_ATTENTION_PCT = 50;
+const state = { view: "board", filter: "", attentionOnly: false, openSpec: null,
+                ledgerProject: "", ledgerOutcome: "" };
+const cache = {};   // last fetched raw data per view
+const painted = {}; // last paint key per view — repaint only when data or view inputs change
+function paint(view, render, extra = "") {
+  if (!cache[view]) return;
+  const key = JSON.stringify(cache[view]) + "|" + state.filter + "|" + state.attentionOnly + "|" + extra;
+  if (painted[view] === key) return;
+  painted[view] = key;
+  render();
+}
+
+// ---------- toasts & inline confirm ----------
+function toast(msg, kind = "error") {
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.textContent = msg;
+  el.onclick = () => el.remove();
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+// two-step delete: first click arms the button (with an explanatory note + cancel),
+// second click within 4s runs the action
+function confirmBtn(btn, note, action) {
+  const label = btn.textContent;
+  let armed = false, timer = null, extras = [];
+  const disarm = () => {
+    armed = false; clearTimeout(timer);
+    btn.textContent = label; btn.classList.remove("armed");
+    extras.forEach((e) => e.remove()); extras = [];
+  };
+  btn.onclick = () => {
+    if (armed) { disarm(); action(); return; }
+    armed = true;
+    btn.textContent = "Confirm delete?"; btn.classList.add("armed");
+    const c = document.createElement("button");
+    c.className = "btn"; c.type = "button"; c.textContent = "Cancel";
+    c.onclick = (e) => { e.stopPropagation(); disarm(); };
+    const n = document.createElement("div");
+    n.className = "confirm-note"; n.textContent = note;
+    btn.after(c); c.after(n); extras = [c, n];
+    timer = setTimeout(disarm, 4000);
+  };
+}
+
+// ---------- router ----------
+function route() {
+  const parts = (location.hash.slice(1) || "board").split("/");
+  if (parts[0] === "spec" && parts[1] && parts[2]) { showView("board"); detail(parts[1], parts[2]); return; }
+  if (parts[0] === "research" && parts[1]) { showView("research"); researchDetail(parts[1]); return; }
+  closeDrawer(false);
+  showView(VIEWS.includes(parts[0]) ? parts[0] : "board");
+}
+function showView(v) {
+  state.view = v;
+  document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${v}`));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
+  loaders[v]();
+}
+function refreshActiveView() { loaders[state.view](); }
+
+// ---------- drawer ----------
+function openDrawer(html) {
+  const inner = $("#detail-inner");
+  inner.innerHTML = html;
+  $("#close").onclick = () => closeDrawer();
+  $("#detail").classList.add("open");
+  $("#scrim").classList.add("open");
+}
+function closeDrawer(updateHash = true) {
+  $("#detail").classList.remove("open");
+  $("#scrim").classList.remove("open");
+  state.openSpec = null;
+  markSelected();
+  if (updateHash && /^#(spec|research)\//.test(location.hash)) location.hash = state.view;
+}
+function markSelected() {
+  document.querySelectorAll("#board .card").forEach((c) =>
+    c.classList.toggle("sel", c.dataset.key === state.openSpec));
+}
+const CLOSE_BTN = `<button id="close" aria-label="Close" title="Close (Esc)">✕</button>`;
+
+// ---------- board ----------
+const STATE_HUES = { draft: "var(--text-3)", ready: "var(--accent)", in_progress: "var(--accent)",
+                     waiting_verification: "var(--warn)", finished: "var(--ok)",
+                     blocked: "var(--bad)", abandoned: "var(--text-3)" };
+const stateColor = (name) => STATE_HUES[name] ?? "var(--text-3)";
+const statusPill = (status) =>
+  ({ finished: "ok", blocked: "bad", waiting_verification: "warn" }[status] ?? "");
+const isAttention = (s) => s.status === "blocked" || (s.verify_attempts > 0 && s.status !== "finished");
+
+async function loadBoard() {
   const [states, specs, metrics] = await Promise.all([
     api("/api/states"), api("/api/specs"), api("/api/metrics"),
   ]);
-  $("#metrics").innerHTML =
-    `total <b>${specs.length}</b> · finished <b>${metrics.finished}</b> · ` +
-    `failure rate <b>${metrics.failure_rate_pct}%</b> (finished w/ failed attempts: ${metrics.finished_with_failed_attempts})`;
-  const byState = {};
-  for (const s of specs) (byState[s.status] ??= []).push(s);
-  $("#board").innerHTML = states.map((st) => `
-    <div class="col">
-      <h2><span>${esc(st.name)}</span><span>${(byState[st.name] ?? []).length}</span></h2>
-      <div class="cards">
-        ${(byState[st.name] ?? []).map((s) => `
-          <div class="card" onclick="detail('${esc(s.project)}','${esc(s.id)}')">
-            <span class="id">${esc(s.project)}/${esc(s.id)}</span>
-            <span class="t">${esc(s.title)}</span>
-            <span class="meta">${s.verify_attempts > 0 ? `<span class="fail">attempts ${s.verify_attempts}</span> · ` : ""}${esc(s.axis) || ""}</span>
-          </div>`).join("") || `<div class="empty">—</div>`}
-      </div>
-    </div>`).join("");
+  cache.board = { states, specs, metrics };
+  paint("board", renderBoard);
 }
 
+function renderBoard() {
+  const { states, specs, metrics } = cache.board;
+  renderTiles($("#tiles"), specs, metrics, true);
+  const f = state.filter;
+  const match = (s) => !f || `${s.project}/${s.id} ${s.title} ${s.axis ?? ""}`.toLowerCase().includes(f);
+  const visible = (s) => match(s) && (!state.attentionOnly || isAttention(s));
+  const byState = {};
+  for (const s of specs) (byState[s.status] ??= []).push(s);
+  const filtering = f || state.attentionOnly;
+  const sl = $("#board").scrollLeft;
+  $("#board").innerHTML = states.map((st) => {
+    const all = byState[st.name] ?? [];
+    const shown = all.filter(visible);
+    return `
+    <div class="col">
+      <h2><span class="dot" style="background:${stateColor(st.name)}"></span><span>${esc(st.name)}</span>
+        <span class="cnt">${filtering ? `${shown.length}/${all.length}` : all.length}</span></h2>
+      <div class="cards">
+        ${shown.map(cardHTML).join("") || `<div class="empty">${
+          all.length ? "No matches" :
+          (st.name === "draft" && !specs.length) ? "No specs yet — create one with “+ New spec”" : "No specs"}</div>`}
+      </div>
+    </div>`;
+  }).join("");
+  $("#board").scrollLeft = sl;
+  document.querySelectorAll("#board .card").forEach((c) => {
+    c.onclick = () => { location.hash = `spec/${c.dataset.project}/${c.dataset.id}`; };
+  });
+  markSelected();
+}
+
+const cardHTML = (s) => `
+  <div class="card" data-key="${esc(s.project)}/${esc(s.id)}" data-project="${esc(s.project)}" data-id="${esc(s.id)}">
+    <span class="id mono">${esc(s.project)}/${esc(s.id)}</span>
+    <div class="t">${esc(s.title)}</div>
+    ${s.verify_attempts > 0 || s.axis ? `<div class="meta">
+      ${s.verify_attempts > 0 ? `<span class="badge-warn">⚠ ${s.verify_attempts} attempt${s.verify_attempts === 1 ? "" : "s"}</span>` : ""}
+      ${s.axis ? `<span>${esc(s.axis)}</span>` : ""}</div>` : ""}
+  </div>`;
+
+function renderTiles(el, specs, metrics, interactive) {
+  const attn = specs.filter(isAttention).length;
+  const hot = metrics.failure_rate_pct > FAILURE_ATTENTION_PCT;
+  el.innerHTML = `
+    <div class="tile"><div class="lbl">Specs</div><div class="val">${specs.length}</div></div>
+    <div class="tile"><div class="lbl">Finished</div><div class="val">${metrics.finished}</div></div>
+    <div class="tile"><div class="lbl">Failure rate</div>
+      <div class="val">${metrics.failure_rate_pct}%${hot ? ' <span class="dot" style="background:var(--warn)" title="above attention threshold"></span>' : ""}</div>
+      <div class="sub">${metrics.finished_with_failed_attempts} finished w/ failed attempts</div></div>
+    <div class="tile${interactive ? " clickable" : ""}${interactive && state.attentionOnly ? " active" : ""}" data-tile="attn">
+      <div class="lbl">Attention</div><div class="val">${attn}</div>
+      <div class="sub">blocked + failing attempts</div></div>`;
+  if (interactive) el.querySelector('[data-tile="attn"]').onclick = () => {
+    state.attentionOnly = !state.attentionOnly;
+    paint("board", renderBoard);
+  };
+}
+
+// ---------- spec detail drawer ----------
 async function detail(project, id) {
-  const [s, drift, mem] = await Promise.all([
-    api(`/api/specs/${project}/${id}`), api(`/api/specs/${project}/${id}/drift`),
-    api(`/api/memory?spec_id=${id}`),
-  ]);
-  const inner = $("#detail-inner");
-  inner.innerHTML = `
-    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
-    <h3>${esc(s.project)}/${esc(s.id)} — ${esc(s.title)}</h3>
+  let s, drift, mem;
+  try {
+    [s, drift, mem] = await Promise.all([
+      api(`/api/specs/${project}/${id}`), api(`/api/specs/${project}/${id}/drift`),
+      api(`/api/memory?spec_id=${id}`),
+    ]);
+  } catch (e) { toast(e.message); return; }
+  if (s.error) { toast(`${project}/${id}: ${s.error}`); closeDrawer(); return; }
+  state.openSpec = `${project}/${id}`;
+  markSelected();
+  if (location.hash !== `#spec/${project}/${id}`) location.hash = `spec/${project}/${id}`;
+  openDrawer(`
+    ${CLOSE_BTN}
+    <div class="eyebrow mono">${esc(s.project)}/${esc(s.id)}</div>
+    <h3>${esc(s.title)}</h3>
     <div class="sub">
-      <span class="pill">${esc(s.status)}</span>
+      <span class="pill ${statusPill(s.status)}">${esc(s.status)}</span>
       ${s.axis ? `<span class="pill">${esc(s.axis)}</span>` : ""}
-      ${s.pr ? ` · <a href="${esc(s.pr)}">PR</a>` : ""} ${s.branch ? ` · ${esc(s.branch)}` : ""}
-      · <button class="btn" id="spec-edit">edit</button> <button class="btn danger" id="spec-delete">delete</button>
+      ${s.pr ? `<a href="${esc(s.pr)}" target="_blank" rel="noopener">PR</a>` : ""}
+      ${s.branch ? `<span class="mono dim">${esc(s.branch)}</span>` : ""}
+      <span class="actions"><button class="btn" id="spec-edit">Edit</button>
+        <button class="btn-danger" id="spec-delete">Delete</button></span>
     </div>
-    <h4>dependencies</h4>
-    <div>${s.depends_on.length ? s.depends_on.map((d) => `<span class="pill">${esc(d)}</span>`).join(" ") : '<span class="empty">none</span>'}</div>
-    <h4>criteria drift</h4>
-    <div>${!drift.comparable ? '<span class="empty">fewer than two snapshots</span>'
+    <h4>Dependencies</h4>
+    <div>${s.depends_on.length ? s.depends_on.map((d) => `<span class="pill">${esc(d)}</span>`).join(" ") : '<span class="dim">none</span>'}</div>
+    <h4>Criteria drift</h4>
+    <div>${!drift.comparable ? '<span class="dim">fewer than two snapshots</span>'
         : drift.changed
-          ? `<span class="drift-yes">CHANGED between '${esc(drift.prev.at_state)}' and '${esc(drift.latest.at_state)}'</span>`
-          : `<span class="drift-no">unchanged since '${esc(drift.prev.at_state)}'</span>`}</div>
-    <h4>transitions</h4>
-    <table>${s.transitions.map((t) => `<tr><td>${esc(t.at)}</td><td>${esc(t.from_state ?? "·")} → ${esc(t.to_state)}</td><td>${esc(t.actor)}</td></tr>`).join("") || "<tr><td class='empty'>none</td></tr>"}</table>
-    <h4>verification attempts</h4>
-    <table>${s.attempts.map((a) => `<tr><td>attempt-${a.n}</td><td><span class="pill ${a.overall}">${a.overall}</span></td>
-      <td>${esc(a.at)}</td><td><a href="#" onclick="trace('${esc(project)}','${esc(id)}',${a.n});return false">trace</a></td></tr>`).join("") || "<tr><td class='empty'>none</td></tr>"}</table>
+          ? `<span class="dot" style="background:var(--warn)"></span> <span style="color:var(--warn)">Changed between '${esc(drift.prev.at_state)}' and '${esc(drift.latest.at_state)}'</span>`
+          : `<span class="dot" style="background:var(--ok)"></span> <span class="dim">Unchanged since '${esc(drift.prev.at_state)}'</span>`}</div>
+    <h4>Transitions</h4>
+    <table>${s.transitions.map((t) => `<tr><td class="ts">${esc(t.at)}</td><td>${esc(t.from_state ?? "·")} → ${esc(t.to_state)}</td><td>${esc(t.actor)}</td></tr>`).join("") || "<tr><td class='dim'>none</td></tr>"}</table>
+    <h4>Verification attempts</h4>
+    <table>${s.attempts.map((a) => `<tr><td class="mono">attempt-${a.n}</td><td><span class="pill ${a.overall}">${a.overall}</span></td>
+      <td class="ts">${esc(a.at)}</td><td><span class="tlink" data-trace="${a.n}">trace</span></td></tr>`).join("") || "<tr><td class='dim'>none</td></tr>"}</table>
     <div id="trace"></div>
-    <h4>related memory</h4>
+    <h4>Related memory</h4>
     ${mem.length ? mem.map((m) => `
-      <details><summary><span class="pill">${esc(m.notebook)}</span> ${esc(m.heading)}</summary>
-      <pre>${esc(m.body)}</pre></details>`).join("") : '<div class="empty">no tagged entries</div>'}
-    <h4>spec body</h4>
-    <pre>${esc(s.body_md)}</pre>`;
+      <details class="card"><summary><span class="pill">${esc(m.notebook)}</span> <span class="heading">${esc(m.heading)}</span></summary>
+      <div class="md">${md(m.body)}</div></details>`).join("") : '<div class="dim">no tagged entries</div>'}
+    <h4>Spec body</h4>
+    <div class="md">${md(s.body_md)}</div>`);
   // status is deliberately absent from the edit surface — lifecycle moves stay with
   // `spec-db.mjs move` and its valid_next/dependency gates
   $("#spec-edit").onclick = () => specEditForm(s);
-  $("#spec-delete").onclick = async () => {
-    if (!confirm(`Delete ${s.project}/${s.id} "${s.title}"? Removes the spec file, traces, and DB history. Ledger entries are kept. This cannot be undone.`)) return;
-    try { await send(`/api/specs/${s.project}/${s.id}`, "DELETE"); } catch (e) { alert(e.message); return; }
-    $("#detail").classList.remove("open");
-    board();
-  };
-  $("#detail").classList.add("open");
+  confirmBtn($("#spec-delete"),
+    "Removes the spec file, traces, and DB history. Ledger entries are kept. This cannot be undone.",
+    async () => {
+      try { await send(`/api/specs/${s.project}/${s.id}`, "DELETE"); } catch (e) { toast(e.message); return; }
+      toast(`Deleted ${s.project}/${s.id}`, "ok");
+      closeDrawer();
+      loadBoard();
+    });
+  document.querySelectorAll("[data-trace]").forEach((t) => {
+    t.onclick = () => trace(project, id, Number(t.dataset.trace));
+  });
+}
+
+async function trace(project, id, n) {
+  let a;
+  try { a = await api(`/api/specs/${project}/${id}/attempts/${n}`); } catch (e) { toast(e.message); return; }
+  $("#trace").innerHTML = `<h4>attempt-${n} trace <span class="tlink" id="trace-hide">hide</span></h4><pre>${esc(a.trace_md || "(empty)")}</pre>`;
+  $("#trace-hide").onclick = () => { $("#trace").innerHTML = ""; };
 }
 
 function specEditForm(s) {
-  $("#detail-inner").innerHTML = `
-    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
-    <h3>edit ${esc(s.project)}/${esc(s.id)}</h3>
-    <div class="sub"><span class="pill">${esc(s.status)}</span> · status changes go through 'spec-db.mjs move', not this form</div>
-    <h4>title</h4><input id="s-title">
-    <h4>axis</h4><input id="s-axis">
-    <h4>branch</h4><input id="s-branch">
-    <h4>pr</h4><input id="s-pr">
-    <h4>body (markdown)</h4><textarea id="s-body" rows="20"></textarea>
-    <div style="margin-top:10px"><button class="btn" id="s-save">save</button> <button class="btn" id="s-cancel">cancel</button></div>`;
+  openDrawer(`
+    ${CLOSE_BTN}
+    <div class="eyebrow mono">${esc(s.project)}/${esc(s.id)}</div>
+    <h3>Edit spec</h3>
+    <div class="sub"><span class="pill ${statusPill(s.status)}">${esc(s.status)}</span>
+      <span class="dim">status changes go through 'spec-db.mjs move', not this form</span></div>
+    <div class="field"><label for="s-title">Title</label><input id="s-title"></div>
+    <div class="field"><label for="s-axis">Axis</label><input id="s-axis"></div>
+    <div class="field"><label for="s-branch">Branch</label><input id="s-branch" class="mono"></div>
+    <div class="field"><label for="s-pr">PR</label><input id="s-pr"></div>
+    <div class="field"><label for="s-body">Body (markdown)</label><textarea id="s-body" class="mono" rows="20"></textarea></div>
+    <div class="form-actions"><button class="btn-primary" id="s-save">Save</button>
+      <button class="btn" id="s-cancel">Cancel</button></div>`);
   $("#s-title").value = s.title;
   $("#s-axis").value = s.axis;
   $("#s-branch").value = s.branch;
@@ -183,153 +492,168 @@ function specEditForm(s) {
       title: $("#s-title").value, axis: $("#s-axis").value,
       branch: $("#s-branch").value, pr: $("#s-pr").value, body: $("#s-body").value,
     };
-    try { await send(`/api/specs/${s.project}/${s.id}`, "PATCH", patch); } catch (e) { alert(e.message); return; }
-    board();
+    try { await send(`/api/specs/${s.project}/${s.id}`, "PATCH", patch); } catch (e) { toast(e.message); return; }
+    toast("Saved", "ok");
+    loadBoard();
     detail(s.project, s.id);
   };
-  $("#detail").classList.add("open");
 }
 
 async function newSpecForm() {
   const specs = await api("/api/specs");
-  $("#detail-inner").innerHTML = `
-    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
-    <h3>new spec</h3>
-    <div class="sub">creates a draft stub with the next id — flesh it out via spec-plan before it can move to ready</div>
-    <h4>project</h4><input id="n-project">
-    <h4>title</h4><input id="n-title">
-    <h4>axis (optional)</h4><input id="n-axis">
-    <h4>body (optional — template skeleton if empty)</h4><textarea id="n-body" rows="12"></textarea>
-    <div style="margin-top:10px"><button class="btn" id="n-save">create</button> <button class="btn" id="n-cancel">cancel</button></div>`;
+  openDrawer(`
+    ${CLOSE_BTN}
+    <h3>New spec</h3>
+    <div class="sub"><span class="dim">creates a draft stub with the next id — flesh it out via spec-plan before it can move to ready</span></div>
+    <div class="field"><label for="n-project">Project</label><input id="n-project"></div>
+    <div class="field"><label for="n-title">Title</label><input id="n-title"></div>
+    <div class="field"><label for="n-axis">Axis (optional)</label><input id="n-axis"></div>
+    <div class="field"><label for="n-body">Body (optional — template skeleton if empty)</label><textarea id="n-body" class="mono" rows="12"></textarea></div>
+    <div class="form-actions"><button class="btn-primary" id="n-save">Create</button>
+      <button class="btn" id="n-cancel">Cancel</button></div>`);
   $("#n-project").value = specs[0]?.project ?? "";
-  $("#n-cancel").onclick = () => $("#detail").classList.remove("open");
+  $("#n-cancel").onclick = () => closeDrawer();
   $("#n-save").onclick = async () => {
     const body = { project: $("#n-project").value.trim(), title: $("#n-title").value.trim() };
     if ($("#n-axis").value.trim()) body.axis = $("#n-axis").value.trim();
     if ($("#n-body").value.trim()) body.body = $("#n-body").value;
     let r;
-    try { r = await send("/api/specs", "POST", body); } catch (e) { alert(e.message); return; }
-    board();
-    detail(r.project, r.id);
+    try { r = await send("/api/specs", "POST", body); } catch (e) { toast(e.message); return; }
+    toast(`Created ${r.project}/${r.id}`, "ok");
+    loadBoard();
+    location.hash = `spec/${r.project}/${r.id}`;
   };
-  $("#detail").classList.add("open");
 }
 
-async function trace(project, id, n) {
-  const a = await api(`/api/specs/${project}/${id}/attempts/${n}`);
-  $("#trace").innerHTML = `<h4>attempt-${n} trace</h4><pre>${esc(a.trace_md || "(empty)")}</pre>`;
-}
-
-async function toggleMemory() {
-  const el = $("#memory");
-  const open = el.style.display === "none";
-  el.style.display = open ? "block" : "none";
-  $("#memlink").textContent = open ? "memory ▴" : "memory ▾";
-  if (open) loadMemory();
-}
-
+// ---------- memory ----------
 async function loadMemory() {
-  const entries = await api("/api/memory");
-  $("#memcount").textContent = entries.length;
-  $("#memlist").innerHTML = entries.length ? entries.map((m, i) => `
-    <details class="card"><summary><span class="pill">${esc(m.notebook)}</span> ${esc(m.heading)}
-      ${m.spec_id ? `<span class="pill">spec ${esc(m.spec_id)}</span>` : ""}</summary>
-      <pre>${esc(m.body)}</pre>
-      <div style="margin:6px 0 2px"><button class="btn" data-mem-edit="${i}">edit</button>
-        <button class="btn danger" data-mem-del="${i}">delete</button></div></details>`).join("")
-    : '<div class="empty">no entries — run spec-db.mjs import / memory add</div>';
+  cache.memory = await api("/api/memory");
+  paint("memory", renderMemory);
+}
+
+function renderMemory() {
+  const entries = cache.memory;
+  const f = state.filter;
+  const groups = {};
+  entries.forEach((m, i) => {
+    if (!f || `${m.notebook} ${m.heading} ${m.body} ${m.spec_id ?? ""}`.toLowerCase().includes(f))
+      (groups[m.notebook] ??= []).push([m, i]);
+  });
+  const names = Object.keys(groups).sort();
+  $("#memlist").innerHTML = names.length ? names.map((nb) => `
+    <div class="panel">
+      <div class="panel-h"><span>${esc(nb)}</span><span class="cnt">${groups[nb].length}</span></div>
+      <div class="panel-b">
+        ${groups[nb].map(([m, i]) => `
+          <details class="card"><summary><span class="heading">${esc(m.heading)}</span>
+            <span class="mono dim">#${m.seq}</span>
+            ${m.spec_id ? `<span class="pill accent">spec ${esc(m.spec_id)}</span>` : ""}</summary>
+            <div class="md">${md(m.body)}</div>
+            <div class="actions"><button class="btn" data-mem-edit="${i}">Edit</button>
+              <button class="btn-danger" data-mem-del="${i}">Delete</button></div></details>`).join("")}
+      </div>
+    </div>`).join("")
+    : `<div class="empty">${entries.length ? "No matches" : "No entries — run spec-db.mjs import / memory add"}</div>`;
   // handlers close over the fetched entries array — notebook names and headings never
   // pass through string-interpolated onclick attributes
   document.querySelectorAll("[data-mem-edit]").forEach((b) => {
-    b.onclick = () => memoryEditForm(entries[Number(b.dataset.memEdit)]);
+    b.onclick = () => memoryEditForm(cache.memory[Number(b.dataset.memEdit)]);
   });
   document.querySelectorAll("[data-mem-del]").forEach((b) => {
-    b.onclick = async () => {
-      const m = entries[Number(b.dataset.memDel)];
-      if (!confirm(`Delete ${m.notebook}#${m.seq}? Its number will not be reused.`)) return;
-      try { await send(`/api/memory/${encodeURIComponent(m.notebook)}/${m.seq}`, "DELETE"); } catch (e) { alert(e.message); return; }
+    const m = cache.memory[Number(b.dataset.memDel)];
+    confirmBtn(b, `Deletes ${m.notebook}#${m.seq}. Its number will not be reused.`, async () => {
+      try { await send(`/api/memory/${encodeURIComponent(m.notebook)}/${m.seq}`, "DELETE"); } catch (e) { toast(e.message); return; }
+      toast(`Deleted ${m.notebook}#${m.seq}`, "ok");
       loadMemory();
-    };
+    });
   });
 }
 
 function memoryEditForm(m) {
-  $("#detail-inner").innerHTML = `
-    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
-    <h3>edit memory entry</h3>
-    <div class="sub"><span class="pill">${esc(m.notebook)}#${m.seq}</span></div>
-    <h4>heading</h4><input id="m-heading">
-    <h4>spec id (optional)</h4><input id="m-specid">
-    <h4>body</h4><textarea id="m-body" rows="14"></textarea>
-    <div style="margin-top:10px"><button class="btn" id="m-save">save</button> <button class="btn" id="m-cancel">cancel</button></div>`;
+  openDrawer(`
+    ${CLOSE_BTN}
+    <div class="eyebrow mono">${esc(m.notebook)}#${m.seq}</div>
+    <h3>Edit memory entry</h3>
+    <div class="field"><label for="m-heading">Heading</label><input id="m-heading"></div>
+    <div class="field"><label for="m-specid">Spec id (optional)</label><input id="m-specid"></div>
+    <div class="field"><label for="m-body">Body</label><textarea id="m-body" class="mono" rows="14"></textarea></div>
+    <div class="form-actions"><button class="btn-primary" id="m-save">Save</button>
+      <button class="btn" id="m-cancel">Cancel</button></div>`);
   $("#m-heading").value = m.heading;
   $("#m-specid").value = m.spec_id;
   $("#m-body").value = m.body;
-  $("#m-cancel").onclick = () => $("#detail").classList.remove("open");
+  $("#m-cancel").onclick = () => closeDrawer();
   $("#m-save").onclick = async () => {
     const patch = { heading: $("#m-heading").value, spec_id: $("#m-specid").value, body: $("#m-body").value };
-    try { await send(`/api/memory/${encodeURIComponent(m.notebook)}/${m.seq}`, "PATCH", patch); } catch (e) { alert(e.message); return; }
-    $("#detail").classList.remove("open");
+    try { await send(`/api/memory/${encodeURIComponent(m.notebook)}/${m.seq}`, "PATCH", patch); } catch (e) { toast(e.message); return; }
+    toast("Saved", "ok");
+    closeDrawer();
     loadMemory();
   };
-  $("#detail").classList.add("open");
 }
 
-async function toggleResearch() {
-  const el = $("#research");
-  const open = el.style.display === "none";
-  el.style.display = open ? "block" : "none";
-  $("#reslink").textContent = open ? "research ▴" : "research ▾";
-  if (open) loadResearch();
-}
-
+// ---------- research ----------
 async function loadResearch() {
-  const reports = await api("/api/research");
-  $("#rescount").textContent = reports.length;
-  $("#reslist").innerHTML = reports.length ? reports.map((r) => `
-    <div class="card" onclick="researchDetail(${r.seq})">
-      <span class="t" style="margin-top:0">${esc(r.title)}</span>
-      <span class="meta">${esc(r.topic)}</span>
-      <span class="meta">${esc(r.created_at).slice(0, 10)} · ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}</span>
-    </div>`).join("") : '<div class="empty">no reports — run /research &lt;topic&gt;</div>';
+  cache.research = await api("/api/research" + (state.filter ? `?q=${encodeURIComponent(state.filter)}` : ""));
+  paint("research", renderResearch);
 }
 
-const refreshResearchIfOpen = () => { if ($("#research").style.display !== "none") loadResearch(); };
+function renderResearch() {
+  const reports = cache.research;
+  $("#reslist").innerHTML = reports.length ? reports.map((r) => `
+    <div class="card" data-seq="${r.seq}">
+      <div class="t" style="margin-top:0">${esc(r.title)}</div>
+      <div class="meta"><span>${esc(r.topic)}</span></div>
+      <div class="meta"><span>${esc(r.created_at).slice(0, 10)} · ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}</span></div>
+    </div>`).join("")
+    : `<div class="empty">${state.filter ? "No matches" : "No reports — run /research &lt;topic&gt;"}</div>`;
+  document.querySelectorAll("#reslist .card").forEach((c) => {
+    c.onclick = () => { location.hash = `research/${c.dataset.seq}`; };
+  });
+}
 
 async function researchDetail(seq) {
-  const r = await api(`/api/research/${seq}`);
+  let r;
+  try { r = await api(`/api/research/${seq}`); } catch (e) { toast(e.message); return; }
+  if (r.error) { toast(`research ${seq}: ${r.error}`); closeDrawer(); return; }
+  if (location.hash !== `#research/${r.seq}`) location.hash = `research/${r.seq}`;
   const srcs = r.sources.filter((s) => /^https?:\/\//.test(s));
-  $("#detail-inner").innerHTML = `
-    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
+  openDrawer(`
+    ${CLOSE_BTN}
+    <div class="eyebrow mono">research#${r.seq}</div>
     <h3>${esc(r.title)}</h3>
-    <div class="sub"><span class="pill">research#${r.seq}</span> · ${esc(r.topic)} · ${esc(r.created_at)}
-      · <button class="btn" id="res-edit">edit</button> <button class="btn danger" id="res-delete">delete</button></div>
-    <h4>sources</h4>
-    <div>${srcs.length ? srcs.map((s) => `<div><a href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}</a></div>`).join("") : '<span class="empty">none</span>'}</div>
-    <h4>report</h4>
-    <div class="md">${md(r.body_md)}</div>`;
+    <div class="sub"><span class="pill">${esc(r.topic)}</span>
+      <span class="ts">${esc(r.created_at)}</span>
+      <span class="actions"><button class="btn" id="res-edit">Edit</button>
+        <button class="btn-danger" id="res-delete">Delete</button></span></div>
+    <h4>Sources</h4>
+    <div>${srcs.length ? srcs.map((s) => `<div><a href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}</a></div>`).join("") : '<span class="dim">none</span>'}</div>
+    <h4>Report</h4>
+    <div class="md">${md(r.body_md)}</div>`);
   // handlers close over the fetched report object — form values are never harvested
   // back out of rendered (esc()-encoded) HTML
   $("#res-edit").onclick = () => researchEditForm(r);
-  $("#res-delete").onclick = async () => {
-    if (!confirm(`Delete research#${r.seq} (${r.slug})? This cannot be undone.`)) return;
-    try { await send(`/api/research/${r.seq}`, "DELETE"); } catch (e) { alert(e.message); return; }
-    $("#detail").classList.remove("open");
-    refreshResearchIfOpen();
-  };
-  $("#detail").classList.add("open");
+  confirmBtn($("#res-delete"), `Deletes research#${r.seq} (${r.slug}). This cannot be undone.`, async () => {
+    try { await send(`/api/research/${r.seq}`, "DELETE"); } catch (e) { toast(e.message); return; }
+    toast(`Deleted research#${r.seq}`, "ok");
+    closeDrawer();
+    loadResearch();
+  });
 }
 
 function researchEditForm(r) {
-  $("#detail-inner").innerHTML = `
-    <button id="close" onclick="document.getElementById('detail').classList.remove('open')">close</button>
-    <h3>edit research#${r.seq}</h3>
-    <div class="sub"><span class="pill">${esc(r.slug)}</span> · slug is the citation key and never changes</div>
-    <h4>title</h4><input id="f-title">
-    <h4>topic</h4><input id="f-topic">
-    <h4>sources (one URL per line)</h4><textarea id="f-sources" rows="4"></textarea>
-    <h4>report body (markdown)</h4><textarea id="f-body" rows="18"></textarea>
-    <div style="margin-top:10px"><button class="btn" id="f-save">save</button> <button class="btn" id="f-cancel">cancel</button></div>`;
+  openDrawer(`
+    ${CLOSE_BTN}
+    <div class="eyebrow mono">research#${r.seq}</div>
+    <h3>Edit research report</h3>
+    <div class="sub"><span class="pill">${esc(r.slug)}</span>
+      <span class="dim">slug is the citation key and never changes</span></div>
+    <div class="field"><label for="f-title">Title</label><input id="f-title"></div>
+    <div class="field"><label for="f-topic">Topic</label><input id="f-topic"></div>
+    <div class="field"><label for="f-sources">Sources (one URL per line)</label><textarea id="f-sources" class="mono" rows="4"></textarea></div>
+    <div class="field"><label for="f-body">Report body (markdown)</label><textarea id="f-body" class="mono" rows="18"></textarea></div>
+    <div class="form-actions"><button class="btn-primary" id="f-save">Save</button>
+      <button class="btn" id="f-cancel">Cancel</button></div>`);
   $("#f-title").value = r.title;
   $("#f-topic").value = r.topic;
   $("#f-sources").value = r.sources.join("\n");
@@ -342,16 +666,84 @@ function researchEditForm(r) {
       body_md: $("#f-body").value,
       sources: $("#f-sources").value.split("\n").map((s) => s.trim()).filter(Boolean),
     };
-    try { await send(`/api/research/${r.seq}`, "PATCH", patch); } catch (e) { alert(e.message); return; }
-    refreshResearchIfOpen();
+    try { await send(`/api/research/${r.seq}`, "PATCH", patch); } catch (e) { toast(e.message); return; }
+    toast("Saved", "ok");
+    loadResearch();
     researchDetail(r.seq);
   };
 }
 
-// minimal markdown renderer for research bodies. esc() runs over the whole source FIRST,
-// so any HTML in the input is inert — the only tags in the output are the ones emitted
-// here, and links/image sources are restricted to http(s) URLs (esc() has already
-// neutralized quotes, so URLs can't break out of the attribute).
+// ---------- insights ----------
+async function loadInsights() {
+  const [states, specs, metrics, ledger] = await Promise.all([
+    api("/api/states"), api("/api/specs"), api("/api/metrics"), api("/api/ledger"),
+  ]);
+  cache.insights = { states, specs, metrics, ledger };
+  paint("insights", renderInsights, state.ledgerProject + "|" + state.ledgerOutcome);
+}
+
+// single-series magnitude bars: one hue (accent), count labeled at the bar tip,
+// rounded corners on the data end only
+function barsHTML(rows) {
+  const max = Math.max(...rows.map((r) => r.count), 1);
+  return `<div class="bars">${rows.map((r) => `
+    <div class="bar-row" title="${esc(r.label)}: ${r.count}">
+      <span class="bl">${esc(r.label)}</span>
+      <span class="track"><span class="bar" style="width:${Math.max(r.count / max * 100, 0.5)}%"></span>
+      <span class="bv">${r.count}</span></span>
+    </div>`).join("")}</div>`;
+}
+
+function renderInsights() {
+  const { states, specs, metrics, ledger } = cache.insights;
+  const stateRows = states.map((st) => ({ label: st.name, count: metrics.by_state[st.name] ?? 0 }));
+  const attemptRows = Object.keys(metrics.attempts_distribution ?? {})
+    .sort((a, b) => Number(a) - Number(b))
+    .map((k) => ({ label: `${k} attempt${k === "1" ? "" : "s"}`, count: metrics.attempts_distribution[k] }));
+  const projects = [...new Set(ledger.map((l) => l.project))].sort();
+  const outcomes = [...new Set(ledger.map((l) => l.outcome))].sort();
+  const f = state.filter;
+  const rows = ledger.filter((l) =>
+    (!state.ledgerProject || l.project === state.ledgerProject) &&
+    (!state.ledgerOutcome || l.outcome === state.ledgerOutcome) &&
+    (!f || `${l.project}/${l.id} ${l.title} ${l.outcome} ${l.axis ?? ""}`.toLowerCase().includes(f)));
+  $("#insights").innerHTML = `
+    <div id="insight-tiles" style="display:flex;gap:var(--s-3);flex-wrap:wrap;margin-bottom:var(--s-4)"></div>
+    <div class="panel">
+      <div class="panel-h"><span>Specs by state</span></div>
+      <div class="panel-b">${barsHTML(stateRows)}</div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><span>Verification attempts distribution</span></div>
+      <div class="panel-b">${attemptRows.length ? barsHTML(attemptRows) : '<div class="empty">No attempts recorded yet</div>'}</div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><span>Outcome ledger</span><span class="cnt">${rows.length}</span>
+        <select id="lg-project"><option value="">all projects</option>${projects.map((p) => `<option${p === state.ledgerProject ? " selected" : ""}>${esc(p)}</option>`).join("")}</select>
+        <select id="lg-outcome"><option value="">all outcomes</option>${outcomes.map((o) => `<option${o === state.ledgerOutcome ? " selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
+      <div class="panel-b">
+        ${rows.length ? `<table class="lt">
+          <tr><th>When</th><th>Spec</th><th>Title</th><th>Outcome</th><th>Attempts</th><th>Axis</th></tr>
+          ${rows.map((l) => `<tr>
+            <td class="ts">${esc(l.at).slice(0, 10)}</td>
+            <td class="mono">${esc(l.project)}/${esc(l.id)}</td>
+            <td class="t1">${esc(l.title)}</td>
+            <td><span class="pill ${l.outcome === "finished" ? "ok" : ""}">${esc(l.outcome)}</span></td>
+            <td>${l.verify_attempts}</td>
+            <td>${esc(l.axis) || '<span class="dim">—</span>'}</td>
+          </tr>`).join("")}</table>` : '<div class="empty">No ledger entries yet — finish or abandon a spec</div>'}
+      </div>
+    </div>`;
+  renderTiles($("#insight-tiles"), specs, metrics, false);
+  $("#lg-project").onchange = (e) => { state.ledgerProject = e.target.value; paint("insights", renderInsights, state.ledgerProject + "|" + state.ledgerOutcome); };
+  $("#lg-outcome").onchange = (e) => { state.ledgerOutcome = e.target.value; paint("insights", renderInsights, state.ledgerProject + "|" + state.ledgerOutcome); };
+}
+
+// ---------- markdown ----------
+// minimal markdown renderer for spec/memory/research bodies. esc() runs over the whole
+// source FIRST, so any HTML in the input is inert — the only tags in the output are the
+// ones emitted here, and links/image sources are restricted to http(s) URLs (esc() has
+// already neutralized quotes, so URLs can't break out of the attribute).
 function md(src) {
   const inline = (s) => s
     .replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g, '<img src="$2" alt="$1" loading="lazy">')
@@ -379,8 +771,36 @@ function md(src) {
   return out.join("\n");
 }
 
-board();
-setInterval(board, 15000);
+// ---------- wiring ----------
+const loaders = { board: loadBoard, memory: loadMemory, research: loadResearch, insights: loadInsights };
+
+$("#new-spec-btn").onclick = () => newSpecForm();
+$("#scrim").onclick = () => closeDrawer();
+
+let filterTimer;
+$("#filter").addEventListener("input", () => {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => {
+    state.filter = $("#filter").value.trim().toLowerCase();
+    if (state.view === "research") loadResearch();
+    else if (state.view === "board") paint("board", renderBoard);
+    else if (state.view === "memory") paint("memory", renderMemory);
+    else paint("insights", renderInsights, state.ledgerProject + "|" + state.ledgerOutcome);
+  }, 150);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("#detail").classList.contains("open")) { closeDrawer(); return; }
+  if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    $("#filter").focus();
+  }
+});
+
+window.addEventListener("hashchange", route);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshActiveView(); });
+setInterval(() => { if (!document.hidden) refreshActiveView(); }, 15000);
+route();
 </script>
 </body>
 </html>
