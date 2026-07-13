@@ -1030,7 +1030,7 @@ function cmdCheck(db, project) {
 
     // quality lint: stray clarification markers, stale failures section, missing sections
     for (const s of specs) {
-      if (s.status !== "draft" && s.body_md.includes("[NEEDS CLARIFICATION:")) {
+      if (s.status !== "draft" && s.body_md.includes("[NEEDS CLARIFICATION")) {
         issue("stray-clarification", `${p}/${s.id} carries an unresolved clarification marker outside draft.`,
           "specs/README.md Ambiguity gate: resolve every marker before a spec leaves draft.");
       }

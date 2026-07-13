@@ -208,6 +208,15 @@ test("check: clarification marker outside draft flagged, inside draft allowed", 
   assert.doesNotMatch(out.stdout, /ISSUE \[stray-clarification\].*0002/);
 });
 
+test("check: bare seeded marker (no colon) outside draft is also flagged", (t) => {
+  const repo = makeRepo(t);
+  run(repo, "init");
+  seed(repo, "p", { status: "ready", extra: "\n[NEEDS CLARIFICATION]\n" });
+  const out = run(repo, "check", "p");
+  assert.equal(out.code, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /ISSUE \[stray-clarification\].*0001/);
+});
+
 test("check: failures section with verify_attempts 0 flagged; legitimate handoff passes", (t) => {
   const repo = makeRepo(t);
   run(repo, "init");
