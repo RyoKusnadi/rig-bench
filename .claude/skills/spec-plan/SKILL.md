@@ -77,6 +77,13 @@ user first:
 If the task is ambiguous on any of these, ask rather than assume. A wrong guess here costs
 much more than the question would have.
 
+**If the territory is genuinely unfamiliar, learn before formalizing.** A spec targeting a
+domain, external API, or mechanism with no precedent in this repo is at risk of encoding
+the wrong problem cleanly — field retrospectives on spec-driven development (Nearform's
+failure catalog) rank "building before understanding" as the top failure mode. Recommend a
+learning step first: a `/research` report or a small throwaway prototype. The learning step
+precedes the spec; it doesn't replace it.
+
 **Check every spec, regardless of size, against `CLAUDE.md`'s "Non-negotiables" section** —
 the repo's short list of hard constraints (destructive git ops, auth/secrets handling, branch
 discipline). Unlike the considerations scan below, this doesn't get skipped for trivial
@@ -145,6 +152,13 @@ volley — the user reviews the whole set of genuinely open points once, not one
 Keep it to the handful that clear the bar above; five is a reasonable ceiling before it stops
 feeling like a short check-in and starts feeling like an interrogation.
 
+**Reporting coverage:** alongside the questions (or in place of them, when nothing cleared
+the bar), give a one-line-per-dimension coverage summary: **Clear** (and what settles it),
+**Not applicable**, **Genuinely open** (asked), or **Deferred** (low-impact — noted in the
+spec instead of asked). This mirrors the coverage table Spec Kit's clarify step emits
+(Resolved/Deferred/Clear/Outstanding): the user sees not only what was asked but what
+*wasn't* and why — which is exactly where a silent wrong guess would otherwise hide.
+
 **Recommending, not just asking:** don't hand back an open-ended "what do you want for X?" —
 that pushes research the agent is better positioned to do back onto the user. For anything
 where current best practice or the project's existing stack determines a sensible default
@@ -184,6 +198,24 @@ write step. Set the `axis` field when the spec clearly targets one identifiable 
 harness (see the template's note on `axis` for examples and guidance) — leave it `""` when
 nothing natural fits rather than forcing a label.
 
+**Don't guess on unknowns — mark them.** When something surfaces mid-draft that Phase 2
+didn't settle, write an inline `[NEEDS CLARIFICATION: specific question]` marker at the
+point of ambiguity instead of picking a plausible answer (Spec Kit's rule: if the prompt
+doesn't specify something, mark it — a guessed default reads exactly like a decision to the
+implementer). Markers are legitimate while drafting — `add` seeds new specs with them — but
+the ambiguity gate (`specs/README.md`) means every one must be resolved, by editing in the
+answer or asking the user, before the spec moves to `ready`; `spec-db.mjs check` flags any
+survivor.
+
+**Keep the Q→A trail.** When user answers shaped the spec — Phase 2 questions, marker
+resolutions, an overturned recommendation — record them as a short `Clarifications` block
+at the end of `Implementation Notes`, one line per exchange (`Q: <question> → A: <answer>`).
+The implementer and verifier inherit the reasoning instead of re-deriving it, and a later
+reader can tell a deliberate choice from an accident. Use a bold label or `###` sub-heading,
+never a new `## ` section — the template's `## ` headings are the required-section list and
+this block is optional. A decision whose reach extends beyond this one spec still goes to
+the memory decisions notebook as usual.
+
 As a quick reference, the template's sections are:
 
 1. **Problem** — current state, and why it's insufficient.
@@ -201,6 +233,19 @@ Always check the actual template file rather than trusting this list — it's a 
 summary, not the source of truth.
 
 ## Phase 4 — Get approval, then write
+
+Before presenting, run a quick content self-review — these are the gaps the structural lint
+(`check`, step 3 below) can't see:
+
+- Every acceptance criterion is a single testable EARS behavior — if you can't name the
+  check that would prove it, it isn't a criterion yet.
+- Success is measurable: numbers, named commands, observable outcomes — not "works
+  correctly".
+- The Verification step is machine-runnable where possible — a command with expected output
+  beats a manual step, because a check the implementing agent can run closes the loop
+  without a human in it (Anthropic's "give Claude a check it can run").
+- No `[NEEDS CLARIFICATION` markers remain, unless you're deliberately presenting one as an
+  open question for the user to settle at approval time.
 
 1. Present the full drafted spec content for review (via plan-mode exit, or directly in your
    response if no plan-mode primitive exists).

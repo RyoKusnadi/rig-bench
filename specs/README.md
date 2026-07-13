@@ -293,7 +293,8 @@ projects when none is named). Beyond the file-conflict scan above it catches, pe
 - **Dependency cycles**, and finished specs whose dependencies aren't finished.
 - **Sizing drift** — a spec whose `Files/Interfaces Touched` list has grown past the "one
   deliverable" `Rule` above (default threshold: 5 files; override with `SIZING_THRESHOLD`).
-- **Quality lint** — unresolved `[NEEDS CLARIFICATION:` markers outside `draft`, a
+- **Quality lint** — unresolved `[NEEDS CLARIFICATION` markers (with or without a
+  question — `add`'s bare seeded markers count) outside `draft`, a
   `## Verification Failures` section with `verify_attempts` still 0, and missing
   template sections.
 - **PR traceability** — a `finished` spec with an empty `pr` field.
