@@ -16,7 +16,7 @@
 # Exit codes: 0 = in sync, 1 = drift found. Runs via `make check`, which CI
 # executes on every PR (.github/workflows/checks.yml).
 #
-# Spec: specs/template/*/0001-state-sync-check.md
+# Spec: 0001 (state-sync check).
 
 set -euo pipefail
 

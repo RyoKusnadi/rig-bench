@@ -1,6 +1,6 @@
 ---
 name: spec-plan
-description: Run a collaborative planning session that produces a docs-level spec before any code is written, following this repo's spec-driven lifecycle in specs/<project>/. Use for requests to plan, design, or scope a feature, task, hook, or script ("let's plan X", "help me design a spec for Y", "let's build X" for anything nontrivial when no spec exists yet). Not for executing an already-approved spec or trivial one-line fixes — see the skill body for the full boundary.
+description: Run a collaborative planning session that produces a docs-level spec before any code is written, following this repo's spec-driven lifecycle in spec.db (via scripts/spec-db.mjs). Use for requests to plan, design, or scope a feature, task, hook, or script ("let's plan X", "help me design a spec for Y", "let's build X" for anything nontrivial when no spec exists yet). Not for executing an already-approved spec or trivial one-line fixes — see the skill body for the full boundary.
 ---
 
 # Spec Planning
@@ -11,11 +11,11 @@ not the code that follows it. This mirrors Karpathy's "agentic engineering" work
 the docs *first* forces the design decisions to happen while they're still cheap to change,
 instead of getting discovered halfway through an implementation.
 
-**Never write a spec file — or any code — before the user has approved the plan.** If your
-tools include a plan-mode primitive (e.g. `EnterPlanMode`/`ExitPlanMode`), use it: draft
-everything in plan mode and only write to disk after explicit approval. If no such primitive
-is available, simulate the same discipline — present the full spec content in your response
-and wait for a clear go-ahead before creating any file.
+**Never write a spec into the DB — or any code — before the user has approved the plan.** If
+your tools include a plan-mode primitive (e.g. `EnterPlanMode`/`ExitPlanMode`), use it: draft
+everything in plan mode and only write after explicit approval. If no such primitive is
+available, simulate the same discipline — present the full spec content in your response and
+wait for a clear go-ahead before running any `spec-db.mjs add`.
 
 **When this applies:** any request to plan, design, or scope work destined for a project's
 specs pipeline — including proactively, when a user jumps straight to "let's build X" for
@@ -33,18 +33,19 @@ otherwise apply the resolution order described there.
 
 ## Phase 1 — Orient
 
-1. Read `specs/README.md` for this repo's frontmatter and lifecycle conventions (don't assume
-   — conventions like status names and folder structure can drift from what's described here).
+1. Read `specs/README.md` for this repo's field and lifecycle conventions (don't assume —
+   conventions like status names and commands can drift from what's described here).
 2. Read `specs/spec-template.md` — this is the canonical spec shape. Don't
    reconstruct the section list from memory; that file is the single source of truth and may
    have changed since this skill was last updated.
-3. Find the highest existing spec `id` within the resolved project:
+3. See what already exists in the resolved project:
    ```bash
-   find specs/<project_name> -name "[0-9]*.md" | sort | tail -1
+   node scripts/spec-db.mjs list <project_name>
    ```
-   Allocate every `id` this session will need from this single read. Re-scanning mid-session
-   is how two specs in the same planning pass end up with the same id. IDs are per-project —
-   don't carry a number over from a different project's sequence.
+   IDs are allocated by `spec-db.mjs add` itself (sequential per project, never reused) —
+   you don't pick them. When drafting several interdependent specs in one pass, note each
+   id as its `add` returns it and use those for the `dep add` cross-links; don't predict
+   ids before the adds have run.
 
 ## Phase 2 — Capture intent before drafting anything
 
@@ -91,8 +92,8 @@ direction is worth surfacing to the user before drafting continues — the point
 the decisions notebook is that overturning one should be a choice, not an accident.
 
 Also check `node scripts/spec-db.mjs ledger <project> blocked` — if a past spec in this area was
-already tried and blocked, that's worth surfacing before drafting a similar one from scratch
-; read the blocked spec file itself (still on disk under `blocked/`) for why it
+already tried and blocked, that's worth surfacing before drafting a similar one from scratch;
+read the blocked spec itself (`node scripts/spec-db.mjs show <project> <id>`) for why it
 didn't make it, rather than only the one-line ledger record.
 
 While you're there, glance at whether the last 3 `finished` records for this project
@@ -160,11 +161,12 @@ mobile-first or desktop-first for your users").
 - **One deliverable** (one hook, one script, one schema change, one command) → draft a single
   spec.
 - **Multiple unrelated deliverables**, or an implementation plan that would span unrelated
-  files → split now, before drafting starts. Allocate one `id` per spec from the Phase 1
-  listing. Draft each spec in full, and cross-link via `depends_on` where one genuinely blocks
-  another — set the pointer while the relationship is fresh, not as an afterthought. If a
-  `depends_on` id doesn't exist yet and isn't a sibling being drafted in this same pass, ask
-  rather than write a dangling reference.
+  files → split now, before drafting starts. Each spec gets its own `add` (and therefore its
+  own id) at write time. Draft each spec in full, and cross-link via `depends_on`
+  (`spec-db.mjs dep add`) where one genuinely blocks another — set the pointer while the
+  relationship is fresh, not as an afterthought. If a `depends_on` id doesn't exist yet and
+  isn't a sibling being drafted in this same pass, ask rather than write a dangling
+  reference.
 
 **One mechanism per spec — check even a single-deliverable spec for this.** A spec can be one
 file and still bundle two independent changes disguised as one ("and also fix X while we're in
@@ -175,12 +177,12 @@ that's very likely a second spec, not an extra paragraph in this one. This is
 distinct from the deliverable-count check above — a single-file spec can still fail it.
 
 Follow `specs/spec-template.md` for each spec, whether drafting one or several. The
-plan must contain the literal file content for every spec, not a description of what it would
-contain. Default `status: ready` — an approved spec goes straight to
-`specs/<project_name>/ready/`, skipping `draft/`. Set the frontmatter `axis` field when the
-spec clearly targets one identifiable part of the harness (see the template's note on `axis`
-for examples and guidance) — leave it `""` when nothing natural fits rather than forcing a
-label.
+plan must contain the literal body content for every spec (the `## Problem` …
+`## Verification` sections), not a description of what it would contain. An approved spec
+lands as `draft` (that's what `add` creates) and is moved straight to `ready` in the same
+write step. Set the `axis` field when the spec clearly targets one identifiable part of the
+harness (see the template's note on `axis` for examples and guidance) — leave it `""` when
+nothing natural fits rather than forcing a label.
 
 As a quick reference, the template's sections are:
 
@@ -202,13 +204,17 @@ summary, not the source of truth.
 
 1. Present the full drafted spec content for review (via plan-mode exit, or directly in your
    response if no plan-mode primitive exists).
-2. After approval, write each spec to `specs/<project_name>/ready/{id}-{kebab-slug}.md` with
-   `status: ready`, exactly as approved — no additions, removals, or reordering slipped in
-   during the write.
-   Then ingest into the DB so it is queryable from the moment it exists:
-   `node scripts/spec-db.mjs import <project>` (idempotent — safe to run over the whole
-   project tree).
-3. Run `scripts/check-specs.sh <project_name>` — catches duplicate IDs, dangling
-   `depends_on`, and specs that have grown past the one-deliverable sizing rule. If it
-   reports issues, fix them before reporting success; don't leave a broken batch behind.
-4. Report the file path(s) and id(s) back to the user.
+2. After approval, write each spec into the DB exactly as approved — no additions, removals,
+   or reordering slipped in during the write. Per spec:
+   ```bash
+   # body file: the approved sections, written to a scratch path (not the repo tree)
+   node scripts/spec-db.mjs add <project> "<title>" "<axis>" <body-file>   # → <project>/<id> created (draft)
+   node scripts/spec-db.mjs dep add <project> <id> <depends_on_id>         # once per dependency
+   node scripts/spec-db.mjs move <project> <id> ready spec-plan
+   ```
+3. Run `node scripts/spec-db.mjs check <project>` — catches dangling `depends_on`, dep
+   cycles, file conflicts, and specs that have grown past the one-deliverable sizing rule.
+   If it reports issues, fix them before reporting success; don't leave a broken batch
+   behind.
+4. Report the id(s) back to the user (`node scripts/spec-db.mjs list <project> ready` to
+   confirm what landed).

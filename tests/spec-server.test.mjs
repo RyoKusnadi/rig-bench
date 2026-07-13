@@ -218,7 +218,6 @@ test("server: states, list, detail, attempt trace, drift, ledger, metrics, index
   assert.equal(created.status, 201);
   const createdBody = await created.json();
   assert.equal(createdBody.id, "0003"); // next after 0001/0002
-  assert.match(createdBody.path, /draft\/0003-dashboard-idea\.md$/);
   assert.equal((await get(base, "/api/specs/p/0003")).body.status, "draft");
 
   const specPatch = await sendJson("/api/specs/p/0003", "PATCH", { title: "Renamed idea", body: "## Problem\nx\n## Acceptance Criteria\n- When A, B.\n## Verification\nv\n" });

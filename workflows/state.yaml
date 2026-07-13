@@ -1,14 +1,15 @@
 # Canonical spec-lifecycle state table — DATA ONLY.
 #
 # This is not orchestration code and does not run anything. It's the machine-readable
-# form of the table in specs/README.md's "State Transitions" section, so a future tool
-# (or a human) can read the states/folders/transitions from one place without re-parsing
-# prose. Deliberately just data — not agent-coupled, kept separate from any
-# dispatch/orchestration decision (see memory/decisions.md).
+# form of the table in specs/README.md's "State Transitions" section, so a tool (or a
+# human) can read the states/transitions from one place without re-parsing prose.
+# scripts/spec-db.mjs enforces valid_next (and reads the attention threshold below) from
+# this file at write time. Deliberately just data — not agent-coupled, kept separate
+# from any dispatch/orchestration decision (see the decisions notebook).
 #
 # specs/README.md remains the canonical *prose* explanation (the retry contract, the
 # un-blocking procedure, the reasoning) — this file only carries the structural facts:
-# state names, folders, who transitions a spec into that state, and valid next states.
+# state names, who transitions a spec into that state, and valid next states.
 # If you change one, change the other — scripts/check-state-sync.sh (run by
 # `make check`) fails on drift between this file and the README's table.
 
@@ -20,7 +21,7 @@ dispatch:
   attempts_field: verify_attempts
   failure_section_header: "## Verification Failures"
 
-# Advisory threshold consumed at runtime by scripts/spec-status.sh: when the share of
+# Advisory threshold consumed at runtime by `spec-db.mjs status`: when the share of
 # finished specs with verify_attempts > 0 exceeds this percentage, the status view prints
 # an attention line. Data lives only here (no prose copy, so no sync check applies).
 attention:
@@ -28,36 +29,29 @@ attention:
 
 states:
   - name: draft
-    folder: draft
     entered_by: [spec-plan]
     valid_next: [ready]
 
   - name: ready
-    folder: ready
     entered_by: [spec-plan, human]
     valid_next: [in_progress]
 
   - name: in_progress
-    folder: in_progress
     entered_by: [spec-exec]
     valid_next: [waiting_verification]
 
   - name: waiting_verification
-    folder: waiting_verification
     entered_by: [spec-exec]
     valid_next: [finished, blocked]
 
   - name: finished
-    folder: finished
     entered_by: [spec-verify]
     valid_next: []
 
   - name: blocked
-    folder: blocked
     entered_by: [spec-verify, human]
     valid_next: [ready, in_progress]
 
   - name: abandoned
-    folder: abandoned
     entered_by: [human]
     valid_next: []
