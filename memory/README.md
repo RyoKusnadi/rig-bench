@@ -21,7 +21,7 @@ node scripts/spec-db.mjs memory export [notebook]        # markdown out — back
 ## Entry conventions
 
 Headings are `<ISO date> — <title>`; lessons headings end with the provenance tag
-`(spec NNNN)` — the missing-lesson check in `check-specs.sh` and the dashboard's
+`(spec NNNN)` — the missing-lesson check in `spec-db.mjs check` and the dashboard's
 related-memory join both key on it (pass the id as the fourth `add` argument too, so the
 link is structural, not just textual). Bodies carry the transferable part, not a replay of
 events: what class of thing this was, and what a future spec or session should do

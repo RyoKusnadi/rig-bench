@@ -1,6 +1,7 @@
 // spec-db.test.mjs — behavior tests for scripts/spec-db.mjs, the SQLite system of
-// record for the spec lifecycle (Phase 1 of the DB migration). Runs the real CLI
-// against fixture repos via SPECDB_ROOT/SPECDB_PATH.
+// record for the spec lifecycle (DB-only since the file-tree cutover; `import` remains
+// the legacy file-ingest path and keeps its file fixtures). Runs the real CLI against
+// fixture repos via SPECDB_ROOT/SPECDB_PATH.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -139,22 +140,24 @@ test("record-attempt increments attempts on FAIL only and stores the trace", (t)
   assert.match(run(dir, "show", "p", "0001").stdout, /attempts: 1[\s\S]*attempt-2: PASS/);
 });
 
-test("drift detects file-side criteria tampering across a move; silent otherwise", (t) => {
+test("drift detects out-of-band criteria tampering across a move; silent otherwise", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
   run(dir, "import", "p");
   run(dir, "move", "p", "0001", "in_progress"); // second snapshot, unchanged
   assert.match(run(dir, "drift", "p", "0001").stdout, /No drift/);
-  // the realistic tampering vector: the implementer weakens the criteria ON DISK
-  // mid-implementation; move must refresh from the file (dual-write source of truth)
-  // before snapshotting, or the drift comparison sees two copies of the stale import
-  const f = path.join(dir, "specs", "p", "ready", "0001-x.md");
-  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("shall B.", "shall B or whatever."));
+  // the tampering vector left after the file cutover: the body is weakened without
+  // going through `edit body` (which would re-snapshot and become the new baseline) —
+  // e.g. a direct SQL write. The next move snapshots the tampered body and drift flags it.
+  const mk = spawnSync("node", ["--no-warnings", "--input-type=module", "-e", `
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(process.env.SPECDB_PATH);
+    db.prepare("UPDATE specs SET body_md = replace(body_md, 'shall B.', 'shall B or whatever.') WHERE id='0001'").run();
+  `], { encoding: "utf8", env: { ...process.env, SPECDB_PATH: path.join(dir, "spec.db") } });
+  assert.equal(mk.status, 0, mk.stderr);
   run(dir, "move", "p", "0001", "waiting_verification");
   const out = run(dir, "drift", "p", "0001");
   assert.equal(out.code, 2);
   assert.match(out.stdout, /DRIFT: graded sections changed/);
-  // and the DB body was reconciled to the file
-  assert.match(run(dir, "show", "p", "0001").stdout, /shall B or whatever/);
 });
 
 test("export reproduces frontmatter with DB-held history", (t) => {
@@ -198,53 +201,61 @@ test("memory notebooks mirror into the DB with spec-id links; re-import replaces
   assert.doesNotMatch(all.stdout, /First lesson/);
 });
 
-test("add allocates next id across DB and disk", (t) => {
+test("add allocates the next id from the DB sequence", (t) => {
   const dir = makeFixture(t, [{ id: "0002", status: "ready" }]);
   run(dir, "import", "p");
-  // a stray, never-imported file on disk must also push the counter forward
-  fs.writeFileSync(path.join(dir, "specs", "p", "ready", "0007-stray.md"), specMd({ id: "0007", status: "ready" }));
   const add = run(dir, "add", "p", "A new idea", "tooling");
   assert.equal(add.code, 0, add.stderr);
-  assert.match(add.stdout, /p\/0008 created at .*draft\/0008-a-new-idea\.md \(draft\)/);
-  assert.ok(fs.existsSync(path.join(dir, "specs", "p", "draft", "0008-a-new-idea.md")));
-  assert.match(run(dir, "list", "p", "draft").stdout, /p\/0008/);
+  assert.match(add.stdout, /p\/0003 created \(draft\)/);
+  assert.match(run(dir, "list", "p", "draft").stdout, /p\/0003/);
+  // and no spec file materializes anywhere — the DB is the only store
+  assert.ok(!fs.existsSync(path.join(dir, "specs", "p", "draft")));
 });
 
-test("add stub round-trips through parseSpec/import and records transition + criteria", (t) => {
-  const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
-  run(dir, "import", "p");
-  run(dir, "add", "p", "Stub spec");
-  const file = path.join(dir, "specs", "p", "draft", "0002-stub-spec.md");
-  const text = fs.readFileSync(file, "utf8");
-  assert.match(text, /^---\nid: "0002"\ntitle: Stub spec\nstatus: draft\ndepends_on: \[\]/);
-  assert.match(text, /history:\n  - draft \d{4}-/);
-  assert.match(text, /## Acceptance Criteria/);
-  // re-import over the stub: must not error or change anything
-  assert.equal(run(dir, "import", "p").code, 0);
-  const show = run(dir, "show", "p", "0002");
+test("add records stub body, transition, and criteria snapshot; validates input", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  // a brand-new project needs no setup — the first add starts its sequence
+  const add = run(dir, "add", "fresh-project", "Stub spec");
+  assert.equal(add.code, 0, add.stderr);
+  assert.match(add.stdout, /fresh-project\/0001 created \(draft\)/);
+  const show = run(dir, "show", "fresh-project", "0001");
   assert.match(show.stdout, /status: draft/);
   assert.match(show.stdout, /· -> draft/); // NULL -> draft transition
-  // title validation: quotes and newlines can't round-trip parseSpec
-  assert.equal(run(dir, "add", "p", 'bad "quoted" title').code, 1);
-  assert.equal(run(dir, "add", "nonexistent-project", "T").code, 1);
+  assert.match(show.stdout, /## Acceptance Criteria/); // template stub body
+  // title validation: quotes and newlines can't round-trip the export format
+  assert.equal(run(dir, "add", "fresh-project", 'bad "quoted" title').code, 1);
+  assert.equal(run(dir, "add", "bad/project", "T").code, 1); // charset gate
 });
 
-test("edit rewrites frontmatter in file and DB together, filename stable", (t) => {
+test("dep add/rm maintain the dependency edges", (t) => {
+  const dir = makeFixture(t);
+  run(dir, "init");
+  run(dir, "add", "p", "First");
+  run(dir, "add", "p", "Second");
+  assert.equal(run(dir, "dep", "add", "p", "0002", "0001").code, 0);
+  assert.match(run(dir, "show", "p", "0002").stdout, /depends_on: 0001/);
+  assert.equal(run(dir, "dep", "add", "p", "0002", "0002").code, 1); // self-dep refused
+  assert.equal(run(dir, "dep", "rm", "p", "0002", "0001").code, 0);
+  assert.match(run(dir, "show", "p", "0002").stdout, /depends_on: \(none\)/);
+  assert.equal(run(dir, "dep", "rm", "p", "0002", "0001").code, 1); // already gone
+  assert.equal(run(dir, "dep", "add", "p", "9999", "0001").code, 1); // unknown spec
+});
+
+test("edit updates scalar fields in the DB", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
   run(dir, "import", "p");
   const edit = run(dir, "edit", "p", "0001", "title", "Renamed title");
   assert.equal(edit.code, 0, edit.stderr);
-  const file = path.join(dir, "specs", "p", "ready", "0001-x.md"); // filename unchanged
-  assert.match(fs.readFileSync(file, "utf8"), /^title: Renamed title$/m);
   assert.match(run(dir, "show", "p", "0001").stdout, /Renamed title/);
   run(dir, "edit", "p", "0001", "axis", "tooling");
   run(dir, "edit", "p", "0001", "pr", "https://example.com/pr/9");
-  const text = fs.readFileSync(file, "utf8");
-  assert.match(text, /^axis: "tooling"$/m);
-  assert.match(text, /^pr: "https:\/\/example\.com\/pr\/9"$/m);
+  const out = run(dir, "export", "p", "0001");
+  assert.match(out.stdout, /^axis: "tooling"$/m);
+  assert.match(out.stdout, /^pr: "https:\/\/example\.com\/pr\/9"$/m);
 });
 
-test("edit body dual-writes and re-snapshots so the next move reports no drift", (t) => {
+test("edit body re-snapshots so the next move reports no drift", (t) => {
   const dir = makeFixture(t, [{ id: "0001", status: "ready" }]);
   run(dir, "import", "p");
   const bodyFile = path.join(dir, "new-body.md");
@@ -268,23 +279,36 @@ test("edit rejects status and quote-containing values", (t) => {
   assert.equal(run(dir, "edit", "p", "9999", "title", "T").code, 1);
 });
 
-test("delete removes file, traces dir, and DB rows but keeps ledger", (t) => {
+test("delete removes DB rows (incl. attempts) but keeps ledger", (t) => {
   const dir = makeFixture(t, [
     { id: "0001", status: "waiting_verification" },
     { id: "0002", status: "ready" },
   ]);
   run(dir, "import", "p");
+  const tf = path.join(dir, "trace.md");
+  fs.writeFileSync(tf, "trace body\n");
+  run(dir, "record-attempt", "p", "0001", "FAIL", tf);
   run(dir, "move", "p", "0001", "finished"); // writes a ledger row
-  const traces = path.join(dir, "specs", "p", ".traces", "0001");
-  fs.mkdirSync(traces, { recursive: true });
-  fs.writeFileSync(path.join(traces, "attempt-1.md"), "trace\n");
   const del = run(dir, "delete", "p", "0001");
   assert.equal(del.code, 0, del.stderr);
-  assert.ok(!fs.existsSync(path.join(dir, "specs", "p", "waiting_verification", "0001-x.md")));
-  assert.ok(!fs.existsSync(traces));
   assert.equal(run(dir, "show", "p", "0001").code, 1);
+  assert.equal(run(dir, "trace", "p", "0001").code, 1); // attempts gone with the spec
   assert.match(run(dir, "ledger", "p", "finished").stdout, /p\/0001\s+finished/); // ledger survives
   assert.equal(run(dir, "delete", "p", "0001").code, 1); // already gone → 404/exit 1
+});
+
+test("set verify_attempts resets the attempt budget (un-block flow) and validates input", (t) => {
+  const dir = makeFixture(t, [{ id: "0001", status: "waiting_verification" }]);
+  run(dir, "import", "p");
+  const tf = path.join(dir, "trace.md");
+  fs.writeFileSync(tf, "t\n");
+  run(dir, "record-attempt", "p", "0001", "FAIL", tf);
+  run(dir, "record-attempt", "p", "0001", "FAIL", tf);
+  run(dir, "move", "p", "0001", "blocked");
+  run(dir, "move", "p", "0001", "ready", "human");
+  assert.equal(run(dir, "set", "p", "0001", "verify_attempts", "0").code, 0);
+  assert.match(run(dir, "list", "p", "ready").stdout, /attempts=0/);
+  assert.equal(run(dir, "set", "p", "0001", "verify_attempts", "nope").code, 1);
 });
 
 test("delete refuses while another spec depends on it, succeeds after the dependent is deleted", (t) => {

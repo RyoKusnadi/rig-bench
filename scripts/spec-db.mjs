@@ -1,29 +1,38 @@
 #!/usr/bin/env node
-// spec-db.mjs — SQLite system of record for the spec lifecycle.
+// spec-db.mjs — SQLite system of record for the spec lifecycle. DB-only: spec.db is the
+// single store; there is no spec-file tree. Markdown remains the authoring *format*
+// (bodies are stored verbatim and follow specs/spec-template.md's section shape), but
+// specs live only as rows — created with `add`, changed with `edit`/`set`/`dep`, moved
+// with `move`. The DB owns state, dependencies, transition history, verification
+// attempts (including raw traces), and terminal outcomes. Transition legality is
+// enforced on write from workflows/state.yaml's valid_next — the state machine lives in
+// data, this tool just reads it. Criteria snapshots are taken on every transition and on
+// every sanctioned body edit, so drift between "what was agreed" and "what is being
+// graded" is a query; a body changed by anything other than `edit body` shows up as
+// DRIFT on the next move.
 //
-// Spec documents are never committed (CLAUDE.md non-negotiable), which makes local
-// markdown per-machine state with no shared view. This CLI is Phase 1 of moving the
-// system of record into a database: markdown stays the authoring format (bodies are
-// stored verbatim), the DB owns state, dependencies, transition history, verification
-// attempts, and terminal outcomes. Transition legality is enforced on write from
-// workflows/state.yaml's valid_next — the state machine lives in data, this tool just
-// reads it. Criteria snapshots are taken on every transition so drift between "what was
-// agreed" and "what is being graded" is a query, not a git diff.
+// `import` remains as the one-time legacy migration path from a pre-cutover file tree
+// (specs/<project>/<state>/*.md) — it is not part of the normal lifecycle.
 //
 // Zero dependencies: uses node:sqlite (Node 22+). DB file: ./spec.db (gitignored).
 //
 // Usage:
 //   scripts/spec-db.mjs init
-//   scripts/spec-db.mjs import <project>
+//   scripts/spec-db.mjs import <project>                (legacy: ingest an old file tree)
 //   scripts/spec-db.mjs list [project] [status]
 //   scripts/spec-db.mjs show <project> <id>
 //   scripts/spec-db.mjs move <project> <id> <to_state> [actor]
 //   scripts/spec-db.mjs add <project> <title> [axis] [body-file]   (draft stub, next id)
 //   scripts/spec-db.mjs edit <project> <id> <title|axis|branch|pr|body> <value>
 //   scripts/spec-db.mjs delete <project> <id>       (hard delete; ledger rows kept)
+//   scripts/spec-db.mjs dep <add|rm> <project> <id> <depends_on_id>
 //   scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> [trace-file]
 //   scripts/spec-db.mjs drift <project> <id>
-//   scripts/spec-db.mjs set <project> <id> <branch|pr|axis> <value>
+//   scripts/spec-db.mjs set <project> <id> <branch|pr|axis|verify_attempts> <value>
+//   scripts/spec-db.mjs status [project]             (per-state counts + attention items)
+//   scripts/spec-db.mjs check [project]              (consistency checks; exit 1 on issues)
+//   scripts/spec-db.mjs metrics [project]            (attempts, failure rate, deps, cycle time)
+//   scripts/spec-db.mjs trace [project] [id] [n]     (verification traces; also: trace diff <project> <id> [a b])
 //   scripts/spec-db.mjs memory [notebook] [spec_id]          (list)
 //   scripts/spec-db.mjs memory add <notebook> <heading> <body> [spec_id]
 //   scripts/spec-db.mjs memory search <term>
@@ -52,7 +61,9 @@ if (maj < 22 || (maj === 22 && min < 5)) {
 }
 const { DatabaseSync } = await import("node:sqlite");
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = process.env.SPECDB_ROOT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -325,36 +336,11 @@ function cmdShow(db, project, id) {
   console.log(r.body_md.trimEnd());
 }
 
-function findSpecFile(project, id) {
-  const projDir = path.join(ROOT, "specs", project);
-  if (!fs.existsSync(projDir)) return null;
-  for (const state of readStates()) {
-    const dir = path.join(projDir, state.name);
-    if (!fs.existsSync(dir)) continue;
-    const hit = fs.readdirSync(dir).find((f) => f.startsWith(`${id}-`) && f.endsWith(".md"));
-    if (hit) return path.join(dir, hit);
-  }
-  return null;
-}
-
 function cmdMove(db, project, id, toState, actor = "cli") {
   const states = readStates();
   const names = states.map((s) => s.name);
   if (!names.includes(toState)) die(`'${toState}' is not a state (${names.join(", ")})`);
-  let spec = getSpec(db, project, id);
-  // Dual-write: the file tree is the source of truth, and the body may have been edited
-  // on disk since import. Refresh from the file (when present) before snapshotting, so a
-  // criteria snapshot records what the spec says NOW — otherwise drift compares two
-  // copies of the same stale import and mid-flight tampering is invisible.
-  const file = findSpecFile(project, id);
-  if (file) {
-    const parsed = parseSpec(fs.readFileSync(file, "utf8"));
-    if (parsed.body !== spec.body_md) {
-      db.prepare("UPDATE specs SET body_md=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?")
-        .run(parsed.body, project, id);
-      spec = { ...spec, body_md: parsed.body };
-    }
-  }
+  const spec = getSpec(db, project, id);
   const cur = states.find((s) => s.name === spec.status);
   if (!cur.valid_next.includes(toState)) {
     die(`illegal transition '${spec.status}' -> '${toState}' (valid: ${cur.valid_next.join(", ") || "none"})`);
@@ -420,57 +406,18 @@ const STUB_BODY = `## Problem
 `;
 
 export function nextId(db, project) {
-  // max over BOTH the DB and every state folder on disk: covers un-imported files and
-  // deleted-from-disk rows alike
-  let max = Number(db.prepare("SELECT COALESCE(MAX(CAST(id AS INTEGER)),0) m FROM specs WHERE project=?").get(project).m);
-  const projDir = path.join(ROOT, "specs", project);
-  for (const st of readStates()) {
-    const dir = path.join(projDir, st.name);
-    if (!fs.existsSync(dir)) continue;
-    for (const f of fs.readdirSync(dir)) {
-      const m = f.match(/^(\d{4})-/);
-      if (m) max = Math.max(max, Number(m[1]));
-    }
-  }
+  const max = Number(db.prepare("SELECT COALESCE(MAX(CAST(id AS INTEGER)),0) m FROM specs WHERE project=?").get(project).m);
   return String(max + 1).padStart(4, "0");
 }
 
 export function specAdd(db, project, title, { axis = "", body = "", actor = "cli" } = {}) {
   db.exec(SCHEMA);
   checkProjectId(project);
-  const projDir = path.join(ROOT, "specs", project);
-  if (!fs.existsSync(projDir)) fail(400, `specs/${project} does not exist`);
   if (!title || !SCALAR_OK(title)) fail(400, "title is required and cannot contain double quotes or newlines");
   if (!SCALAR_OK(axis)) fail(400, "axis cannot contain double quotes or newlines");
   if (typeof body !== "string") fail(400, "body must be a string");
-  const ts = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  let id = nextId(db, project);
-  let file = path.join(projDir, "draft", `${id}-${slugify(title)}.md`);
-  if (fs.existsSync(file)) { // lost a race with another writer — bump once, then let the PK speak
-    id = String(Number(id) + 1).padStart(4, "0");
-    file = path.join(projDir, "draft", `${id}-${slugify(title)}.md`);
-  }
+  const id = nextId(db, project);
   const bodyMd = body || STUB_BODY;
-  // frontmatter quoting matches cmdExport so a later export is byte-compatible;
-  // depends_on stays an inline [] because parseSpec's history matcher would otherwise
-  // read block-list dep entries as history lines
-  const fm = [
-    "---",
-    `id: "${id}"`,
-    `title: ${title}`,
-    "status: draft",
-    "depends_on: []",
-    "verify_attempts: 0",
-    'branch: ""',
-    'pr: ""',
-    "history:",
-    `  - draft ${ts}`,
-    'source: ""',
-    `axis: "${axis}"`,
-    "---",
-  ].join("\n");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, fm + "\n" + bodyMd);
   db.exec("BEGIN IMMEDIATE");
   try {
     db.prepare("INSERT INTO specs (project,id,title,status,axis,body_md) VALUES (?,?,?,'draft',?,?)")
@@ -481,10 +428,9 @@ export function specAdd(db, project, title, { axis = "", body = "", actor = "cli
     db.exec("COMMIT");
   } catch (e) {
     db.exec("ROLLBACK");
-    fs.rmSync(file, { force: true }); // no orphan file when the PK insert loses a true race
     throw e;
   }
-  return { project, id, path: path.relative(ROOT, file) };
+  return { project, id };
 }
 
 export function specEdit(db, project, id, patch) {
@@ -500,23 +446,6 @@ export function specEdit(db, project, id, patch) {
   }
   const spec = db.prepare("SELECT * FROM specs WHERE project=? AND id=?").get(project, id);
   if (!spec) fail(404, `no spec ${id} in '${project}'`);
-  // file side first — the tree is the source of truth. findSpecFile prefix-matches on
-  // the id, so the filename never changes when the title does.
-  const file = findSpecFile(project, id);
-  if (file) {
-    const m = fs.readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-    if (!m) fail(400, `${path.relative(ROOT, file)}: no frontmatter block`);
-    let [, fm, body] = m;
-    for (const k of keys) {
-      if (k === "body") { body = patch.body; continue; }
-      const line = k === "title" ? `title: ${patch.title}` : `${k}: "${patch[k]}"`; // export-style quoting
-      const re = new RegExp(`^${k}:.*$`, "m");
-      fm = re.test(fm) ? fm.replace(re, line) : `${fm}\n${line}`; // insert if absent (pre-`pr` specs)
-    }
-    fs.writeFileSync(file, `---\n${fm}\n---\n${body}`);
-  } else {
-    console.warn(`warning: no on-disk file for ${project}/${id}; updating DB only`);
-  }
   const sets = [], vals = [];
   for (const k of keys) { sets.push(`${k === "body" ? "body_md" : k}=?`); vals.push(patch[k]); }
   db.prepare(`UPDATE specs SET ${sets.join(", ")}, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?`)
@@ -533,11 +462,6 @@ export function specDelete(db, project, id) {
   const dependents = db.prepare("SELECT id FROM dependencies WHERE project=? AND depends_on=? ORDER BY id")
     .all(project, id).map((r) => r.id);
   if (dependents.length) fail(409, `refusing to delete ${project}/${id}: depended on by ${dependents.join(", ")}`);
-  // files first: a crash here leaves DB rows behind and a delete re-run completes the
-  // cleanup; import can't resurrect a spec whose file is gone
-  const file = findSpecFile(project, id);
-  if (file) fs.rmSync(file, { force: true });
-  fs.rmSync(path.join(ROOT, "specs", project, ".traces", id), { recursive: true, force: true });
   db.exec("BEGIN IMMEDIATE");
   try {
     // ledger is deliberately NOT in this list — it's the append-only outcome record
@@ -561,7 +485,7 @@ function cmdAdd(db, project, title, axis, bodyFile) {
   }
   try {
     const r = specAdd(db, project, title, { axis: axis ?? "", body, actor: "cli" });
-    console.log(`${r.project}/${r.id} created at ${r.path} (draft)`);
+    console.log(`${r.project}/${r.id} created (draft)`);
   } catch (e) { die(e.message); }
 }
 
@@ -578,7 +502,7 @@ function cmdEdit(db, project, id, field, value) {
   }
   try {
     specEdit(db, project, id, patch);
-    console.log(`${project}/${id}: ${field} updated (file + DB)`);
+    console.log(`${project}/${id}: ${field} updated`);
   } catch (e) { die(e.message); }
 }
 
@@ -586,8 +510,22 @@ function cmdDelete(db, project, id) {
   if (!project || !id) die("delete <project> <id>");
   try {
     specDelete(db, project, id);
-    console.log(`${project}/${id} deleted (file, traces, DB history removed; ledger kept)`);
+    console.log(`${project}/${id} deleted (spec, deps, transitions, attempts, snapshots removed; ledger kept)`);
   } catch (e) { die(e.message); }
+}
+
+function cmdDep(db, sub, project, id, dep) {
+  if (!["add", "rm"].includes(sub) || !project || !id || !dep) die("dep <add|rm> <project> <id> <depends_on_id>");
+  getSpec(db, project, id);
+  if (sub === "add") {
+    if (id === dep) die(`${id} cannot depend on itself`);
+    db.prepare("INSERT OR IGNORE INTO dependencies (project,id,depends_on) VALUES (?,?,?)").run(project, id, dep);
+    console.log(`${project}/${id}: depends_on ${dep} recorded`);
+  } else {
+    const res = db.prepare("DELETE FROM dependencies WHERE project=? AND id=? AND depends_on=?").run(project, id, dep);
+    if (res.changes === 0) die(`${project}/${id} has no depends_on ${dep}`);
+    console.log(`${project}/${id}: depends_on ${dep} removed`);
+  }
 }
 
 function cmdRecordAttempt(db, project, id, overall, traceFile) {
@@ -620,11 +558,19 @@ function cmdDrift(db, project, id) {
 }
 
 function cmdSet(db, project, id, field, value) {
-  const allowed = ["branch", "pr", "axis"];
+  // verify_attempts is settable only for the human un-blocking flow (reset to 0 when a
+  // blocked spec is brought back — specs/README.md "Un-blocking a spec"); routine
+  // increments happen exclusively through record-attempt.
+  const allowed = ["branch", "pr", "axis", "verify_attempts"];
   if (!allowed.includes(field)) die(`set supports only: ${allowed.join(", ")}`);
   getSpec(db, project, id);
+  let v = value ?? "";
+  if (field === "verify_attempts") {
+    if (!/^\d+$/.test(String(value))) die("verify_attempts must be a non-negative integer");
+    v = Number(value);
+  }
   db.prepare(`UPDATE specs SET ${field}=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE project=? AND id=?`)
-    .run(value ?? "", project, id);
+    .run(v, project, id);
   console.log(`${project}/${id}: ${field} set`);
 }
 
@@ -892,6 +838,359 @@ function cmdExport(db, project, id) {
   process.stdout.write(fm + "\n" + r.body_md);
 }
 
+// ── lifecycle views: status / check / metrics / trace ─────────────────────────
+// These absorbed the former file-scanning shell scripts (spec-status.sh,
+// check-specs.sh, spec-metrics.sh, spec-trace.sh) at the DB cutover: same reports,
+// computed from rows instead of folders.
+
+function allProjects(db, project) {
+  if (project) return [project];
+  return db.prepare("SELECT DISTINCT project FROM specs ORDER BY project").all().map((r) => r.project);
+}
+
+// Flat "key: value" lookup in state.yaml (line-oriented — the file is data by design).
+function readYamlValue(key) {
+  const text = fs.readFileSync(STATE_YAML, "utf8");
+  const m = text.match(new RegExp(`^\\s*${key}:\\s*(\\S+)`, "m"));
+  return m ? m[1] : "";
+}
+
+function cmdStatus(db, project) {
+  const states = readStates();
+  const projects = allProjects(db, project);
+  if (projects.length === 0) { console.log("No specs recorded."); return; }
+  const chunks = [];
+  for (const p of projects) {
+    const lines = [`Spec status — ${p}`, ""];
+    const counts = Object.fromEntries(
+      db.prepare("SELECT status, COUNT(*) c FROM specs WHERE project=? GROUP BY status").all(p).map((r) => [r.status, r.c])
+    );
+    let total = 0;
+    for (const st of states) {
+      const c = counts[st.name] ?? 0;
+      total += c;
+      lines.push(`  ${st.name.padEnd(22)} ${c}`);
+    }
+    lines.push(`  ${"total".padEnd(22)} ${total}`, "", "Needs attention:");
+    let attention = 0;
+    for (const r of db.prepare(
+      "SELECT id,title,verify_attempts FROM specs WHERE project=? AND status='waiting_verification' AND verify_attempts>0 ORDER BY id"
+    ).all(p)) {
+      lines.push(`  - ${r.id} — ${r.title}: waiting_verification with ${r.verify_attempts} failed attempt(s) — needs a fix pass (see its ## Verification Failures).`);
+      attention++;
+    }
+    for (const r of db.prepare("SELECT id,title FROM specs WHERE project=? AND status='blocked' ORDER BY id").all(p)) {
+      lines.push(`  - ${r.id} — ${r.title}: BLOCKED — needs human review (see specs/README.md "Un-blocking a spec").`);
+      attention++;
+    }
+    // Advisory failure-rate line; fail-open when the threshold key is absent.
+    const threshold = readYamlValue("verify_failure_rate_threshold_pct");
+    const fin = db.prepare("SELECT COUNT(*) c FROM specs WHERE project=? AND status='finished'").get(p).c;
+    if (/^\d+$/.test(threshold) && fin > 0) {
+      const failed = db.prepare("SELECT COUNT(*) c FROM specs WHERE project=? AND status='finished' AND verify_attempts>0").get(p).c;
+      const pct = Math.floor((failed * 100) / fin);
+      if (pct > Number(threshold)) {
+        lines.push(`  - verification failure rate: ${pct}% of finished specs have verify_attempts > 0, above the ${threshold}% threshold (attention.verify_failure_rate_threshold_pct in workflows/state.yaml).`);
+        attention++;
+      }
+    }
+    if (attention === 0) lines.push("  (none)");
+    chunks.push(lines.join("\n"));
+  }
+  console.log(chunks.join("\n\n"));
+}
+
+// Body-section helpers shared by check: bullet paths under ## Files/Interfaces Touched
+// (first backticked span if present, else first token) and presence of a heading.
+function filesTouched(body) {
+  const out = [];
+  let on = false;
+  for (const line of body.split("\n")) {
+    if (/^## Files\/Interfaces Touched/.test(line)) { on = true; continue; }
+    if (/^## /.test(line)) { on = false; continue; }
+    if (on && /^- /.test(line)) {
+      const rest = line.replace(/^- +/, "");
+      const tick = rest.match(/`([^`]+)`/);
+      out.push(tick ? tick[1] : rest.split(/[ \t]/)[0]);
+    }
+  }
+  return out.filter(Boolean);
+}
+
+function cmdCheck(db, project) {
+  const projects = allProjects(db, project);
+  if (projects.length === 0) { console.log("No specs recorded — nothing to check."); return; }
+  const stateNames = readStates().map((s) => s.name);
+  const threshold = Number(process.env.SIZING_THRESHOLD || 5);
+  const templateFile = path.join(ROOT, "specs", "spec-template.md");
+  const requiredSections = fs.existsSync(templateFile)
+    ? [...fs.readFileSync(templateFile, "utf8").matchAll(/^## (.+)$/gm)].map((m) => m[1])
+    : [];
+  let issues = 0;
+  const issue = (tag, msg, hint) => {
+    console.log(`ISSUE [${tag}]: ${msg}`);
+    if (hint) console.log(`  ${hint}`);
+    issues++;
+  };
+  const warn = (tag, msg, hint) => {
+    console.log(`WARN [${tag}]: ${msg}`);
+    if (hint) console.log(`  ${hint}`);
+  };
+  const hasLesson = (id) =>
+    !!db.prepare(
+      "SELECT 1 FROM memory_entries WHERE notebook='lessons' AND deleted=0 AND (spec_id=? OR (heading LIKE '%spec%' AND heading LIKE ?)) LIMIT 1"
+    ).get(id, `%${id}%`);
+
+  for (const p of projects) {
+    const specs = db.prepare("SELECT * FROM specs WHERE project=? ORDER BY id").all(p);
+    if (specs.length === 0) continue;
+    console.log(`Checking ${specs.length} spec(s) in '${p}' ...\n`);
+    const byId = Object.fromEntries(specs.map((s) => [s.id, s]));
+    const deps = {};
+    for (const s of specs) {
+      deps[s.id] = db.prepare("SELECT depends_on FROM dependencies WHERE project=? AND id=? ORDER BY depends_on")
+        .all(p, s.id).map((r) => r.depends_on);
+    }
+
+    // unknown status (the DB doesn't constrain status; state.yaml is the authority)
+    for (const s of specs) {
+      if (!stateNames.includes(s.status)) {
+        issue("unknown-status", `${p}/${s.id} has status '${s.status}', which isn't one of: ${stateNames.join(", ")}.`);
+      }
+    }
+
+    // dangling depends_on + resolved dep graph
+    const graph = {};
+    for (const s of specs) {
+      graph[s.id] = [];
+      for (const d of deps[s.id]) {
+        if (!byId[d]) {
+          issue("dangling-depends_on", `${p}/${s.id} depends_on '${d}', which is not any spec's id in '${p}'.`);
+        } else {
+          graph[s.id].push(d);
+        }
+      }
+    }
+
+    // dep cycles: DFS with white/gray/black coloring
+    const color = {};
+    const dfs = (node, trail) => {
+      color[node] = 1;
+      for (const d of graph[node]) {
+        if (color[d] === 1) {
+          issue("dep-cycle", `depends_on cycle detected: '${node}' -> '${d}' (path: ${[...trail, node].join(" ")}).`);
+        } else if (!color[d]) {
+          dfs(d, [...trail, node]);
+        }
+      }
+      color[node] = 2;
+    };
+    for (const s of specs) if (!color[s.id]) dfs(s.id, []);
+
+    // finished spec depending on unfinished work
+    for (const s of specs) {
+      if (s.status !== "finished") continue;
+      for (const d of graph[s.id]) {
+        if (byId[d].status !== "finished") {
+          issue("finished-dep-unfinished",
+            `spec '${s.id}' is finished but depends_on '${d}' (status: ${byId[d].status}) is not.`,
+            "move's dependency gate should have prevented this — the graph and the statuses disagree.");
+        }
+      }
+    }
+
+    // file-conflict gate across ready/in_progress specs without a depends_on path
+    const eligible = specs.filter((s) => s.status === "ready" || s.status === "in_progress");
+    const reach = (src, dst, seen = new Set()) => {
+      if (src === dst) return true;
+      if (seen.has(src)) return false;
+      seen.add(src);
+      return (graph[src] ?? []).some((d) => reach(d, dst, seen));
+    };
+    const byFile = {};
+    for (const s of eligible) for (const f of filesTouched(s.body_md)) (byFile[f] ??= []).push(s.id);
+    for (const [f, ids] of Object.entries(byFile)) {
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        if (ids[i] !== ids[j] && !reach(ids[i], ids[j]) && !reach(ids[j], ids[i])) {
+          issue("file-conflict",
+            `specs '${ids[i]}' and '${ids[j]}' both touch '${f}' with no depends_on path between them.`,
+            "specs/README.md File-conflict gate: chain the later spec onto the earlier via depends_on.");
+        }
+      }
+    }
+
+    // sizing: Files/Interfaces Touched grown past the one-deliverable rule
+    for (const s of specs) {
+      const n = filesTouched(s.body_md).length;
+      if (n > threshold) {
+        issue("sizing", `${p}/${s.id} lists ${n} files under Files/Interfaces Touched (threshold: ${threshold}).`,
+          "specs/README.md's Rule: one spec = one deliverable. Consider splitting.");
+      }
+    }
+
+    // quality lint: stray clarification markers, stale failures section, missing sections
+    for (const s of specs) {
+      if (s.status !== "draft" && s.body_md.includes("[NEEDS CLARIFICATION:")) {
+        issue("stray-clarification", `${p}/${s.id} carries an unresolved clarification marker outside draft.`,
+          "specs/README.md Ambiguity gate: resolve every marker before a spec leaves draft.");
+      }
+      if (s.verify_attempts === 0 && /^## Verification Failures/m.test(s.body_md)) {
+        issue("stale-failures-section", `${p}/${s.id} has a Verification Failures section but verify_attempts is 0.`,
+          "Only spec-verify writes that section (via record-attempt + edit body) — one of the two is wrong.");
+      }
+      for (const sec of requiredSections) {
+        if (!new RegExp(`^## ${sec.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m").test(s.body_md)) {
+          issue("missing-section", `${p}/${s.id} is missing required section '## ${sec}'.`,
+            "specs/spec-template.md is the canonical section list — every spec carries all of them.");
+        }
+      }
+    }
+
+    // PR traceability: finished specs must carry their PR pointer
+    for (const s of specs) {
+      if (s.status === "finished" && !s.pr) {
+        issue("empty-pr", `${p}/${s.id} is finished but its 'pr' field is empty.`,
+          "spec-exec records the PR URL when the draft PR opens (spec-db.mjs set <project> <id> pr <url>) — backfill it.");
+      }
+    }
+
+    // memory writeback: escalations must leave a lessons entry
+    for (const s of specs) {
+      if (s.status === "blocked" && !hasLesson(s.id)) {
+        issue("missing-lesson", `${p}/${s.id} is blocked but the lessons notebook has no entry tagged (spec ${s.id}).`,
+          "spec-verify Phase 6b: a blocked escalation always gets a lessons entry.");
+      } else if (s.status === "waiting_verification" && s.verify_attempts > 0 && !hasLesson(s.id)) {
+        warn("missing-lesson", `${p}/${s.id} has ${s.verify_attempts} failed attempt(s) but the lessons notebook has no entry tagged (spec ${s.id}).`,
+          "Advisory: spec-verify Phase 6a writes one on every failed verification.");
+      }
+    }
+  }
+
+  console.log("");
+  if (issues === 0) {
+    console.log("No issues found.");
+  } else {
+    console.log(`${issues} issue(s) found.`);
+    process.exitCode = 1;
+  }
+}
+
+function cmdMetrics(db, project) {
+  const projects = allProjects(db, project);
+  if (projects.length === 0) { console.log("No specs recorded."); return; }
+  for (const p of projects) {
+    const specs = db.prepare("SELECT * FROM specs WHERE project=? ORDER BY id").all(p);
+    console.log(`Spec metrics — ${p}\n`);
+    console.log("Verify attempts distribution:");
+    if (specs.length === 0) {
+      console.log("  (no specs)");
+    } else {
+      const dist = db.prepare(
+        "SELECT verify_attempts v, COUNT(*) c FROM specs WHERE project=? GROUP BY verify_attempts ORDER BY verify_attempts"
+      ).all(p);
+      for (const r of dist) console.log(`  ${("attempts=" + r.v).padEnd(22)} ${r.c} spec(s)`);
+    }
+    const fin = specs.filter((s) => s.status === "finished");
+    const failed = fin.filter((s) => s.verify_attempts > 0).length;
+    console.log("\nVerification failure rate:");
+    if (fin.length === 0) {
+      console.log("  0 of 0 finished spec(s) failed verification at least once (n/a)");
+    } else {
+      console.log(`  ${failed} of ${fin.length} finished spec(s) failed verification at least once (${Math.floor((failed * 100) / fin.length)}%)`);
+    }
+    const deps = {};
+    for (const s of specs) {
+      deps[s.id] = db.prepare("SELECT depends_on FROM dependencies WHERE project=? AND id=?").all(p, s.id).map((r) => r.depends_on);
+    }
+    const withDeps = specs.filter((s) => deps[s.id].length > 0).length;
+    // iterative fixed-point depth, capped by spec count (cycles are check's job)
+    const depth = Object.fromEntries(specs.map((s) => [s.id, 1]));
+    for (let iter = 0; iter < specs.length; iter++) {
+      let changed = false;
+      for (const s of specs) {
+        const best = Math.max(1, ...deps[s.id].filter((d) => depth[d]).map((d) => depth[d] + 1));
+        if (best > depth[s.id]) { depth[s.id] = best; changed = true; }
+      }
+      if (!changed) break;
+    }
+    console.log("\nDependency stats:");
+    console.log(`  ${"specs with depends_on".padEnd(22)} ${withDeps}`);
+    console.log(`  ${"max chain depth".padEnd(22)} ${specs.length ? Math.max(...Object.values(depth)) : 0} spec(s)`);
+    // cycle time: first ready -> first finished transition, whole days
+    console.log("\nCycle time (finished specs, ready -> finished):");
+    let rows = 0;
+    for (const s of fin) {
+      const ts = (state) => db.prepare(
+        "SELECT at FROM transitions WHERE project=? AND id=? AND to_state=? ORDER BY seq LIMIT 1"
+      ).get(p, s.id, state)?.at;
+      const ready = ts("ready"), done = ts("finished");
+      if (!ready || !done) continue;
+      const days = Math.floor((Date.parse(done) - Date.parse(ready)) / 86400000);
+      console.log(`  ${s.id.padEnd(22)} ${days} day(s)`);
+      rows++;
+    }
+    if (rows === 0) console.log("  (no finished specs with ready+finished transitions)");
+    console.log("");
+  }
+}
+
+function cmdTrace(db, ...args) {
+  if (args[0] === "diff") {
+    const [, project, id, a, b] = args;
+    if (!project || !id || (a && !b)) die("trace diff <project> <id> [attempt_a attempt_b]");
+    getSpec(db, project, id);
+    const att = (n) => db.prepare("SELECT n,trace_md FROM attempts WHERE project=? AND id=? AND n=?").get(project, id, Number(n));
+    let A = a, B = b;
+    if (!A) {
+      const ns = db.prepare("SELECT n FROM attempts WHERE project=? AND id=? ORDER BY n").all(project, id).map((r) => r.n);
+      if (ns.length < 2) die(`spec ${id} has fewer than two attempts — nothing to diff.`);
+      B = ns[ns.length - 1];
+      A = ns[ns.length - 2];
+    }
+    const ra = att(A), rb = att(B);
+    if (!ra) die(`no attempt-${A} trace for spec ${id} in '${project}'.`);
+    if (!rb) die(`no attempt-${B} trace for spec ${id} in '${project}'.`);
+    console.log(`Trace diff — spec ${id}: attempt-${A} vs attempt-${B}`);
+    // Shell out to diff(1) over temp files — a real diff beats a hand-rolled one, and
+    // diff exits 1 when files differ, which is the expected success case here.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spec-trace-"));
+    try {
+      const fa = path.join(dir, `attempt-${A}.md`), fb = path.join(dir, `attempt-${B}.md`);
+      fs.writeFileSync(fa, ra.trace_md);
+      fs.writeFileSync(fb, rb.trace_md);
+      const res = spawnSync("diff", ["-u", fa, fb], { encoding: "utf8" });
+      process.stdout.write(res.stdout ?? "");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    return;
+  }
+  const [project, id, n] = args;
+  if (!id) {
+    // list mode: specs with traces, per project (all projects when none named)
+    const projects = allProjects(db, project);
+    if (projects.length === 0) { console.log("No verification traces recorded."); return; }
+    for (const p of projects) {
+      const rows = db.prepare(
+        "SELECT id, COUNT(*) c, MAX(n) latest FROM attempts WHERE project=? GROUP BY id ORDER BY id"
+      ).all(p);
+      console.log(`Verification traces — ${p}`);
+      if (rows.length === 0) { console.log("  (none)"); continue; }
+      for (const r of rows) console.log(`  ${r.id} — ${r.c} attempt(s), latest: attempt-${r.latest}`);
+    }
+    return;
+  }
+  getSpec(db, project, id);
+  const row = n
+    ? db.prepare("SELECT n,overall,trace_md FROM attempts WHERE project=? AND id=? AND n=?").get(project, id, Number(n))
+    : db.prepare("SELECT n,overall,trace_md FROM attempts WHERE project=? AND id=? ORDER BY n DESC LIMIT 1").get(project, id);
+  if (!row) {
+    die(n ? `no attempt-${n} trace for spec ${id} in '${project}'.` : `no verification trace for spec ${id} in '${project}'.`);
+  }
+  process.stdout.write(row.trace_md);
+  if (row.trace_md && !row.trace_md.endsWith("\n")) process.stdout.write("\n");
+}
+
 // ── dispatch ──────────────────────────────────────────────────────────────────
 // Realpath-based main-module guard (mirrors the es-main npm package, kept inline —
 // zero-dependency repo). Node resolves the ESM entry point to its realpath, so a naive
@@ -905,6 +1204,14 @@ const isMain = (() => {
 })();
 const [cmd, ...args] = process.argv.slice(2);
 if (isMain) {
+  // Read-only views must not create spec.db as a side effect on a fresh clone (opening
+  // the DatabaseSync would) — they report an empty state and exit 0 so `make check`
+  // and the session-start hook are clean before the first `init`/`add`.
+  const READ_ONLY = ["list", "show", "status", "check", "metrics", "trace", "ledger", "drift", "export"];
+  if (READ_ONLY.includes(cmd) && !fs.existsSync(DB_PATH)) {
+    console.log("No spec.db yet — run 'scripts/spec-db.mjs init' first. Nothing to report.");
+    process.exit(0);
+  }
   const db = openDb();
   switch (cmd) {
     case "init": cmdInit(db); break;
@@ -915,15 +1222,20 @@ if (isMain) {
     case "add": cmdAdd(db, args[0], args[1], args[2], args[3]); break;
     case "edit": cmdEdit(db, args[0], args[1], args[2], args[3]); break;
     case "delete": cmdDelete(db, args[0], args[1]); break;
+    case "dep": cmdDep(db, args[0], args[1], args[2], args[3]); break;
     case "record-attempt": cmdRecordAttempt(db, args[0], args[1], args[2], args[3]); break;
     case "drift": cmdDrift(db, args[0], args[1]); break;
     case "set": cmdSet(db, args[0], args[1], args[2], args[3]); break;
+    case "status": cmdStatus(db, args[0]); break;
+    case "check": cmdCheck(db, args[0]); break;
+    case "metrics": cmdMetrics(db, args[0]); break;
+    case "trace": cmdTrace(db, ...args); break;
     case "memory": cmdMemory(db, ...args); break;
     case "research": cmdResearch(db, ...args); break;
     case "ledger": cmdLedger(db, args[0], args[1]); break;
     case "export": cmdExport(db, args[0], args[1]); break;
     default:
-      console.error("Usage: spec-db.mjs <init|import|list|show|move|add|edit|delete|record-attempt|drift|set|memory|research|ledger|export> ...");
+      console.error("Usage: spec-db.mjs <init|import|list|show|move|add|edit|delete|dep|record-attempt|drift|set|status|check|metrics|trace|memory|research|ledger|export> ...");
       process.exit(1);
   }
 }

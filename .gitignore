@@ -10,10 +10,6 @@ node_modules/
 .claude/memory-vectors.db
 .claude/memory-vectors.db-*
 memory-archive/
-specs/*.md
-!specs/README.md
-!specs/spec-template.md
-specs/*/*/*.md
 /research/
 projects/*
 !projects/.gitkeep

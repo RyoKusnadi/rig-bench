@@ -12,7 +12,7 @@
 // job is to catch the honest-mistake case. It fails OPEN on malformed input so a protocol
 // change can't brick every Bash call — the stderr note keeps that observable.
 //
-// No dependencies — Node built-ins only. Spec: specs/template/*/0004-pre-bash-safety-hook.md
+// No dependencies — Node built-ins only. Spec: 0004 (pre-bash safety hook).
 
 const DESTRUCTIVE_PATTERNS = [
   {

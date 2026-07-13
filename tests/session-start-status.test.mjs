@@ -1,7 +1,7 @@
 // session-start-status.test.mjs — behavior tests for the SessionStart status hook.
-// Spawns the hook with cwd pointed at fixture trees (a specs/<project>/ skeleton plus
-// the real spec-status.sh and its state.yaml dependency), matching how
-// post-spec-edit-check.test.mjs exercises hook+script integration. Spec 0017.
+// Spawns the hook with cwd pointed at fixture repos (scripts/spec-db.mjs + state.yaml +
+// a seeded spec.db), matching how post-spec-edit-check.test.mjs exercises hook+CLI
+// integration. Spec 0017.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -28,68 +28,53 @@ function makeFixture(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, "scripts"));
   fs.mkdirSync(path.join(dir, "workflows"));
-  fs.copyFileSync(
-    path.join(ROOT, "scripts", "spec-status.sh"),
-    path.join(dir, "scripts", "spec-status.sh"),
-  );
-  fs.chmodSync(path.join(dir, "scripts", "spec-status.sh"), 0o755);
-  fs.copyFileSync(
-    path.join(ROOT, "workflows", "state.yaml"),
-    path.join(dir, "workflows", "state.yaml"),
-  );
+  fs.copyFileSync(path.join(ROOT, "scripts", "spec-db.mjs"), path.join(dir, "scripts", "spec-db.mjs"));
+  fs.copyFileSync(path.join(ROOT, "workflows", "state.yaml"), path.join(dir, "workflows", "state.yaml"));
   return dir;
 }
 
-test("prints spec-status output for each project at session start", (t) => {
+function db(dir, ...args) {
+  return spawnSync("node", ["--no-warnings", path.join(dir, "scripts", "spec-db.mjs"), ...args], {
+    encoding: "utf8",
+    cwd: dir,
+  });
+}
+
+test("prints spec-db status output for each project at session start", (t) => {
   const dir = makeFixture(t);
-  for (const p of ["alpha", "beta"]) {
-    fs.mkdirSync(path.join(dir, "specs", p, "ready"), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, "specs", p, "ready", "0001-a.md"),
-      `---\nid: "0001"\ntitle: A\nstatus: ready\n---\n\n# a\n`,
-    );
-  }
+  db(dir, "init");
+  db(dir, "add", "alpha", "A");
+  db(dir, "add", "beta", "B");
   const out = runHook(dir);
   assert.equal(out.code, 0, out.stderr);
-  assert.match(out.stdout, /Spec status — specs\/alpha\//);
-  assert.match(out.stdout, /Spec status — specs\/beta\//);
+  assert.match(out.stdout, /Spec status — alpha/);
+  assert.match(out.stdout, /Spec status — beta/);
 });
 
-test("empty specs/ → silent exit 0 (fail-open)", (t) => {
+test("empty DB (no specs recorded) → silent exit 0 (fail-open)", (t) => {
   const dir = makeFixture(t);
-  fs.mkdirSync(path.join(dir, "specs"));
+  db(dir, "init");
+  const out = runHook(dir);
+  assert.equal(out.code, 0);
+  assert.equal(out.stdout, "");
+});
+
+test("no spec.db at all → silent exit 0 (fail-open)", (t) => {
+  const dir = makeFixture(t);
   const out = runHook(dir);
   assert.equal(out.code, 0);
   assert.equal(out.stdout, "");
   assert.match(out.stderr, /fail-open/);
 });
 
-test("no specs/ directory at all → silent exit 0 (fail-open)", (t) => {
+test("missing CLI → silent exit 0 (fail-open)", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rig-bench-session-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, "spec.db"), ""); // DB present, CLI absent
   const out = runHook(dir);
   assert.equal(out.code, 0);
   assert.equal(out.stdout, "");
   assert.match(out.stderr, /fail-open/);
-});
-
-test("a project spec-status can't read is skipped, others still print", (t) => {
-  const dir = makeFixture(t);
-  fs.mkdirSync(path.join(dir, "specs", "good", "ready"), { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, "specs", "good", "ready", "0001-a.md"),
-    `---\nid: "0001"\ntitle: A\nstatus: ready\n---\n\n# a\n`,
-  );
-  // A project entry spec-status.sh errors on: a name it can't resolve as a dir
-  // once listed — simulate by removing read permission is flaky cross-platform,
-  // so instead point at a project whose folder disappears between listing and run.
-  // Simpler deterministic failure: a file named like a project is filtered out by
-  // the directories-only listing, so assert the good project still prints.
-  fs.writeFileSync(path.join(dir, "specs", "not-a-project.md"), "decoy\n");
-  const out = runHook(dir);
-  assert.equal(out.code, 0, out.stderr);
-  assert.match(out.stdout, /Spec status — specs\/good\//);
-  assert.doesNotMatch(out.stdout, /not-a-project/);
 });
 
 test("hook is registered under SessionStart in settings.json", () => {

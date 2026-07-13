@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repo.
 
 ## What this repo is
 
-A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `specs/` — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency scripts, file-based memory, and the thin dispatch agents. There is deliberately no standing plan doc in the tree: the rebuild's rationale and phase history live in the merged PRs, git history, and the memory notebooks (`spec-db.mjs memory decisions`).
+A spec-driven harness for Claude Code. The original subsystems (hooks, workflows, agents, memory, telemetry, research) were stripped to a skeleton and are being rebuilt spec-by-spec through the lifecycle in `spec.db` (the SQLite system of record, operated via `scripts/spec-db.mjs` — there is no spec-file tree) — the rebuilt pieces so far are the three spec skills, the safety and drift hooks, the consistency checks, DB-backed memory, and the thin dispatch agents. There is deliberately no standing plan doc in the tree: the rebuild's rationale and phase history live in the merged PRs, git history, and the memory notebooks (`spec-db.mjs memory decisions`).
 
 ## Non-negotiables
 
@@ -19,10 +19,10 @@ here rather than duplicating it into the skill, so there's one place to change i
 - **Auth-, secrets-, or credential-touching specs need an explicit security note** in
   `Implementation Notes` — what's being trusted, what the failure mode looks like if it's
   wrong. Silence on this for such a spec is a gap, not an indication there's nothing to say.
-- **Spec documents are never committed.** Files under `specs/<project>/*/` (and their
-  `.traces/`) are local working state — the gitignore enforces this; never `git add -f` a
-  spec file. Commits and PRs carry implementation changes only; the outcome ledger and
-  the DB memory notebooks are the durable record.
+- **Spec content is never committed.** Specs live only in `spec.db` (gitignored,
+  per-machine) — never export spec bodies into tracked files or `git add -f` the DB.
+  Commits and PRs carry implementation changes only; the outcome ledger and the DB
+  memory notebooks are the durable record.
 - **Never commit directly to a project's default branch.** Every change goes through a
   feature branch and a PR, even for one-line fixes — this repo's whole model depends on PRs
   being the reviewable unit.
@@ -49,19 +49,18 @@ prints markdown for backup or transfer; the DB is per-machine, like the specs it
 
 | Directory | Contents |
 |---|---|
-| `specs/spec-template.md` | Canonical spec template |
-| `specs/<project_name>/` | Per-project spec lifecycle folders (`draft/`, `ready/`, `in_progress/`, etc.) — `specs/template/` is this harness's own specs |
+| `spec.db` | SQLite system of record for the spec lifecycle (gitignored, per-machine) — specs, dependencies, transitions, verification attempts + traces, ledger, memory notebooks, research reports |
+| `specs/` | The two shared documents only: `README.md` (conventions + canonical state table) and `spec-template.md` (canonical spec shape) — spec content itself lives in the DB |
 | `.claude/skills/spec-plan/` | Skill covering the planning phase of the spec lifecycle |
 | `.claude/skills/spec-exec/` | Skill covering the execution phase of the spec lifecycle |
 | `.claude/skills/spec-verify/` | Skill covering the verification phase of the spec lifecycle |
 | `.claude/skills/research/` | `/research <topic>` — web-search-backed learning guides, saved via `spec-db.mjs research add`, browsable in the dashboard's research panel |
 | `.claude/agents/` | `spec-executor.md`, `spec-verifier.md` — thin dispatch entry points into the skills |
-| `workflows/state.yaml` | Machine-readable mirror of the spec lifecycle state table (data only, no orchestration code — see `specs/README.md` "State Transitions") |
+| `workflows/state.yaml` | Machine-readable spec lifecycle state table (data only, no orchestration code — `spec-db.mjs move` enforces its `valid_next` at write time; see `specs/README.md` "State Transitions") |
 | `memory/` | Memory system: notebooks (decisions, gotchas, lessons) live in the DB as `memory_entries` — write via `spec-db.mjs memory add`, read via `memory`/`memory search`/`memory show`, back up via `memory export`. `memory/README.md` documents conventions. |
-| `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback on edit) |
+| `hooks/` | `pre-bash-safety.mjs` (destructive-git confirmation gate), `post-spec-edit-check.mjs` (spec-drift feedback after `spec-db.mjs` mutations), `session-start-status.mjs` (lifecycle status into session context) |
 | `lib/` | Placeholder (`.gitkeep`) |
-| `scripts/` | Utility scripts (`check-specs.sh`, `check-state-sync.sh`, `spec-trace.sh` — query view over verification traces, `spec-db.mjs` — SQLite system of record for the lifecycle: import/list/show/move with transition + dependency enforcement, attempts, ledger, criteria-drift, research reports, export; `spec-server.mjs` — read-only JSON API + dashboard at `web/index.html`) |
-| `specs/<project>/.traces/` | Raw per-attempt verification traces written by `spec-verify`, read by `spec-exec` on a fix, cleared on success |
+| `scripts/` | `spec-db.mjs` — the lifecycle CLI: add/list/show/edit/move/dep with transition + dependency enforcement, record-attempt, drift, plus the read-only views (`status`, `check`, `metrics`, `trace`), memory, research, ledger, export, and legacy `import`; `check-state-sync.sh` (state-table sync between `workflows/state.yaml` and `specs/README.md`); `worktree-status.sh` (dispatch-worktree hygiene); `spec-server.mjs` — read-only JSON API + dashboard at `web/index.html` |
 | `config/schemas/` | Placeholder (`.gitkeep`) |
 | `tests/` | `node --test` suites (run via `npm test`) |
 | `projects/` | Placeholder (`.gitkeep`) |
@@ -70,7 +69,7 @@ prints markdown for backup or transfer; the DB is per-machine, like the specs it
 
 ```bash
 make clean   # git clean -fdX
-make check   # state-table sync check + per-spec consistency checks (incl. dep-graph)
+make check   # state-table sync check + per-spec consistency checks over spec.db (incl. dep-graph)
 make status  # per-state spec counts + attention items (failed attempts, blocked)
-npm test     # node --test suites (hooks)
+npm test     # node --test suites (hooks + lifecycle CLI)
 ```

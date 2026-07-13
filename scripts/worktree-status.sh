@@ -3,17 +3,16 @@
 #
 # Lists every git worktree matching the dispatch naming convention (branch
 # `spec-<id>-<slug>`, or path `*-wt-<id>` — see spec-exec's "Concurrent dispatch"),
-# resolves each spec's current lifecycle folder, and flags worktrees whose spec is no
-# longer in in_progress/ as stale — printing the exact cleanup command WITHOUT running
-# it. Deliberately performs no mutation of any kind: per CLAUDE.md's non-negotiables,
-# destructive cleanup stays a human-executed command; this script's job ends at
-# printing it. The failure mode of wrong staleness logic is therefore a human being
-# shown a wrong suggestion they still have to run themselves.
+# resolves each spec's current lifecycle state from spec.db (via scripts/spec-db.mjs),
+# and flags worktrees whose spec is no longer in_progress as stale — printing the exact
+# cleanup command WITHOUT running it. Deliberately performs no mutation of any kind:
+# per CLAUDE.md's non-negotiables, destructive cleanup stays a human-executed command;
+# this script's job ends at printing it. The failure mode of wrong staleness logic is
+# therefore a human being shown a wrong suggestion they still have to run themselves.
 #
 # Usage: scripts/worktree-status.sh        (also: make worktrees)
 #
-# Dependency-free bash/awk per memory/decisions.md, bash-3.2 compatible per
-# memory/gotchas.md. Spec: specs/template/*/0019-worktree-hygiene.md
+# bash-3.2 compatible per the gotchas notebook. Spec: 0019 (worktree hygiene).
 
 set -euo pipefail
 
@@ -60,18 +59,17 @@ while IFS='	' read -r wpath wbranch; do
   fi
   [[ -z "$id" ]] && continue
   FOUND=$((FOUND + 1))
-  # A spec found in no lifecycle folder reports as unknown — its worktree definitely
-  # shouldn't exist, so unknown is treated as stale like any non-in_progress state.
-  spec_file="$(find specs -mindepth 3 -maxdepth 3 -name "${id}-*.md" 2>/dev/null | head -1 || true)"
-  if [[ -n "$spec_file" ]]; then
-    state="$(basename "$(dirname "$spec_file")")"
-  else
-    state="unknown"
-  fi
+  # A spec the DB doesn't know reports as unknown — its worktree definitely shouldn't
+  # exist, so unknown is treated as stale like any non-in_progress state. Lookup is a
+  # grep over `spec-db.mjs list` output (`project/<id>  [state]  ...`), first match wins
+  # when the same id exists in multiple projects; a missing DB or node yields unknown.
+  state="$(node --no-warnings scripts/spec-db.mjs list 2>/dev/null \
+    | awk -v id="$id" '$1 ~ ("/" id "$") { gsub(/[][]/, "", $2); print $2; exit }')"
+  [[ -z "$state" ]] && state="unknown"
   printf "  %s\n    branch=%s  spec=%s  state=%s\n" "$wpath" "${wbranch:-(detached)}" "$id" "$state"
   if [[ "$state" != "in_progress" ]]; then
     STALE=$((STALE + 1))
-    echo "    STALE — spec is not in in_progress/. Suggested cleanup (not executed here):"
+    echo "    STALE — spec is not in_progress. Suggested cleanup (not executed here):"
     echo "      git worktree remove ${wpath}"
   fi
 done <<EOF

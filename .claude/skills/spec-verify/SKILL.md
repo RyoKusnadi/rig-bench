@@ -1,18 +1,20 @@
 ---
 name: spec-verify
-description: Checks a spec's implementation against its Acceptance Criteria and Verification step, then moves passing specs from waiting_verification/ to finished/ under specs/<project>/. Use whenever the user asks to verify, check, confirm, or sign off on a spec — phrases like "verify 0001", "check if the specs are done", "did that implementation actually meet the criteria", "confirm 0003 and 0004 are good to ship", "is the waiting_verification stuff ready", or "sign off on the ready ones". Does not apply to implementing a spec that hasn't been built yet (use spec-exec for that) or to designing a spec that doesn't exist yet (use spec-plan) — see the skill body for the full boundary.
+description: Checks a spec's implementation against its Acceptance Criteria and Verification step, then moves passing specs from waiting_verification to finished in spec.db. Use whenever the user asks to verify, check, confirm, or sign off on a spec — phrases like "verify 0001", "check if the specs are done", "did that implementation actually meet the criteria", "confirm 0003 and 0004 are good to ship", "is the waiting_verification stuff ready", or "sign off on the ready ones". Does not apply to implementing a spec that hasn't been built yet (use spec-exec for that) or to designing a spec that doesn't exist yet (use spec-plan) — see the skill body for the full boundary.
 ---
 
 # Spec Verification
 
 This skill runs the confirmation half of this repo's spec-driven workflow: a spec sitting in
-`waiting_verification/` gets checked against its own `Acceptance Criteria` and `Verification`
-sections, and only moves to `finished/` if every check actually passes. The spec is the
-source of truth for what "done" means here too — verification checks the code against what
-the spec says, not against what the implementation happened to do.
+`waiting_verification` gets checked against its own `Acceptance Criteria` and `Verification`
+sections, and only moves to `finished` if every check actually passes. Specs live in the
+SQLite system of record (`spec.db`, via `scripts/spec-db.mjs`) — every read, every attempt
+record, and every lifecycle move below goes through that CLI. The spec is the source of
+truth for what "done" means here too — verification checks the code against what the spec
+says, not against what the implementation happened to do.
 
 **When this applies:** any request to verify, check, confirm, or sign off on specs that
-already have an implementation sitting in `waiting_verification/` — including proactively,
+already have an implementation sitting in `waiting_verification` — including proactively,
 when a user says "is that done?" or "did it actually work?" about a spec already at that
 stage. This does *not* apply to implementing a spec that hasn't been built yet (use the
 `spec-exec` skill first) or to designing a spec that doesn't exist yet (use `spec-plan`) —
@@ -28,28 +30,24 @@ Follow "Resolving the target project" in `specs/README.md` — the canonical pro
 by every entry point into the spec workflow. If the task clearly names or implies a project,
 use it; otherwise apply the resolution order described there rather than guessing.
 
-All `specs/...` paths below are relative to `specs/<project>/` — e.g. "`finished/`" means
-`specs/<project>/finished/`.
-
 ## Phase 1 — Discover specs
 
 List specs awaiting verification:
 ```bash
-ls specs/<project>/waiting_verification/ 2>/dev/null | grep '\.md$'
+node scripts/spec-db.mjs list <project> waiting_verification
 ```
 
-Read the frontmatter of each file and extract:
+For each, `node scripts/spec-db.mjs show <project> <id>` gives:
 - `id` — zero-padded 4-digit string (e.g. `0001`)
 - `title` — short imperative title
 - `status` — should be `waiting_verification`
-- `verify_attempts` — how many times this spec has already failed verification (default `0`
-  if the field predates this being tracked; treat a missing field as `0`, don't error on it)
+- `attempts` — how many times this spec has already failed verification (the
+  `verify_attempts` counter; `record-attempt` maintains it)
+- the full body, from which to extract:
+  - `Acceptance Criteria` — the EARS-style behavioral sentences that must hold
+  - `Verification` — the concrete end-to-end check defined at authoring time
 
-Also read the full body of each file to extract:
-- `Acceptance Criteria` — the EARS-style behavioral sentences that must hold
-- `Verification` — the concrete end-to-end check defined at authoring time
-
-If the folder is empty, report "No specs are waiting verification." and stop.
+If nothing is waiting, report "No specs are waiting verification." and stop.
 
 ## Phase 2 — Determine which specs to verify
 
@@ -57,13 +55,13 @@ If the folder is empty, report "No specs are waiting verification." and stop.
   show each as `{id} — {title}`, and offer "all waiting specs" as an option.
 - **User said "all"**: select every discovered spec.
 - **User named specific IDs** (e.g. "0001 and 0003"): select only those. If any named ID
-  isn't found in `waiting_verification/`, stop and report the missing ID rather than silently
+  isn't in `waiting_verification`, stop and report the missing ID rather than silently
   skipping it.
 
 ## Phase 3 — Verify each spec
 
 For each selected spec, work through the following checks in order. Collect results before
-moving any files.
+moving any specs.
 
 **3a. Read the implementation**
 
@@ -112,10 +110,18 @@ is a gap worth flagging, not a verification failure.
 
 **3d. Capture the verification trace**
 
-Before reporting, write the *raw* record of this verification run to
-`specs/<project>/.traces/<id>/attempt-<N>.md`, where `<N>` is this run's attempt number —
-`verify_attempts + 1` (the value it will hold if this run fails; use it whether the run
-passes or fails so a passing first run is `attempt-1`). Create the directory if needed.
+Before reporting, write the *raw* record of this verification run to a scratch file (e.g.
+under `/tmp/`), then record it into the DB:
+
+```bash
+node scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> <trace-file>
+```
+
+`record-attempt` stores the full trace as this run's attempt row and, on FAIL, increments
+the spec's `verify_attempts` counter — the counter and the trace land in one step; never
+edit the counter by hand. Record the attempt whether the run passes or fails, so a passing
+first run is `attempt-1`. Traces are queryable afterward with
+`node scripts/spec-db.mjs trace <project> <id> [n]` (and `trace diff` between attempts).
 
 The trace is the raw complement to the compressed `## Verification Failures` summary: the
 Meta-Harness result this repo borrows from is that an implementer fed raw execution traces
@@ -143,17 +149,11 @@ $ <exact gate commands run>
 <full output, same truncation rule; or "no gates defined for this project">
 ```
 
-Keep it factual and raw — this file exists so the fix loop can read what actually happened,
-not a second summary of it. For a manual/human-confirmed verification step, record the
-check described and the human's confirmation in place of command output. Writing the trace
-never blocks the verdict: if the trace can't be written, note it in the report and continue.
-
-Dual-write the same attempt into the DB:
-`node scripts/spec-db.mjs record-attempt <project> <id> <PASS|FAIL> <trace-file>` — it
-stores the raw trace and, on FAIL, increments the DB-side attempt counter (the frontmatter
-`verify_attempts` remains the file-side counter; during the dual-write period the file tree
-is still the source of truth and the DB mirrors it — reconcile any divergence in the file's
-favor with `node scripts/spec-db.mjs import <project>`).
+Keep it factual and raw — this record exists so the fix loop can read what actually
+happened, not a second summary of it. For a manual/human-confirmed verification step,
+record the check described and the human's confirmation in place of command output.
+Recording the trace never blocks the verdict: if `record-attempt` fails, note it in the
+report and continue.
 
 ## Phase 4 — Report results
 
@@ -174,38 +174,32 @@ Overall: PASS / FAIL
 
 For every spec where **all** criteria and the verification step passed:
 
-If the file has a `## Verification Failures` section from an earlier failed attempt, remove
-it — a shipped spec shouldn't carry stale failure history in the working tree; the git history
-of the file is the permanent record of what failed before, per "Clearing the record on
-success" in `specs/README.md`.
+If the body has a `## Verification Failures` section from an earlier failed attempt, remove
+it — a shipped spec shouldn't carry stale failure history in its body. Fetch the current
+body, strip the section, and write it back:
 
-In the same clearing step, remove this spec's trace directory if present
-(`git rm -r --quiet specs/<project>/.traces/<id>` when tracked, else `rm -rf`) — the traces
-are the raw form of that same failure history and clear on success for the same reason; git
-history keeps them. A spec that passes on its first attempt still wrote an `attempt-1` trace
-in Phase 3d; remove it here too so `finished/` specs never carry a trace dir.
+```bash
+node scripts/spec-db.mjs show <project> <id>        # body is everything after the --- line
+# edit the body in a scratch file, removing the ## Verification Failures section
+node scripts/spec-db.mjs edit <project> <id> body <scratch-file>
+```
 
-If the spec's `pr` frontmatter field is non-empty, confirm the PR's state with
+The raw failure history stays queryable regardless — attempt rows (and their traces) are
+never deleted; `trace <project> <id> <n>` reaches every past attempt. That permanence is
+why the body section can be cleared on success without losing the record.
+
+If the spec's `pr` field is non-empty, confirm the PR's state with
 `gh pr view <url> --json state` and include it in the report — advisory only, never a FAIL:
 merging is a human action that may legitimately still be pending, and `gh` may be missing or
-unauthenticated (note which, and move on). A finished spec whose `pr` field is *empty* while
-the key exists will be flagged by `check-specs.sh` — backfill it from the
-implementation report before moving the file.
+unauthenticated (note which, and move on). A finished spec whose `pr` field is *empty* will
+be flagged by `spec-db.mjs check` — backfill it from the implementation report
+(`spec-db.mjs set <project> <id> pr <url>`) before the move.
 
 ```bash
 node scripts/spec-db.mjs move <project> <id> finished spec-verify   # gates + auto-ledgers
-mv specs/<project>/waiting_verification/<filename> specs/<project>/finished/<filename>
 ```
 
-Update the `status` field in the spec frontmatter from `waiting_verification` to `finished`,
-and append a `history` entry (`- finished $(date -u +%Y-%m-%dT%H:%M:%SZ)`) in the same step
-(see the template's `history` note — same for the `blocked` move in Phase 6b).
-
-Spec documents are never committed (a repo invariant — see CLAUDE.md's Non-negotiables),
-so the move is local working state: no add/commit of spec paths; the ledger entry below is
-the durable record of the outcome.
-
-The `move` above already appended the outcome to the DB ledger (terminal states
+The `move` records the transition and appended the outcome to the ledger (terminal states
 auto-ledger); confirm with `node scripts/spec-db.mjs ledger <project> finished` if needed.
 
 Report: `Spec {id} — {title}: verified and moved to finished.`
@@ -218,11 +212,12 @@ canonical description; the steps below are just this skill's execution of it.
 
 **6a. Record the failure**
 
-1. Increment `verify_attempts` by 1 in the spec's frontmatter (treat a missing field as `0`
-   before incrementing, so it becomes `1`).
+1. The Phase 3d `record-attempt ... FAIL` already incremented `verify_attempts` and stored
+   the trace — read the new count back from `show` if you don't have it.
 2. Write a `## Verification Failures` section into the spec body (append it if absent,
    otherwise replace the existing one — don't accumulate failure history across attempts,
-   the current attempt's list is what matters). Format:
+   the current attempt's list is what matters). Same fetch-edit-write flow as Phase 5:
+   `show` → edit scratch file → `edit <project> <id> body <scratch-file>`. Format:
    ```
    ## Verification Failures
 
@@ -235,9 +230,9 @@ canonical description; the steps below are just this skill's execution of it.
    ```
    Only list what actually failed — passing criteria don't need an entry here (Phase 4's
    report already covers those). This section stays compressed on purpose; the raw command
-   output behind each failed line lives in the Phase 3d trace at
-   `specs/<project>/.traces/<id>/attempt-<verify_attempts>.md`, which the fix loop reads
-   alongside this list. Point at the trace rather than pasting its output here.
+   output behind each failed line lives in the attempt trace
+   (`spec-db.mjs trace <project> <id>`), which the fix loop reads alongside this list.
+   Point at the trace rather than pasting its output here.
 3. Record a distilled lessons entry in the DB (conventions per `memory/README.md`,
    provenance tag in the heading required):
    `node scripts/spec-db.mjs memory add lessons "<date> — <title> (spec <id>)" "<body>" <id>`
@@ -251,29 +246,22 @@ canonical description; the steps below are just this skill's execution of it.
 `MAX_VERIFY_ATTEMPTS = 2` (defined in `specs/README.md`, don't hardcode a different number
 here — if it ever changes, that's the one place to change it).
 
-- **If `verify_attempts < MAX_VERIFY_ATTEMPTS`:** leave the file in
-  `specs/<project>/waiting_verification/` — do not move it, `status` unchanged. The
-  updated spec file and trace stay local (spec documents are never committed) — the fix
-  loop reads them from disk; nothing about the retry contract depends on git.
+- **If `verify_attempts < MAX_VERIFY_ATTEMPTS`:** leave the spec in
+  `waiting_verification` — no move, status unchanged. The failures section and trace are
+  in the DB; the fix loop reads them from there.
   Report: `Spec {id} — {title}: verification FAILED (attempt {verify_attempts} of
   {MAX_VERIFY_ATTEMPTS}) — see above for details. Ask spec-exec to fix and resubmit.`
 
-- **If `verify_attempts >= MAX_VERIFY_ATTEMPTS`:** move the spec to `blocked/` instead of
+- **If `verify_attempts >= MAX_VERIFY_ATTEMPTS`:** move the spec to `blocked` instead of
   leaving it to fail silently forever:
   ```bash
   node scripts/spec-db.mjs move <project> <id> blocked spec-verify   # gates + auto-ledgers
-  mv specs/<project>/waiting_verification/<filename> specs/<project>/blocked/<filename>
   ```
-  Update `status` to `blocked` in the frontmatter — appending the `history` entry
-  (`- blocked <UTC timestamp>`) in the same step, per Phase 5 — — the
-  move is local (spec documents are never committed); the ledger entry below carries the
-  durable record of the blocked outcome, and the escalation report is what reaches the
-  human.
-  The `move` above already appended the blocked outcome to the DB ledger, so a later
-  planning pass can see this was tried and blocked (`node scripts/spec-db.mjs ledger
-  <project> blocked`).
+  The `move` records the transition and appended the blocked outcome to the ledger, so a
+  later planning pass can see this was tried and blocked (`node scripts/spec-db.mjs ledger
+  <project> blocked`). The escalation report is what reaches the human.
   Report clearly, as an escalation rather than a routine failure:
-  `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked/.
+  `Spec {id} — {title}: verification failed {verify_attempts} times — moved to blocked.
   This needs human review before another attempt; see specs/README.md's "Un-blocking a spec"
   for how to bring it back.`
 
@@ -294,16 +282,18 @@ passing spec only moves once.
 | Request | Behavior |
 |---|---|
 | "verify the specs" / "check what's waiting" | Resolves the project (asking if ambiguous), lists waiting specs, asks which to verify |
-| "verify all specs in template" | Verify every spec in `specs/template/waiting_verification/` |
+| "verify all specs in template" | Verify every `waiting_verification` spec in project `template` |
 | "verify 0001 and 0003 in template" | Verify only those two specs |
 | "is the template stuff ready to ship" | Same as "verify the specs", scoped to `template` |
-| (a spec fails verification a 2nd time) | Moved to `specs/<project>/blocked/` automatically — not a request the user makes, but the resulting behavior |
+| (a spec fails verification a 2nd time) | Moved to `blocked` automatically — not a request the user makes, but the resulting behavior |
 
 ## Gotchas
 
-- A spec's `verify_attempts` only increments on an actual failed verification run — re-running
-  `spec-verify` against a spec that already passed (and is sitting in `finished/`) is a no-op,
-  not a fresh attempt; this skill only ever looks at `waiting_verification/`.
+- A spec's `verify_attempts` only increments on an actual failed verification run
+  (`record-attempt ... FAIL`) — re-running `spec-verify` against a spec that already passed
+  (and is `finished`) is a no-op, not a fresh attempt; this skill only ever looks at
+  `waiting_verification`.
 - Don't forget to strip the `## Verification Failures` section on a passing run (Phase 5) —
-  leaving it in a `finished/` spec makes the file's last-known state look like it's still
-  failing, which is confusing for anyone reading it later without checking git history.
+  leaving it in a `finished` spec's body makes its last-known state look like it's still
+  failing, which is confusing for anyone reading it later without checking the attempt
+  history.

@@ -1,8 +1,8 @@
 // worktree-status.test.mjs — behavior tests for the dispatch-worktree hygiene script.
-// Builds a scratch git repo with a real worktree on a spec-<id>-* branch and asserts
-// the script flags staleness without mutating anything — the read-only invariant is
-// asserted as the fixture's own delta (the worktree still exists afterwards), per
-// memory/lessons.md 2026-07-03. Spec 0019.
+// Builds a scratch git repo with a real worktree on a spec-<id>-* branch and a seeded
+// spec.db, and asserts the script flags staleness without mutating anything — the
+// read-only invariant is asserted as the fixture's own delta (the worktree still exists
+// afterwards). Spec 0019.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -24,7 +24,8 @@ function git(cwd, ...args) {
   return res.stdout;
 }
 
-// A scratch repo with the script installed and one spec sitting in `state`.
+// A scratch repo with the script + CLI installed and one spec seeded in `state`
+// (or no spec at all when specState is null).
 function makeRepo(t, { specState }) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "rig-bench-wt-"));
   t.after(() => {
@@ -38,20 +39,28 @@ function makeRepo(t, { specState }) {
   });
   const repo = path.join(base, "repo");
   fs.mkdirSync(path.join(repo, "scripts"), { recursive: true });
-  fs.copyFileSync(
-    path.join(ROOT, "scripts", "worktree-status.sh"),
-    path.join(repo, "scripts", "worktree-status.sh"),
-  );
-  fs.chmodSync(path.join(repo, "scripts", "worktree-status.sh"), 0o755);
-  const specDir = path.join(repo, "specs", "template", specState);
-  fs.mkdirSync(specDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(specDir, "0001-demo.md"),
-    `---\nid: "0001"\ntitle: Demo\nstatus: ${specState}\n---\n\n# demo\n`,
-  );
+  fs.mkdirSync(path.join(repo, "workflows"), { recursive: true });
+  for (const s of ["worktree-status.sh", "spec-db.mjs"]) {
+    fs.copyFileSync(path.join(ROOT, "scripts", s), path.join(repo, "scripts", s));
+    fs.chmodSync(path.join(repo, "scripts", s), 0o755);
+  }
+  fs.copyFileSync(path.join(ROOT, "workflows", "state.yaml"), path.join(repo, "workflows", "state.yaml"));
+  fs.writeFileSync(path.join(repo, ".gitignore"), "spec.db*\n");
   git(repo, "init", "-q");
   git(repo, "add", "-A");
   git(repo, "commit", "-qm", "base");
+  const db = (...a) =>
+    spawnSync("node", ["--no-warnings", path.join(repo, "scripts", "spec-db.mjs"), ...a], {
+      encoding: "utf8",
+      cwd: repo,
+    });
+  db("init");
+  if (specState) {
+    db("add", "template", "Demo");
+    const WALK = { ready: 1, in_progress: 2, waiting_verification: 3, finished: 4 };
+    const chain = ["ready", "in_progress", "waiting_verification", "finished"].slice(0, WALK[specState] ?? 0);
+    for (const next of chain) db("move", "template", "0001", next, "test");
+  }
   return { base, repo };
 }
 
@@ -88,9 +97,9 @@ test("worktree for an in_progress spec is listed, not stale", (t) => {
   assert.match(out.stdout, /1 dispatch worktree\(s\), 0 stale\./);
 });
 
-test("worktree whose spec exists in no folder reports unknown and stale", (t) => {
+test("worktree whose spec the DB doesn't know reports unknown and stale", (t) => {
   const { base, repo } = makeRepo(t, { specState: "finished" });
-  // Branch id 0002 has no spec file anywhere.
+  // Branch id 0002 has no spec row anywhere.
   const wt = path.join(base, "repo-wt-0001"); // path id is ignored when branch matches
   git(repo, "worktree", "add", wt, "-b", "spec-0002-ghost");
   const out = run(repo);
