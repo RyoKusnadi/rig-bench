@@ -149,7 +149,11 @@ For each spec (whether run concurrently or one at a time):
 1. **Move to in_progress.**
    - Starting fresh: `node scripts/spec-db.mjs move <project> <id> in_progress spec-exec` —
      it enforces `valid_next` and the unfinished-dependency rule and refuses illegal moves.
-   - Resuming a spec already `in_progress`: skip this move.
+   - Resuming a spec already `in_progress`: skip this move. Recover the progress state
+     before writing any code — the spec's `branch` and `pr` fields point at the work so far;
+     check that branch out and diff it against its base to see which criteria are already
+     implemented, then continue from there. Re-implementing from scratch on a resume both
+     wastes the work and risks conflicting with it.
    - Fixing a spec found in `waiting_verification` (Phase 1): `node scripts/spec-db.mjs
      move <project> <id> in_progress spec-exec` — it needs to go through `in_progress` like
      any other implementation work, not be fixed while still marked as awaiting
@@ -177,6 +181,17 @@ For each spec (whether run concurrently or one at a time):
    node scripts/spec-db.mjs set <project> <id> branch "<branch>"
    node scripts/spec-db.mjs set <project> <id> pr "<url>"
    ```
+   **If the spec turns out wrong mid-implementation, surface it — don't silently deviate.**
+   When an acceptance criterion is unimplementable as written, two criteria contradict each
+   other, or the spec is missing something the implementation forces you to decide, stop and
+   tell the user what the gap is and what you'd do about it. Once resolved, record the
+   resolution in the spec body (`node scripts/spec-db.mjs edit <project> <id>`) so the spec
+   still describes what was actually built — an implementation that quietly diverges from
+   its spec fails verification against the very criteria it skipped, and the divergence is
+   invisible to the verifier and the reviewer. This is the loop every major SDD tool
+   converged on (spec gaps found during implementation flow back into the spec, never around
+   it — see research report `execution-phase-best-practices-in-spec-driven-development`,
+   `spec-db.mjs research show 6`).
    Check the implementation against `CLAUDE.md`'s "Non-negotiables" before committing —
    the same constraints `spec-plan` checks at design time still apply at implementation time
    (e.g. no direct commits to the default branch, no destructive git ops without confirming).
@@ -197,6 +212,11 @@ For each spec (whether run concurrently or one at a time):
    commands and their full output. The summary tells you *which* criteria failed; the trace
    shows you the exact command output the verifier saw — the raw signal a distilled list
    drops, and often the difference between guessing at a fix and seeing the real cause.
+   **Reproduce before fixing.** Re-run the failing criterion's check yourself in the current
+   tree before changing any code. If it passes with no relevant change since the verifier
+   ran, the failure signal is flaky (nondeterministic test, environment difference), not a
+   bug — report that finding instead of "fixing" code that wasn't broken, which spends an
+   attempt and can introduce a real regression where there was none.
    Leave the failures section in the body; `spec-verify` clears it on the next passing run,
    or replaces it if this fix still doesn't pass.
 
@@ -212,6 +232,11 @@ For each spec (whether run concurrently or one at a time):
    prefer additive changes over rewiring passing behavior, and if this is already a second
    attempt, run `node scripts/spec-db.mjs trace diff <project> <id>` first to see exactly
    what the previous fix changed in observed behavior before deciding what to try next.
+   If that diff shows the same criterion failing the same way — the previous fix changed
+   nothing observable — do not spend another attempt repeating the approach: the same
+   failure twice is a signal to change approach entirely or stop and ask the human, not to
+   retry harder. The attempt budget exists to force that escalation while there's still an
+   attempt left to spend on a *different* idea.
 3. **Move to waiting_verification.** `node scripts/spec-db.mjs move <project> <id>
    waiting_verification spec-exec`.
 4. Report: `Spec {id} — {title}: implementation complete, awaiting verification.`
